@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Users | Weather Station Management</title>
+    <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div>
+                <p class="eyebrow">Operations</p>
+                <h1>Weather Station Management</h1>
+            </div>
+            <nav aria-label="Primary navigation">
+                <a href="index.html">Stations</a>
+                <a href="maintenance.html">Maintenance</a>
+                <a href="instruments.html">Instruments</a>
+                <a class="active it-only" href="users.html" hidden>Users</a>
+            </nav>
+            <div class="user-menu">
+                <span><strong data-user-name></strong><small data-user-department></small></span>
+                <button class="header-button" type="button" data-logout>Sign out</button>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <section>
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Access control</p>
+                    <h2>Create user</h2>
+                </div>
+            </div>
+
+            <form id="userForm" class="form-grid">
+                <input type="hidden" id="userEditId">
+                <div class="field">
+                    <label for="fullName">Full name</label>
+                    <input type="text" id="fullName" maxlength="100" required>
+                </div>
+                <div class="field">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" maxlength="50" pattern="[A-Za-z0-9_.-]+" required>
+                </div>
+                <div class="field">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" maxlength="150">
+                </div>
+                <div class="field">
+                    <label for="department">Department</label>
+                    <select id="department" required>
+                        <option value="Data">Data</option>
+                        <option value="IT">IT</option>
+                    </select>
+                </div>
+                <div class="field span-2">
+                    <label for="password" id="passwordLabel">Temporary password</label>
+                    <input type="password" id="password" minlength="8" maxlength="128" autocomplete="new-password" required>
+                </div>
+                <label class="checkbox-row span-2" for="userIsActive">
+                    <input type="checkbox" id="userIsActive" checked>
+                    <span>Account is active</span>
+                </label>
+                <div class="form-actions span-2">
+                    <button type="submit" id="userSubmit">Create user</button>
+                    <button class="secondary-button" type="button" id="cancelUserEdit" hidden>Cancel</button>
+                </div>
+                <p id="formMessage" class="message span-2" aria-live="polite"></p>
+            </form>
+        </section>
+
+        <section>
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Account directory</p>
+                    <h2>Users</h2>
+                </div>
+                <button class="secondary-button" id="refreshUsers" type="button">Refresh</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Username</th>
+                            <th>Email</th>
+                            <th>Department</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="userTable"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="js/config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/users.js"></script>
+</body>
+</html>

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in | Weather Station Management</title>
+    <link rel="stylesheet" href="css/app.css">
+</head>
+<body class="auth-page">
+    <main class="auth-shell">
+        <section class="auth-panel">
+            <p class="eyebrow">Weather Station Management</p>
+
+            <div id="loginSection" hidden>
+                <h1>Sign in</h1>
+                <p class="muted">Use your assigned application account.</p>
+                <form id="loginForm" class="auth-form">
+                    <div class="field">
+                        <label for="loginUsername">Username</label>
+                        <input type="text" id="loginUsername" autocomplete="username" required>
+                    </div>
+                    <div class="field">
+                        <label for="loginPassword">Password</label>
+                        <input type="password" id="loginPassword" autocomplete="current-password" minlength="8" required>
+                    </div>
+                    <button type="submit">Sign in</button>
+                    <p id="loginMessage" class="message" aria-live="polite"></p>
+                </form>
+            </div>
+
+            <div id="setupSection" hidden>
+                <h1>Create the first IT administrator</h1>
+                <p class="muted">This one-time setup closes after the first account is created.</p>
+                <form id="setupForm" class="auth-form">
+                    <div class="field">
+                        <label for="setupFullName">Full name</label>
+                        <input type="text" id="setupFullName" maxlength="100" required>
+                    </div>
+                    <div class="field">
+                        <label for="setupUsername">Username</label>
+                        <input type="text" id="setupUsername" maxlength="50" pattern="[A-Za-z0-9_.-]+" required>
+                    </div>
+                    <div class="field">
+                        <label for="setupEmail">Email</label>
+                        <input type="email" id="setupEmail" maxlength="150">
+                    </div>
+                    <div class="field">
+                        <label for="setupPassword">Password</label>
+                        <input type="password" id="setupPassword" minlength="8" maxlength="128" autocomplete="new-password" required>
+                    </div>
+                    <div class="field">
+                        <label for="setupPasswordConfirm">Confirm password</label>
+                        <input type="password" id="setupPasswordConfirm" minlength="8" maxlength="128" autocomplete="new-password" required>
+                    </div>
+                    <button type="submit">Create IT administrator</button>
+                    <p id="setupMessage" class="message" aria-live="polite"></p>
+                </form>
+            </div>
+        </section>
+    </main>
+
+    <script src="js/config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+</body>
+</html>

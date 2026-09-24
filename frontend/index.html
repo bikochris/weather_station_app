@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stations | Weather Station Management</title>
+    <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div>
+                <p class="eyebrow">Operations</p>
+                <h1>Weather Station Management</h1>
+            </div>
+            <nav aria-label="Primary navigation">
+                <a class="active" href="index.html">Stations</a>
+                <a href="maintenance.html">Maintenance</a>
+                <a href="instruments.html">Instruments</a>
+                <a class="it-only" href="users.html" hidden>Users</a>
+            </nav>
+            <div class="user-menu">
+                <span><strong data-user-name></strong><small data-user-department></small></span>
+                <button class="header-button" type="button" data-logout>Sign out</button>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <section>
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Station registry</p>
+                    <h2>Add station</h2>
+                </div>
+            </div>
+
+            <form id="stationForm" class="form-grid">
+                <input type="hidden" id="stationEditId">
+                <div class="field span-2">
+                    <label for="stationName">Station name</label>
+                    <input type="text" id="stationName" maxlength="100" required>
+                </div>
+
+                <div class="field">
+                    <label for="latitude">Latitude</label>
+                    <input type="number" step="any" min="-90" max="90" id="latitude" required>
+                </div>
+
+                <div class="field">
+                    <label for="longitude">Longitude</label>
+                    <input type="number" step="any" min="-180" max="180" id="longitude" required>
+                </div>
+
+                <div class="field span-2">
+                    <label for="status">Status</label>
+                    <select id="status">
+                        <option value="Operational">Operational</option>
+                        <option value="Maintenance">Maintenance</option>
+                        <option value="Closed">Closed</option>
+                    </select>
+                </div>
+
+                <div class="form-actions span-2">
+                    <button type="submit" id="stationSubmit">Add station</button>
+                    <button class="secondary-button" type="button" id="cancelStationEdit" hidden>Cancel</button>
+                </div>
+                <p id="formMessage" class="message span-2" aria-live="polite"></p>
+            </form>
+        </section>
+
+        <section>
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Current network</p>
+                    <h2>Stations</h2>
+                </div>
+                <button class="secondary-button" id="refreshStations" type="button">Refresh</button>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Station</th>
+                            <th>Latitude</th>
+                            <th>Longitude</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stationTable"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="js/config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/stations.js"></script>
+</body>
+</html>

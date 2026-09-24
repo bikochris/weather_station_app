@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maintenance | Weather Station Management</title>
+    <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div>
+                <p class="eyebrow">Operations</p>
+                <h1>Weather Station Management</h1>
+            </div>
+            <nav aria-label="Primary navigation">
+                <a href="index.html">Stations</a>
+                <a class="active" href="maintenance.html">Maintenance</a>
+                <a href="instruments.html">Instruments</a>
+                <a class="it-only" href="users.html" hidden>Users</a>
+            </nav>
+            <div class="user-menu">
+                <span><strong data-user-name></strong><small data-user-department></small></span>
+                <button class="header-button" type="button" data-logout>Sign out</button>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <section>
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Field work</p>
+                    <h2>Record maintenance</h2>
+                </div>
+            </div>
+
+            <form id="maintenanceForm" class="form-grid">
+                <input type="hidden" id="maintenanceEditId">
+                <div class="field">
+                    <label for="stationId">Station</label>
+                    <select id="stationId" required>
+                        <option value="">Loading stations...</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="maintenanceDate">Date</label>
+                    <input type="date" id="maintenanceDate" required>
+                </div>
+
+                <fieldset class="span-2">
+                    <legend>Instruments serviced</legend>
+                    <div id="instrumentOptions" class="instrument-grid">
+                        <p class="muted">Loading instruments...</p>
+                    </div>
+                    <p class="field-help">Select every instrument included in this maintenance activity.</p>
+                </fieldset>
+
+                <div class="field span-2">
+                    <label for="issue">Issue</label>
+                    <textarea id="issue" maxlength="2000" required></textarea>
+                </div>
+
+                <div class="field span-2">
+                    <label for="activityDone">Activity done</label>
+                    <textarea id="activityDone" maxlength="2000" required></textarea>
+                </div>
+
+                <div class="field span-2">
+                    <label for="recommendations">Recommendations</label>
+                    <textarea id="recommendations" maxlength="2000"></textarea>
+                </div>
+
+                <div class="field span-2">
+                    <label for="technicians">Technicians</label>
+                    <input type="text" id="technicians" maxlength="255" required>
+                </div>
+
+                <div class="form-actions span-2">
+                    <button type="submit" id="maintenanceSubmit">Save maintenance record</button>
+                    <button class="secondary-button" type="button" id="cancelMaintenanceEdit" hidden>Cancel</button>
+                </div>
+                <p id="formMessage" class="message span-2" aria-live="polite"></p>
+            </form>
+        </section>
+
+        <section>
+            <div class="section-heading history-heading">
+                <div>
+                    <p class="eyebrow">Service log</p>
+                    <h2>Maintenance history</h2>
+                </div>
+                <div class="filter-bar">
+                    <div class="field filter-field">
+                        <label for="stationFilter">Filter by station</label>
+                        <select id="stationFilter">
+                            <option value="">All stations</option>
+                        </select>
+                    </div>
+                    <button class="secondary-button" id="refreshMaintenance" type="button">Refresh</button>
+                </div>
+            </div>
+
+            <div class="table-wrap">
+                <table class="maintenance-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Station</th>
+                            <th>Date</th>
+                            <th>Instruments</th>
+                            <th>Issue</th>
+                            <th>Activity done</th>
+                            <th>Recommendations</th>
+                            <th>Technicians</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="maintenanceTable"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="js/config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/maintenance.js"></script>
+</body>
+</html>

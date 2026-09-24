@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instruments | Weather Station Management</title>
+    <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div>
+                <p class="eyebrow">Operations</p>
+                <h1>Weather Station Management</h1>
+            </div>
+            <nav aria-label="Primary navigation">
+                <a href="index.html">Stations</a>
+                <a href="maintenance.html">Maintenance</a>
+                <a class="active" href="instruments.html">Instruments</a>
+                <a class="it-only" href="users.html" hidden>Users</a>
+            </nav>
+            <div class="user-menu">
+                <span><strong data-user-name></strong><small data-user-department></small></span>
+                <button class="header-button" type="button" data-logout>Sign out</button>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <section>
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Equipment catalog</p>
+                    <h2>Add instrument</h2>
+                </div>
+            </div>
+
+            <form id="instrumentForm" class="form-grid">
+                <input type="hidden" id="instrumentEditId">
+                <div class="field">
+                    <label for="instrumentName">Instrument name</label>
+                    <input type="text" id="instrumentName" maxlength="100" required>
+                </div>
+
+                <div class="field">
+                    <label for="category">Category</label>
+                    <input type="text" id="category" maxlength="100" placeholder="Power, wind, pressure...">
+                </div>
+
+                <div class="field span-2">
+                    <label for="description">Description</label>
+                    <textarea id="description" maxlength="1000"></textarea>
+                </div>
+
+                <label class="checkbox-row span-2" for="isActive">
+                    <input type="checkbox" id="isActive" checked>
+                    <span>Available for maintenance records</span>
+                </label>
+
+                <div class="form-actions span-2">
+                    <button type="submit" id="instrumentSubmit">Add instrument</button>
+                    <button class="secondary-button" type="button" id="cancelInstrumentEdit" hidden>Cancel</button>
+                </div>
+                <p id="formMessage" class="message span-2" aria-live="polite"></p>
+            </form>
+        </section>
+
+        <section>
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Available equipment</p>
+                    <h2>Instrument catalog</h2>
+                </div>
+                <button class="secondary-button" id="refreshInstruments" type="button">Refresh</button>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Instrument</th>
+                            <th>Category</th>
+                            <th>Description</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="instrumentTable"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="js/config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/instruments.js"></script>
+</body>
+</html>
