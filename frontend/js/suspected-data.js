@@ -2,6 +2,35 @@ let suspectedDataRecords = [];
 let finalReviewRecords = [];
 
 
+function renderSuspectedDataStatistics(records) {
+    const statuses = new Map();
+    const measurements = new Map();
+    records.forEach((record) => {
+        statuses.set(record.status, (statuses.get(record.status) || 0) + 1);
+        const measurement = record.issue || "Not specified";
+        measurements.set(measurement, (measurements.get(measurement) || 0) + 1);
+    });
+    const resolved = records.filter((record) => record.status === "Resolved").length;
+    const reviewed = records.filter((record) => record.final_reviewed_at).length;
+    setMetric("suspectedReportedMetric", records.length);
+    setMetric("suspectedOpenMetric", records.length - resolved);
+    setMetric("suspectedResolvedMetric", resolved);
+    setMetric("suspectedReviewedMetric", reviewed);
+    renderBreakdown(
+        "suspectedStatusBreakdown",
+        Array.from(statuses.entries()),
+        "No suspected data reports in this period"
+    );
+    renderBreakdown(
+        "suspectedMeasurementBreakdown",
+        Array.from(measurements.entries()).sort((left, right) =>
+            right[1] - left[1] || left[0].localeCompare(right[0])
+        ),
+        "No measurements reported in this period"
+    );
+}
+
+
 async function loadSuspectedDataStationOptions() {
     const response = await apiFetch("/stations");
     if (!response.ok) {
@@ -51,8 +80,7 @@ function setFinalReviewControlsDisabled(disabled) {
 function populateFinalReviewOptions(selectedRecordId = "") {
     const select = document.getElementById("finalReviewRecord");
     const section = document.getElementById("finalReviewSection");
-    section.hidden =
-        !(isDataUser() || isITUser()) || !finalReviewRecords.length;
+    section.hidden = !canPerformDataQualityActions() || !finalReviewRecords.length;
     select.replaceChildren(new Option(
         finalReviewRecords.length
             ? "Select a resolved issue"
@@ -90,7 +118,7 @@ function reviewFinalResult(recordId, scrollToSection = true) {
 
 
 async function loadFinalReviewRecords() {
-    if (!(isDataUser() || isITUser())) return;
+    if (!canPerformDataQualityActions()) return;
     const response = await apiFetch("/suspected-data?status=Resolved");
     if (!response.ok) {
         throw new Error(await getErrorMessage(
@@ -149,7 +177,7 @@ function appendSuspectedDataActions(row, record) {
         });
         group.appendChild(reviewButton);
     }
-    if ((isDataUser() || isITUser()) && record.status === "Resolved") {
+    if (canPerformDataQualityActions() && record.status === "Resolved") {
         const finalReviewButton = document.createElement("button");
         finalReviewButton.type = "button";
         finalReviewButton.className = "secondary-button";
@@ -209,7 +237,13 @@ async function loadSuspectedDataRecords() {
                 "Unable to load suspected data records"
             ));
         }
-        suspectedDataRecords = await response.json();
+        const records = await response.json();
+        const dateFrom = document.getElementById("suspectedDateFrom").value;
+        const dateTo = document.getElementById("suspectedDateTo").value;
+        suspectedDataRecords = records.filter((record) =>
+            isWithinDateRange(record.reported_at, dateFrom, dateTo)
+        );
+        renderSuspectedDataStatistics(suspectedDataRecords);
         await loadFinalReviewRecords();
         table.replaceChildren();
         if (!suspectedDataRecords.length) {
@@ -255,7 +289,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const reportMessage = document.getElementById("reportMessage");
     const resolutionMessage = document.getElementById("resolutionMessage");
     const finalReviewMessage = document.getElementById("finalReviewMessage");
-    document.getElementById("reportSection").hidden = !(isDataUser() || isITUser());
+    document.getElementById("reportSection").hidden =
+        !canPerformDataQualityActions();
 
     try {
         await loadSuspectedDataStationOptions();
@@ -312,7 +347,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
             closeResolutionForm();
             await loadSuspectedDataRecords();
-            if (resolutionStatus === "Resolved" && (isDataUser() || isITUser())) {
+            if (resolutionStatus === "Resolved" && canPerformDataQualityActions()) {
                 reviewFinalResult(recordId);
             }
         } catch (error) {
@@ -383,6 +418,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         loadSuspectedDataRecords
     );
     document.getElementById("statusFilter").addEventListener(
+        "change",
+        loadSuspectedDataRecords
+    );
+    document.getElementById("suspectedDateFrom").addEventListener(
+        "change",
+        loadSuspectedDataRecords
+    );
+    document.getElementById("suspectedDateTo").addEventListener(
         "change",
         loadSuspectedDataRecords
     );

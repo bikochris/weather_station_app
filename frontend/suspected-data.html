@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Suspected Data | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css?v=20260925c">
+    <link rel="stylesheet" href="css/app.css?v=20260925f">
 </head>
 <body>
     <header class="app-header">
@@ -28,7 +28,8 @@
         </div>
     </header>
 
-    <main class="wide-main">
+    <main class="dashboard-layout">
+        <div class="dashboard-content">
         <section id="reportSection">
             <div class="section-heading">
                 <div>
@@ -46,8 +47,28 @@
                 </div>
 
                 <div class="field">
-                    <label for="issue">Suspected issue</label>
-                    <input type="text" id="issue" maxlength="255" placeholder="What data appears incorrect?" required>
+                    <label for="issue">Measurement</label>
+                    <select id="issue" required>
+                        <option value="">Select a measurement</option>
+                        <option value="Air Temperature">Air Temperature</option>
+                        <option value="Relative Humidity">Relative Humidity</option>
+                        <option value="Atmospheric Pressure">Atmospheric Pressure</option>
+                        <option value="Wind Speed">Wind Speed</option>
+                        <option value="Wind Direction">Wind Direction</option>
+                        <option value="Rainfall">Rainfall</option>
+                        <option value="Solar Radiation">Solar Radiation</option>
+                        <option value="Soil Temperature">Soil Temperature</option>
+                        <option value="Visibility">Visibility</option>
+                        <option value="Cloud Cover">Cloud Cover</option>
+                        <option value="Dew Point">Dew Point</option>
+                        <option value="Evaporation">Evaporation</option>
+                        <option value="Sunshine Duration">Sunshine Duration</option>
+                        <option value="Upper-air Temperature">Upper-air Temperature</option>
+                        <option value="Upper-air Humidity">Upper-air Humidity</option>
+                        <option value="Upper-air Pressure">Upper-air Pressure</option>
+                        <option value="Radar Reflectivity">Radar Reflectivity</option>
+                        <option value="Other measurement">Other measurement</option>
+                    </select>
                 </div>
 
                 <div class="field span-2">
@@ -78,8 +99,8 @@
                 </div>
 
                 <div class="field">
-                    <label for="resolutionIssue">Suspected issue</label>
-                    <input type="text" id="resolutionIssue" maxlength="255" required>
+                    <label for="resolutionIssue">Measurement</label>
+                    <input type="text" id="resolutionIssue" maxlength="255" readonly required>
                 </div>
 
                 <div class="field span-2">
@@ -164,6 +185,14 @@
                 </div>
                 <div class="filter-bar">
                     <div class="field filter-field">
+                        <label for="suspectedDateFrom">Reported from</label>
+                        <input type="date" id="suspectedDateFrom">
+                    </div>
+                    <div class="field filter-field">
+                        <label for="suspectedDateTo">Reported to</label>
+                        <input type="date" id="suspectedDateTo">
+                    </div>
+                    <div class="field filter-field">
                         <label for="stationFilter">Station</label>
                         <select id="stationFilter">
                             <option value="">All stations</option>
@@ -187,7 +216,7 @@
                     <thead>
                         <tr>
                             <th>Station</th>
-                            <th>Suspected issue</th>
+                            <th>Measurement</th>
                             <th>Description</th>
                             <th>Reported by</th>
                             <th>Reported at</th>
@@ -210,10 +239,34 @@
                 </table>
             </div>
         </section>
+        </div>
+
+        <aside class="dashboard-sidebar" aria-label="Suspected data statistics">
+            <p class="eyebrow">Quality analytics</p>
+            <h2>Suspected data overview</h2>
+            <div class="summary-panel">
+                <div class="metric-grid">
+                    <div class="metric-item"><span>Reported</span><strong id="suspectedReportedMetric">0</strong></div>
+                    <div class="metric-item"><span>Open / under review</span><strong id="suspectedOpenMetric">0</strong></div>
+                    <div class="metric-item"><span>Resolved by Maintenance</span><strong id="suspectedResolvedMetric">0</strong></div>
+                    <div class="metric-item"><span>Final reviews completed</span><strong id="suspectedReviewedMetric">0</strong></div>
+                </div>
+                <div class="summary-breakdowns">
+                    <div>
+                        <h3>By workflow status</h3>
+                        <div id="suspectedStatusBreakdown" class="breakdown-grid"></div>
+                    </div>
+                    <div>
+                        <h3>By measurement</h3>
+                        <div id="suspectedMeasurementBreakdown" class="breakdown-grid"></div>
+                    </div>
+                </div>
+            </div>
+        </aside>
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20260925"></script>
-    <script src="js/suspected-data.js?v=20260925e"></script>
+    <script src="js/api.js?v=20260925d"></script>
+    <script src="js/suspected-data.js?v=20260925h"></script>
 </body>
 </html>

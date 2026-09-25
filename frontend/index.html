@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stations | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css?v=20260925c">
+    <link rel="stylesheet" href="css/app.css?v=20260925f">
 </head>
 <body>
     <header class="app-header">
@@ -28,8 +28,9 @@
         </div>
     </header>
 
-    <main>
-        <section>
+    <main class="dashboard-layout">
+        <div class="dashboard-content">
+        <section id="stationEditor">
             <div class="section-heading">
                 <div>
                     <p class="eyebrow">Station registry</p>
@@ -144,6 +145,14 @@
                 </div>
                 <div class="filter-bar">
                     <div class="field filter-field">
+                        <label for="stationDateFrom">Registered from</label>
+                        <input type="date" id="stationDateFrom">
+                    </div>
+                    <div class="field filter-field">
+                        <label for="stationDateTo">Registered to</label>
+                        <input type="date" id="stationDateTo">
+                    </div>
+                    <div class="field filter-field">
                         <label for="stationCategoryFilter">Station category</label>
                         <select id="stationCategoryFilter">
                             <option value="">All categories</option>
@@ -175,6 +184,7 @@
                             <th>Station category</th>
                             <th>Operational status</th>
                             <th>Comment</th>
+                            <th>Registered at</th>
                             <th>Recorded by</th>
                             <th class="it-only" hidden>Actions</th>
                         </tr>
@@ -183,10 +193,25 @@
                 </table>
             </div>
         </section>
+        </div>
+
+        <aside class="dashboard-sidebar" aria-label="Station statistics">
+            <p class="eyebrow">Network analytics</p>
+            <h2>Station overview</h2>
+            <div class="summary-panel">
+                <div class="metric-grid">
+                    <div class="metric-item"><span>Overall stations</span><strong id="stationTotalMetric">0</strong></div>
+                    <div class="metric-item"><span>Operational</span><strong id="stationOperationalMetric">0</strong></div>
+                    <div class="metric-item"><span>Need attention</span><strong id="stationAttentionMetric">0</strong></div>
+                    <div class="metric-item"><span>Station categories</span><strong id="stationCategoryMetric">0</strong></div>
+                </div>
+                <div id="stationCategoryBreakdown" class="breakdown-grid"></div>
+            </div>
+        </aside>
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20260925"></script>
-    <script src="js/stations.js?v=20260925d"></script>
+    <script src="js/api.js?v=20260925d"></script>
+    <script src="js/stations.js?v=20260925f"></script>
 </body>
 </html>

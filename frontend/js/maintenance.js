@@ -3,6 +3,37 @@ let maintenanceStations = [];
 let maintenanceInstrumentCatalog = [];
 
 
+function renderMaintenanceStatistics(records) {
+    const stationIds = new Set(records.map((record) => record.station_id));
+    const instrumentIds = new Set();
+    const categories = new Map();
+    records.forEach((record) => {
+        record.instruments.forEach((instrument) => {
+            instrumentIds.add(instrument.instrument_id);
+        });
+        const category = record.station_category || "Not classified";
+        categories.set(category, (categories.get(category) || 0) + 1);
+    });
+    const latest = records.reduce(
+        (value, record) => !value || record.maintenance_date > value
+            ? record.maintenance_date
+            : value,
+        ""
+    );
+    setMetric("maintenanceTotalMetric", records.length);
+    setMetric("maintenanceStationMetric", stationIds.size);
+    setMetric("maintenanceInstrumentMetric", instrumentIds.size);
+    setMetric("maintenanceLatestMetric", latest || "-");
+    renderBreakdown(
+        "maintenanceCategoryBreakdown",
+        Array.from(categories.entries()).sort(([left], [right]) =>
+            left.localeCompare(right)
+        ),
+        "No maintenance activity in this period"
+    );
+}
+
+
 async function loadStationOptions() {
     const formSelect = document.getElementById("stationId");
     const filterSelect = document.getElementById("stationFilter");
@@ -158,7 +189,8 @@ async function loadMaintenanceRecords() {
     const endpoint = stationId
         ? `/maintenance?station_id=${encodeURIComponent(stationId)}`
         : "/maintenance";
-    const columnCount = isITUser() ? 10 : 9;
+    const canManage = canManageMaintenance();
+    const columnCount = canManage ? 10 : 9;
     showTableMessage(table, columnCount, "Loading maintenance records...");
 
     try {
@@ -166,7 +198,13 @@ async function loadMaintenanceRecords() {
         if (!response.ok) {
             throw new Error(await getErrorMessage(response, "Unable to load maintenance records"));
         }
-        maintenanceRecords = await response.json();
+        const records = await response.json();
+        const dateFrom = document.getElementById("maintenanceDateFrom").value;
+        const dateTo = document.getElementById("maintenanceDateTo").value;
+        maintenanceRecords = records.filter((record) =>
+            isWithinDateRange(record.maintenance_date, dateFrom, dateTo)
+        );
+        renderMaintenanceStatistics(maintenanceRecords);
         table.replaceChildren();
         if (!maintenanceRecords.length) {
             showTableMessage(table, columnCount, "No maintenance records found.");
@@ -186,7 +224,7 @@ async function loadMaintenanceRecords() {
             appendCell(row, record.recommendations);
             appendCell(row, record.technicians);
             appendCell(row, record.recorded_by || "Legacy record");
-            if (isITUser()) appendMaintenanceActions(row, record);
+            if (canManage) appendMaintenanceActions(row, record);
             table.appendChild(row);
         });
     } catch (error) {
@@ -198,12 +236,19 @@ async function loadMaintenanceRecords() {
 document.addEventListener("DOMContentLoaded", async () => {
     initializeShell();
     if (!await requireSession()) return;
+    const canManage = canManageMaintenance();
+    document.getElementById("maintenanceEditor").hidden = !canManage;
+    document.getElementById("maintenanceActionsHeading").hidden = !canManage;
     const form = document.getElementById("maintenanceForm");
     const message = document.getElementById("formMessage");
     resetMaintenanceForm();
 
     try {
-        await Promise.all([loadStationOptions(), loadInstrumentOptions()]);
+        if (canManage) {
+            await Promise.all([loadStationOptions(), loadInstrumentOptions()]);
+        } else {
+            await loadStationOptions();
+        }
         await loadMaintenanceRecords();
     } catch (error) {
         setMessage(message, error.message, "error");
@@ -253,6 +298,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("cancelMaintenanceEdit").addEventListener("click", resetMaintenanceForm);
     document.getElementById("refreshMaintenance").addEventListener("click", loadMaintenanceRecords);
     document.getElementById("stationFilter").addEventListener("change", loadMaintenanceRecords);
+    document.getElementById("maintenanceDateFrom").addEventListener(
+        "change",
+        loadMaintenanceRecords
+    );
+    document.getElementById("maintenanceDateTo").addEventListener(
+        "change",
+        loadMaintenanceRecords
+    );
     document.getElementById("stationId").addEventListener(
         "change",
         () => renderMaintenanceInstrumentOptions()

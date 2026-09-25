@@ -67,6 +67,13 @@ StationCategory = Literal[
     "Rainfall station",
 ]
 
+UserRole = Literal[
+    "Admin",
+    "Maintenance",
+    "Data Quality Control",
+    "Observation Officer",
+]
+
 
 class Station(BaseModel):
 
@@ -166,8 +173,9 @@ class UserCreate(BaseModel):
         pattern=r"^[A-Za-z0-9_.-]+$",
     )
     email: str | None = Field(default=None, max_length=150)
-    department: Literal["IT", "Data", "Maintenance"]
+    department: UserRole
     password: str = Field(min_length=8, max_length=128)
+    station_ids: list[int] = Field(default_factory=list)
 
 
 class UserUpdate(BaseModel):
@@ -179,9 +187,10 @@ class UserUpdate(BaseModel):
         pattern=r"^[A-Za-z0-9_.-]+$",
     )
     email: str | None = Field(default=None, max_length=150)
-    department: Literal["IT", "Data", "Maintenance"]
+    department: UserRole
     is_active: bool = True
     password: str | None = Field(default=None, min_length=8, max_length=128)
+    station_ids: list[int] = Field(default_factory=list)
 
 
 class BootstrapUser(BaseModel):
@@ -308,22 +317,36 @@ def ensure_department_options(cursor):
         """
     )
     row = cursor.fetchone()
-    if row and "Maintenance" not in row[0]:
+    if row and (
+        "Admin" not in row[0]
+        or "Data Quality Control" not in row[0]
+        or "Observation Officer" not in row[0]
+        or "'IT'" in row[0]
+        or "'Data'" in row[0]
+        or "'Quality Control'" in row[0]
+    ):
         cursor.execute(
             """
             ALTER TABLE users
             MODIFY COLUMN department
-                ENUM('IT', 'Data', 'Quality Control', 'Maintenance') NOT NULL
+                ENUM(
+                    'IT', 'Data', 'Quality Control', 'Maintenance',
+                    'Admin', 'Data Quality Control', 'Observation Officer'
+                ) NOT NULL
             """
         )
-    if row and "Quality Control" in row[0]:
+        cursor.execute("UPDATE users SET department = 'Admin' WHERE department = 'IT'")
         cursor.execute(
-            "UPDATE users SET department = 'Data' WHERE department = 'Quality Control'"
+            "UPDATE users SET department = 'Data Quality Control' "
+            "WHERE department IN ('Data', 'Quality Control')"
         )
         cursor.execute(
             """
             ALTER TABLE users
-            MODIFY COLUMN department ENUM('IT', 'Data', 'Maintenance') NOT NULL
+            MODIFY COLUMN department ENUM(
+                'Admin', 'Maintenance', 'Data Quality Control',
+                'Observation Officer'
+            ) NOT NULL
             """
         )
 
@@ -340,7 +363,10 @@ def ensure_application_tables(connection):
                 full_name VARCHAR(100) NOT NULL,
                 username VARCHAR(50) NOT NULL UNIQUE,
                 email VARCHAR(150),
-                department ENUM('IT', 'Data', 'Maintenance') NOT NULL,
+                department ENUM(
+                    'Admin', 'Maintenance', 'Data Quality Control',
+                    'Observation Officer'
+                ) NOT NULL,
                 password_hash VARCHAR(255) NOT NULL,
                 must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
                 is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -410,6 +436,25 @@ def ensure_application_tables(connection):
                     FOREIGN KEY (created_by_user_id)
                     REFERENCES users(user_id)
                     ON DELETE SET NULL
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_station_assignments (
+                user_id INT NOT NULL,
+                station_id INT NOT NULL,
+                assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, station_id),
+                CONSTRAINT fk_assignment_user
+                    FOREIGN KEY (user_id)
+                    REFERENCES users(user_id)
+                    ON DELETE CASCADE,
+                CONSTRAINT fk_assignment_station
+                    FOREIGN KEY (station_id)
+                    REFERENCES stations(station_id)
+                    ON UPDATE CASCADE
+                    ON DELETE CASCADE
             )
             """
         )
@@ -688,20 +733,27 @@ def require_password_change_complete(user=Depends(get_current_user)):
 
 
 def require_it(user=Depends(require_password_change_complete)):
-    if user["department"] != "IT":
-        raise HTTPException(status_code=403, detail="IT access required")
+    if user["department"] != "Admin":
+        raise HTTPException(status_code=403, detail="Administrator access required")
     return user
 
 
 def require_data(user=Depends(require_password_change_complete)):
-    if user["department"] != "Data":
-        raise HTTPException(status_code=403, detail="Data access required")
+    if user["department"] != "Data Quality Control":
+        raise HTTPException(status_code=403, detail="Data Quality Control access required")
     return user
 
 
 def require_data_or_it(user=Depends(require_password_change_complete)):
-    if user["department"] not in ("Data", "IT"):
-        raise HTTPException(status_code=403, detail="Data or IT access required")
+    if user["department"] not in (
+        "Data Quality Control",
+        "Observation Officer",
+        "Admin",
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Data quality access required",
+        )
     return user
 
 
@@ -712,16 +764,68 @@ def require_maintenance(user=Depends(require_password_change_complete)):
 
 
 def require_maintenance_or_it(user=Depends(require_password_change_complete)):
-    if user["department"] not in ("Maintenance", "IT"):
-        raise HTTPException(status_code=403, detail="Maintenance or IT access required")
+    if user["department"] not in ("Maintenance", "Admin"):
+        raise HTTPException(
+            status_code=403,
+            detail="Maintenance or Administrator access required",
+        )
     return user
+
+
+def require_suspected_data_access(user=Depends(require_password_change_complete)):
+    return user
+
+
+def require_instrument_catalog_access(user=Depends(require_password_change_complete)):
+    if user["department"] not in ("Admin", "Maintenance"):
+        raise HTTPException(status_code=403, detail="Instrument catalog access is not allowed")
+    return user
+
+
+def replace_user_station_assignments(cursor, user_id, station_ids):
+    station_ids = list(dict.fromkeys(station_ids))
+    cursor.execute(
+        "DELETE FROM user_station_assignments WHERE user_id = %s",
+        (user_id,),
+    )
+    if not station_ids:
+        return
+    placeholders = ", ".join(["%s"] * len(station_ids))
+    cursor.execute(
+        f"SELECT station_id FROM stations WHERE station_id IN ({placeholders})",
+        tuple(station_ids),
+    )
+    if {row[0] for row in cursor.fetchall()} != set(station_ids):
+        raise HTTPException(status_code=400, detail="One or more stations do not exist")
+    cursor.executemany(
+        "INSERT INTO user_station_assignments (user_id, station_id) VALUES (%s, %s)",
+        [(user_id, station_id) for station_id in station_ids],
+    )
+
+
+def ensure_user_can_access_station(cursor, user, station_id):
+    if user["department"] != "Observation Officer":
+        return
+    cursor.execute(
+        """
+        SELECT station_id
+        FROM user_station_assignments
+        WHERE user_id = %s AND station_id = %s
+        """,
+        (user["user_id"], station_id),
+    )
+    if cursor.fetchone() is None:
+        raise HTTPException(
+            status_code=403,
+            detail="This station is not assigned to your account",
+        )
 
 
 @app.put("/maintenance/{maintenance_id}")
 def update_maintenance_record(
     maintenance_id: int,
     record: MaintenanceRecord,
-    _admin=Depends(require_it),
+    _user=Depends(require_maintenance_or_it),
 ):
     try:
         connection = get_connection()
@@ -820,7 +924,7 @@ def update_maintenance_record(
 @app.delete("/maintenance/{maintenance_id}", status_code=204)
 def delete_maintenance_record(
     maintenance_id: int,
-    _admin=Depends(require_it),
+    _user=Depends(require_maintenance_or_it),
 ):
     try:
         connection = get_connection()
@@ -867,7 +971,6 @@ def insert_user(connection, user, department, must_change_password):
                 must_change_password,
             ),
         )
-        connection.commit()
         return cursor.lastrowid
     finally:
         cursor.close()
@@ -903,8 +1006,9 @@ def bootstrap_it_user(user: BootstrapUser):
 
         cursor.close()
         del cursor
-        user_id = insert_user(connection, user, "IT", False)
-        return {"message": "IT administrator created", "user_id": user_id}
+        user_id = insert_user(connection, user, "Admin", False)
+        connection.commit()
+        return {"message": "Administrator created", "user_id": user_id}
     except HTTPException:
         raise
     except IntegrityError as exc:
@@ -1051,7 +1155,22 @@ def get_users(_admin=Depends(require_it)):
             ORDER BY full_name, username
             """
         )
-        return cursor.fetchall()
+        users = cursor.fetchall()
+        cursor.execute(
+            """
+            SELECT user_id, station_id
+            FROM user_station_assignments
+            ORDER BY station_id
+            """
+        )
+        assignments = {}
+        for assignment in cursor.fetchall():
+            assignments.setdefault(assignment["user_id"], []).append(
+                assignment["station_id"]
+            )
+        for item in users:
+            item["station_ids"] = assignments.get(item["user_id"], [])
+        return users
     except MySQLError as exc:
         raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
     finally:
@@ -1063,15 +1182,33 @@ def get_users(_admin=Depends(require_it)):
 
 @app.post("/users", status_code=201)
 def add_user(user: UserCreate, _admin=Depends(require_it)):
+    if user.department == "Observation Officer" and not user.station_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Assign at least one station to the Observation Officer",
+        )
     try:
         connection = get_connection()
         user_id = insert_user(connection, user, user.department, True)
+        cursor = connection.cursor()
+        replace_user_station_assignments(
+            cursor,
+            user_id,
+            user.station_ids if user.department == "Observation Officer" else [],
+        )
+        connection.commit()
         return {"message": "User created", "user_id": user_id}
+    except HTTPException:
+        if "connection" in locals() and connection.is_connected():
+            connection.rollback()
+        raise
     except IntegrityError as exc:
         raise HTTPException(status_code=409, detail="Username already exists") from exc
     except MySQLError as exc:
         raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
     finally:
+        if "cursor" in locals():
+            cursor.close()
         if "connection" in locals() and connection.is_connected():
             connection.close()
 
@@ -1082,6 +1219,11 @@ def update_user(
     user: UserUpdate,
     admin=Depends(require_it),
 ):
+    if user.department == "Observation Officer" and not user.station_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Assign at least one station to the Observation Officer",
+        )
     try:
         connection = get_connection()
         cursor = connection.cursor(dictionary=True)
@@ -1094,27 +1236,27 @@ def update_user(
             raise HTTPException(status_code=404, detail="User not found")
 
         removing_it_access = (
-            existing["department"] == "IT"
+            existing["department"] == "Admin"
             and bool(existing["is_active"])
-            and (user.department != "IT" or not user.is_active)
+            and (user.department != "Admin" or not user.is_active)
         )
         if removing_it_access:
             cursor.execute(
                 "SELECT COUNT(*) AS total FROM users "
-                "WHERE department = 'IT' AND is_active = TRUE"
+                "WHERE department = 'Admin' AND is_active = TRUE"
             )
             if cursor.fetchone()["total"] <= 1:
                 raise HTTPException(
                     status_code=409,
-                    detail="The last active IT administrator cannot be disabled or reassigned",
+                    detail="The last active administrator cannot be disabled or reassigned",
                 )
 
         if user_id == admin["user_id"] and (
-            user.department != "IT" or not user.is_active
+            user.department != "Admin" or not user.is_active
         ):
             raise HTTPException(
                 status_code=409,
-                detail="You cannot remove your own IT access",
+                detail="You cannot remove your own administrator access",
             )
 
         values = [
@@ -1142,6 +1284,11 @@ def update_user(
             WHERE user_id = %s
             """,
             tuple(values),
+        )
+        replace_user_station_assignments(
+            cursor,
+            user_id,
+            user.station_ids if user.department == "Observation Officer" else [],
         )
         connection.commit()
         return {"message": "User updated"}
@@ -1174,15 +1321,15 @@ def delete_user(user_id: int, admin=Depends(require_it)):
         if existing is None:
             raise HTTPException(status_code=404, detail="User not found")
 
-        if existing["department"] == "IT" and bool(existing["is_active"]):
+        if existing["department"] == "Admin" and bool(existing["is_active"]):
             cursor.execute(
                 "SELECT COUNT(*) AS total FROM users "
-                "WHERE department = 'IT' AND is_active = TRUE"
+                "WHERE department = 'Admin' AND is_active = TRUE"
             )
             if cursor.fetchone()["total"] <= 1:
                 raise HTTPException(
                     status_code=409,
-                    detail="The last active IT administrator cannot be deleted",
+                    detail="The last active administrator cannot be deleted",
                 )
 
         cursor.execute("DELETE FROM users WHERE user_id = %s", (user_id,))
@@ -1217,7 +1364,7 @@ def health():
 
 
 @app.get("/stations")
-def get_stations(_user=Depends(require_password_change_complete)):
+def get_stations(user=Depends(require_password_change_complete)):
 
     try:
         connection = get_connection()
@@ -1225,10 +1372,9 @@ def get_stations(_user=Depends(require_password_change_complete)):
 
         cursor = connection.cursor(dictionary=True)
 
-        cursor.execute(
-            """
+        query = """
             SELECT
-                station_id,
+                stations.station_id,
                 station_code,
                 station_name,
                 CAST(latitude AS DOUBLE) AS latitude,
@@ -1240,13 +1386,22 @@ def get_stations(_user=Depends(require_password_change_complete)):
                 station_category,
                 status,
                 comment,
+                stations.created_at,
                 COALESCE(stations.recorded_by_username, creator.username) AS recorded_by
             FROM stations
             LEFT JOIN users AS creator
                 ON creator.user_id = stations.created_by_user_id
-            ORDER BY station_id
+        """
+        parameters = ()
+        if user["department"] == "Observation Officer":
+            query += """
+                INNER JOIN user_station_assignments
+                    ON user_station_assignments.station_id = stations.station_id
+                    AND user_station_assignments.user_id = %s
             """
-        )
+            parameters = (user["user_id"],)
+        query += " ORDER BY stations.station_id"
+        cursor.execute(query, parameters)
 
         stations = cursor.fetchall()
 
@@ -1266,7 +1421,7 @@ def get_stations(_user=Depends(require_password_change_complete)):
 
 
 @app.post("/stations")
-def add_station(station: Station, user=Depends(require_password_change_complete)):
+def add_station(station: Station, user=Depends(require_it)):
 
     try:
         connection = get_connection()
@@ -1340,7 +1495,7 @@ def add_station(station: Station, user=Depends(require_password_change_complete)
 @app.post("/stations/import", status_code=201)
 async def import_stations(
     request: Request,
-    user=Depends(require_password_change_complete),
+    user=Depends(require_it),
 ):
     try:
         content = (await request.body()).decode("utf-8-sig")
@@ -1595,7 +1750,7 @@ def delete_station(station_id: int, _admin=Depends(require_it)):
 @app.get("/instruments")
 def get_instruments(
     active_only: bool = False,
-    _user=Depends(require_password_change_complete),
+    _user=Depends(require_instrument_catalog_access),
 ):
 
     try:
@@ -1657,7 +1812,7 @@ def get_instruments(
 
 
 @app.post("/instruments", status_code=201)
-def add_instrument(instrument: Instrument, user=Depends(require_password_change_complete)):
+def add_instrument(instrument: Instrument, user=Depends(require_it)):
 
     try:
         connection = get_connection()
@@ -1721,7 +1876,7 @@ def add_instrument(instrument: Instrument, user=Depends(require_password_change_
 @app.post("/instruments/import", status_code=201)
 async def import_instruments(
     request: Request,
-    user=Depends(require_password_change_complete),
+    user=Depends(require_it),
 ):
     try:
         content = (await request.body()).decode("utf-8-sig")
@@ -1971,7 +2126,7 @@ def delete_instrument(instrument_id: int, _admin=Depends(require_it)):
 @app.get("/maintenance")
 def get_maintenance_records(
     station_id: int | None = Query(default=None, gt=0),
-    _user=Depends(require_password_change_complete),
+    user=Depends(require_password_change_complete),
 ):
 
     try:
@@ -1985,6 +2140,7 @@ def get_maintenance_records(
                 maintenance_records.station_id,
                 stations.station_code,
                 stations.station_name,
+                stations.station_category,
                 maintenance_date,
                 issue,
                 activity_done,
@@ -2008,18 +2164,29 @@ def get_maintenance_records(
                 ON instruments.instrument_id =
                     maintenance_record_instruments.instrument_id
         """
-        parameters = ()
+        conditions = []
+        parameters = []
 
         if station_id is not None:
-            query += " WHERE maintenance_records.station_id = %s"
-            parameters = (station_id,)
+            conditions.append("maintenance_records.station_id = %s")
+            parameters.append(station_id)
+        if user["department"] == "Observation Officer":
+            conditions.append(
+                "EXISTS (SELECT 1 FROM user_station_assignments "
+                "WHERE user_station_assignments.user_id = %s "
+                "AND user_station_assignments.station_id = "
+                "maintenance_records.station_id)"
+            )
+            parameters.append(user["user_id"])
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
 
         query += (
             " ORDER BY maintenance_records.maintenance_date DESC, "
             "maintenance_records.maintenance_id DESC, "
             "instruments.instrument_name"
         )
-        cursor.execute(query, parameters)
+        cursor.execute(query, tuple(parameters))
 
         records = {}
 
@@ -2032,6 +2199,7 @@ def get_maintenance_records(
                     "station_id": row["station_id"],
                     "station_code": row["station_code"],
                     "station_name": row["station_name"],
+                    "station_category": row["station_category"],
                     "maintenance_date": row["maintenance_date"],
                     "issue": row["issue"],
                     "activity_done": row["activity_done"],
@@ -2065,7 +2233,7 @@ def get_maintenance_records(
 @app.post("/maintenance", status_code=201)
 def add_maintenance_record(
     record: MaintenanceRecord,
-    user=Depends(require_password_change_complete),
+    user=Depends(require_maintenance_or_it),
 ):
 
     try:
@@ -2182,7 +2350,7 @@ def add_maintenance_record(
 def get_suspected_data_records(
     station_id: int | None = Query(default=None, gt=0),
     status: Literal["Open", "Under Review", "Resolved"] | None = None,
-    _user=Depends(require_password_change_complete),
+    user=Depends(require_suspected_data_access),
 ):
     try:
         connection = get_connection()
@@ -2237,6 +2405,14 @@ def get_suspected_data_records(
         if status is not None:
             conditions.append("suspected_data_records.status = %s")
             parameters.append(status)
+        if user["department"] == "Observation Officer":
+            conditions.append(
+                "EXISTS (SELECT 1 FROM user_station_assignments "
+                "WHERE user_station_assignments.user_id = %s "
+                "AND user_station_assignments.station_id = "
+                "suspected_data_records.station_id)"
+            )
+            parameters.append(user["user_id"])
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
         query += (
@@ -2269,6 +2445,7 @@ def add_suspected_data_record(
         )
         if cursor.fetchone() is None:
             raise HTTPException(status_code=404, detail="Station not found")
+        ensure_user_can_access_station(cursor, user, record.station_id)
         cursor.execute(
             """
             INSERT INTO suspected_data_records (
@@ -2406,7 +2583,7 @@ def review_suspected_data_final(
         cursor = connection.cursor(dictionary=True)
         cursor.execute(
             """
-            SELECT status
+            SELECT status, station_id
             FROM suspected_data_records
             WHERE suspected_data_id = %s
             """,
@@ -2420,6 +2597,7 @@ def review_suspected_data_final(
                 status_code=409,
                 detail="Data can complete final review only after resolution",
             )
+        ensure_user_can_access_station(cursor, user, record["station_id"])
         cursor.execute(
             """
             UPDATE suspected_data_records
@@ -2485,7 +2663,7 @@ def delete_suspected_data_record(
 @app.get("/station-instruments")
 def get_station_instruments(
     station_id: int | None = Query(default=None, gt=0),
-    _user=Depends(require_password_change_complete),
+    user=Depends(require_password_change_complete),
 ):
     try:
         connection = get_connection()
@@ -2527,15 +2705,26 @@ def get_station_instruments(
             LEFT JOIN users AS updater
                 ON updater.user_id = station_instruments.updated_by_user_id
         """
-        parameters = ()
+        conditions = []
+        parameters = []
         if station_id is not None:
-            query += " WHERE station_instruments.station_id = %s"
-            parameters = (station_id,)
+            conditions.append("station_instruments.station_id = %s")
+            parameters.append(station_id)
+        if user["department"] == "Observation Officer":
+            conditions.append(
+                "EXISTS (SELECT 1 FROM user_station_assignments "
+                "WHERE user_station_assignments.user_id = %s "
+                "AND user_station_assignments.station_id = "
+                "station_instruments.station_id)"
+            )
+            parameters.append(user["user_id"])
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
         query += (
             " ORDER BY stations.station_name, instruments.instrument_name, "
             "station_instruments.station_instrument_id"
         )
-        cursor.execute(query, parameters)
+        cursor.execute(query, tuple(parameters))
         return cursor.fetchall()
     except MySQLError as exc:
         raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
@@ -2681,7 +2870,7 @@ def update_station_instrument(
 @app.delete("/station-instruments/{station_instrument_id}", status_code=204)
 def delete_station_instrument(
     station_instrument_id: int,
-    _admin=Depends(require_it),
+    _user=Depends(require_maintenance_or_it),
 ):
     try:
         connection = get_connection()

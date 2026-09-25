@@ -3,6 +3,35 @@ let stationInstrumentStations = [];
 let stationInstrumentCatalog = [];
 
 
+function renderStationInstrumentStatistics(records) {
+    const stationIds = new Set(records.map((record) => record.station_id));
+    const statuses = new Map();
+    const categories = new Map();
+    records.forEach((record) => {
+        statuses.set(record.status, (statuses.get(record.status) || 0) + 1);
+        const category = record.station_category || "Not classified";
+        categories.set(category, (categories.get(category) || 0) + 1);
+    });
+    const operational = statuses.get("Operational") || 0;
+    setMetric("stationInstrumentTotalMetric", records.length);
+    setMetric("stationInstrumentStationMetric", stationIds.size);
+    setMetric("stationInstrumentOperationalMetric", operational);
+    setMetric("stationInstrumentAttentionMetric", records.length - operational);
+    renderBreakdown(
+        "stationInstrumentStatusBreakdown",
+        Array.from(statuses.entries()),
+        "No instruments installed in this period"
+    );
+    renderBreakdown(
+        "stationInstrumentCategoryBreakdown",
+        Array.from(categories.entries()).sort(([left], [right]) =>
+            left.localeCompare(right)
+        ),
+        "No station categories in this period"
+    );
+}
+
+
 function formatStationInstrumentTimestamp(value) {
     if (!value) return "-";
     const timestamp = new Date(value);
@@ -11,21 +40,21 @@ function formatStationInstrumentTimestamp(value) {
 
 
 async function loadStationInstrumentOptions() {
-    const [stationResponse, instrumentResponse] = await Promise.all([
-        apiFetch("/stations"),
-        apiFetch("/instruments?active_only=true")
-    ]);
+    const stationResponse = await apiFetch("/stations");
     if (!stationResponse.ok) {
         throw new Error(await getErrorMessage(stationResponse, "Unable to load stations"));
     }
-    if (!instrumentResponse.ok) {
-        throw new Error(await getErrorMessage(
-            instrumentResponse,
-            "Unable to load instruments"
-        ));
-    }
     stationInstrumentStations = await stationResponse.json();
-    stationInstrumentCatalog = await instrumentResponse.json();
+    if (canManageMaintenance()) {
+        const instrumentResponse = await apiFetch("/instruments?active_only=true");
+        if (!instrumentResponse.ok) {
+            throw new Error(await getErrorMessage(
+                instrumentResponse,
+                "Unable to load instruments"
+            ));
+        }
+        stationInstrumentCatalog = await instrumentResponse.json();
+    }
     const stationSelect = document.getElementById("stationId");
     const stationFilter = document.getElementById("stationFilter");
     const instrumentSelect = document.getElementById("instrumentId");
@@ -40,7 +69,7 @@ async function loadStationInstrumentOptions() {
         stationSelect.appendChild(new Option(label, station.station_id));
         stationFilter.appendChild(new Option(label, station.station_id));
     });
-    populateStationCategoryInstruments();
+    if (canManageMaintenance()) populateStationCategoryInstruments();
 }
 
 
@@ -130,16 +159,14 @@ function appendStationInstrumentActions(row, record) {
         editStationInstrument(record.station_instrument_id);
     });
     group.appendChild(editButton);
-    if (isITUser()) {
-        const deleteButton = document.createElement("button");
-        deleteButton.type = "button";
-        deleteButton.className = "danger-button";
-        deleteButton.textContent = "Delete";
-        deleteButton.addEventListener("click", () => {
-            deleteStationInstrument(record.station_instrument_id);
-        });
-        group.appendChild(deleteButton);
-    }
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "danger-button";
+    deleteButton.textContent = "Delete";
+    deleteButton.addEventListener("click", () => {
+        deleteStationInstrument(record.station_instrument_id);
+    });
+    group.appendChild(deleteButton);
     cell.appendChild(group);
 }
 
@@ -161,7 +188,13 @@ async function loadStationInstruments() {
                 "Unable to load station instruments"
             ));
         }
-        stationInstrumentRecords = await response.json();
+        const records = await response.json();
+        const dateFrom = document.getElementById("installationDateFrom").value;
+        const dateTo = document.getElementById("installationDateTo").value;
+        stationInstrumentRecords = records.filter((record) =>
+            isWithinDateRange(record.installation_date, dateFrom, dateTo)
+        );
+        renderStationInstrumentStatistics(stationInstrumentRecords);
         table.replaceChildren();
         if (!stationInstrumentRecords.length) {
             showTableMessage(table, columnCount, "No station instruments found.");
@@ -265,6 +298,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         loadStationInstruments
     );
     document.getElementById("stationFilter").addEventListener(
+        "change",
+        loadStationInstruments
+    );
+    document.getElementById("installationDateFrom").addEventListener(
+        "change",
+        loadStationInstruments
+    );
+    document.getElementById("installationDateTo").addEventListener(
         "change",
         loadStationInstruments
     );

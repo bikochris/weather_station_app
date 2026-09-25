@@ -159,6 +159,10 @@ async function uploadInstruments() {
 document.addEventListener("DOMContentLoaded", async () => {
     initializeShell();
     if (!await requireSession()) return;
+    if (!isITUser()) {
+        window.location.href = "index.html";
+        return;
+    }
     const form = document.getElementById("instrumentForm");
     const message = document.getElementById("formMessage");
 

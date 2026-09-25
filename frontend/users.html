@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Users | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css?v=20260925c">
+    <link rel="stylesheet" href="css/app.css?v=20260925d">
 </head>
 <body>
     <header class="app-header">
@@ -52,13 +52,19 @@
                     <input type="email" id="email" maxlength="150">
                 </div>
                 <div class="field">
-                    <label for="department">Department</label>
+                    <label for="department">Role</label>
                     <select id="department" required>
-                        <option value="Data">Data</option>
+                        <option value="Admin">Admin</option>
                         <option value="Maintenance">Maintenance</option>
-                        <option value="IT">IT</option>
+                        <option value="Data Quality Control">Data Quality Control</option>
+                        <option value="Observation Officer">Observation Officer</option>
                     </select>
                 </div>
+                <fieldset class="span-2" id="stationAssignmentFieldset" hidden>
+                    <legend>Assigned stations</legend>
+                    <div id="stationAssignmentOptions" class="category-checkbox-grid station-assignment-list"></div>
+                    <p class="field-help">Observation Officers can access only the selected stations and their related records.</p>
+                </fieldset>
                 <div class="field span-2">
                     <label for="password" id="passwordLabel">Temporary password</label>
                     <input type="password" id="password" minlength="8" maxlength="128" autocomplete="new-password" required>
@@ -90,7 +96,8 @@
                             <th>Name</th>
                             <th>Username</th>
                             <th>Email</th>
-                            <th>Department</th>
+                            <th>Role</th>
+                            <th>Assigned stations</th>
                             <th>Status</th>
                             <th>Actions</th>
                         </tr>
@@ -102,7 +109,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20260925"></script>
-    <script src="js/users.js?v=20260925"></script>
+    <script src="js/api.js?v=20260925c"></script>
+    <script src="js/users.js?v=20260925b"></script>
 </body>
 </html>

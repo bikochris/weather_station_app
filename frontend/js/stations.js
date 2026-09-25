@@ -1,6 +1,29 @@
 let stationRecords = [];
 
 
+function renderStationStatistics(stations) {
+    const categories = new Map();
+    stations.forEach((station) => {
+        const category = station.station_category || "Not classified";
+        categories.set(category, (categories.get(category) || 0) + 1);
+    });
+    const operational = stations.filter(
+        (station) => station.status === "Operational"
+    ).length;
+    setMetric("stationTotalMetric", stations.length);
+    setMetric("stationOperationalMetric", operational);
+    setMetric("stationAttentionMetric", stations.length - operational);
+    setMetric("stationCategoryMetric", categories.size);
+    renderBreakdown(
+        "stationCategoryBreakdown",
+        Array.from(categories.entries()).sort(([left], [right]) =>
+            left.localeCompare(right)
+        ),
+        "No stations registered in this period"
+    );
+}
+
+
 function resetStationForm() {
     document.getElementById("stationForm").reset();
     document.getElementById("stationEditId").value = "";
@@ -65,7 +88,7 @@ function appendStationActions(row, station) {
 
 async function loadStations() {
     const table = document.getElementById("stationTable");
-    const columnCount = isITUser() ? 13 : 12;
+    const columnCount = isITUser() ? 14 : 13;
     showTableMessage(table, columnCount, "Loading stations...");
 
     try {
@@ -77,11 +100,17 @@ async function loadStations() {
         table.replaceChildren();
 
         const categoryFilter = document.getElementById("stationCategoryFilter").value;
+        const dateFrom = document.getElementById("stationDateFrom").value;
+        const dateTo = document.getElementById("stationDateTo").value;
+        const periodStations = stationRecords.filter((station) =>
+            isWithinDateRange(station.created_at, dateFrom, dateTo)
+        );
+        renderStationStatistics(periodStations);
         const visibleStations = categoryFilter
-            ? stationRecords.filter(
+            ? periodStations.filter(
                 (station) => station.station_category === categoryFilter
             )
-            : stationRecords;
+            : periodStations;
 
         if (!visibleStations.length) {
             showTableMessage(
@@ -107,6 +136,12 @@ async function loadStations() {
             appendCell(row, station.station_category || "Not classified");
             appendCell(row, station.status);
             appendCell(row, station.comment);
+            appendCell(
+                row,
+                station.created_at
+                    ? new Date(station.created_at).toLocaleString()
+                    : "-"
+            );
             appendCell(row, station.recorded_by || "Legacy record");
             if (isITUser()) appendStationActions(row, station);
             table.appendChild(row);
@@ -189,6 +224,7 @@ async function uploadStations() {
 document.addEventListener("DOMContentLoaded", async () => {
     initializeShell();
     if (!await requireSession()) return;
+    document.getElementById("stationEditor").hidden = !isITUser();
 
     const form = document.getElementById("stationForm");
     const message = document.getElementById("formMessage");
@@ -234,6 +270,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         "change",
         loadStations
     );
+    document.getElementById("stationDateFrom").addEventListener("change", loadStations);
+    document.getElementById("stationDateTo").addEventListener("change", loadStations);
     document.getElementById("downloadStationTemplate").addEventListener(
         "click",
         downloadStationTemplate

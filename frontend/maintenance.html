@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Maintenance | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css?v=20260925c">
+    <link rel="stylesheet" href="css/app.css?v=20260925f">
 </head>
 <body>
     <header class="app-header">
@@ -28,8 +28,9 @@
         </div>
     </header>
 
-    <main>
-        <section>
+    <main class="dashboard-layout">
+        <div class="dashboard-content">
+        <section id="maintenanceEditor">
             <div class="section-heading">
                 <div>
                     <p class="eyebrow">Field work</p>
@@ -95,6 +96,14 @@
                 </div>
                 <div class="filter-bar">
                     <div class="field filter-field">
+                        <label for="maintenanceDateFrom">From</label>
+                        <input type="date" id="maintenanceDateFrom">
+                    </div>
+                    <div class="field filter-field">
+                        <label for="maintenanceDateTo">To</label>
+                        <input type="date" id="maintenanceDateTo">
+                    </div>
+                    <div class="field filter-field">
                         <label for="stationFilter">Filter by station</label>
                         <select id="stationFilter">
                             <option value="">All stations</option>
@@ -117,17 +126,32 @@
                             <th>Recommendations</th>
                             <th>Technicians</th>
                             <th>Recorded by</th>
-                            <th class="it-only" hidden>Actions</th>
+                            <th id="maintenanceActionsHeading" hidden>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="maintenanceTable"></tbody>
                 </table>
             </div>
         </section>
+        </div>
+
+        <aside class="dashboard-sidebar" aria-label="Maintenance statistics">
+            <p class="eyebrow">Service analytics</p>
+            <h2>Maintenance overview</h2>
+            <div class="summary-panel">
+                <div class="metric-grid">
+                    <div class="metric-item"><span>Maintenance activities</span><strong id="maintenanceTotalMetric">0</strong></div>
+                    <div class="metric-item"><span>Stations maintained</span><strong id="maintenanceStationMetric">0</strong></div>
+                    <div class="metric-item"><span>Instrument types serviced</span><strong id="maintenanceInstrumentMetric">0</strong></div>
+                    <div class="metric-item"><span>Latest maintenance</span><strong id="maintenanceLatestMetric">-</strong></div>
+                </div>
+                <div id="maintenanceCategoryBreakdown" class="breakdown-grid"></div>
+            </div>
+        </aside>
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20260925"></script>
-    <script src="js/maintenance.js?v=20260925c"></script>
+    <script src="js/api.js?v=20260925d"></script>
+    <script src="js/maintenance.js?v=20260925e"></script>
 </body>
 </html>

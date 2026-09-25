@@ -13,7 +13,12 @@ CREATE TABLE IF NOT EXISTS users (
 
     email VARCHAR(150),
 
-    department ENUM('IT', 'Data', 'Maintenance') NOT NULL,
+    department ENUM(
+        'Admin',
+        'Maintenance',
+        'Data Quality Control',
+        'Observation Officer'
+    ) NOT NULL,
 
     password_hash VARCHAR(255) NOT NULL,
 
@@ -116,6 +121,29 @@ CREATE TABLE IF NOT EXISTS maintenance_records (
         FOREIGN KEY (created_by_user_id)
         REFERENCES users(user_id)
         ON DELETE SET NULL
+);
+
+
+CREATE TABLE IF NOT EXISTS user_station_assignments (
+
+    user_id INT NOT NULL,
+
+    station_id INT NOT NULL,
+
+    assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (user_id, station_id),
+
+    CONSTRAINT fk_assignment_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(user_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_assignment_station
+        FOREIGN KEY (station_id)
+        REFERENCES stations(station_id)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE
 );
 
 

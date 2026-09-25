@@ -66,30 +66,66 @@ async function requireSession() {
         element.textContent = currentUser.department;
     });
     document.querySelectorAll(".it-only").forEach((element) => {
-        element.hidden = currentUser.department !== "IT";
+        element.hidden = currentUser.department !== "Admin";
     });
     document.querySelectorAll(".data-only").forEach((element) => {
-        element.hidden = currentUser.department !== "Data";
+        element.hidden = currentUser.department !== "Data Quality Control";
     });
     document.querySelectorAll(".maintenance-only").forEach((element) => {
         element.hidden = currentUser.department !== "Maintenance";
+    });
+    const allowedPages = {
+        "Admin": null,
+        "Maintenance": new Set([
+            "index.html", "maintenance.html", "suspected-data.html",
+            "station-instruments.html"
+        ]),
+        "Data Quality Control": new Set([
+            "index.html", "maintenance.html", "suspected-data.html",
+            "station-instruments.html"
+        ]),
+        "Observation Officer": new Set([
+            "index.html", "maintenance.html", "suspected-data.html",
+            "station-instruments.html"
+        ])
+    };
+    const pageAccess = allowedPages[currentUser.department];
+    document.querySelectorAll("nav a[href]").forEach((link) => {
+        if (pageAccess && !pageAccess.has(link.getAttribute("href"))) {
+            link.hidden = true;
+        }
     });
     return currentUser;
 }
 
 
 function isITUser() {
-    return currentUser?.department === "IT";
+    return currentUser?.department === "Admin";
 }
 
 
 function isDataUser() {
-    return currentUser?.department === "Data";
+    return currentUser?.department === "Data Quality Control";
 }
 
 
 function isMaintenanceUser() {
     return currentUser?.department === "Maintenance";
+}
+
+
+function isObservationOfficer() {
+    return currentUser?.department === "Observation Officer";
+}
+
+
+function canManageMaintenance() {
+    return isITUser() || isMaintenanceUser();
+}
+
+
+function canPerformDataQualityActions() {
+    return isITUser() || isDataUser() || isObservationOfficer();
 }
 
 
@@ -142,4 +178,39 @@ function showTableMessage(table, columnCount, message) {
 function setMessage(element, message, type = "") {
     element.textContent = message;
     element.className = `message ${type}`.trim();
+}
+
+
+function isWithinDateRange(value, dateFrom, dateTo) {
+    if (!value) return !dateFrom && !dateTo;
+    const date = String(value).slice(0, 10);
+    return (!dateFrom || date >= dateFrom) && (!dateTo || date <= dateTo);
+}
+
+
+function setMetric(elementId, value) {
+    document.getElementById(elementId).textContent = value;
+}
+
+
+function renderBreakdown(containerId, entries, emptyMessage = "No data available") {
+    const container = document.getElementById(containerId);
+    container.replaceChildren();
+    if (!entries.length) {
+        const empty = document.createElement("p");
+        empty.className = "muted";
+        empty.textContent = emptyMessage;
+        container.appendChild(empty);
+        return;
+    }
+    entries.forEach(([label, value]) => {
+        const item = document.createElement("div");
+        item.className = "breakdown-item";
+        const name = document.createElement("span");
+        name.textContent = label;
+        const count = document.createElement("strong");
+        count.textContent = value;
+        item.append(name, count);
+        container.appendChild(item);
+    });
 }
