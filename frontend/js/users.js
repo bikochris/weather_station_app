@@ -24,7 +24,8 @@ function editUser(userId) {
     document.getElementById("userIsActive").checked = Boolean(user.is_active);
     document.getElementById("password").value = "";
     document.getElementById("password").required = false;
-    document.getElementById("passwordLabel").textContent = "New password (leave blank to keep current)";
+    document.getElementById("passwordLabel").textContent =
+        "New temporary password (leave blank to keep current)";
     document.getElementById("userSubmit").textContent = "Save changes";
     document.getElementById("cancelUserEdit").hidden = false;
     document.getElementById("userForm").scrollIntoView({behavior: "smooth"});
@@ -78,7 +79,13 @@ async function loadUsers() {
             appendCell(row, user.username);
             appendCell(row, user.email || "");
             appendCell(row, user.department);
-            appendCell(row, user.is_active ? "Active" : "Inactive");
+            const status = user.is_active ? "Active" : "Inactive";
+            appendCell(
+                row,
+                user.must_change_password
+                    ? `${status} - password change required`
+                    : status
+            );
             appendUserActions(row, user);
             table.appendChild(row);
         });

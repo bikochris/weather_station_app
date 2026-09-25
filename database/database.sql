@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS users (
 
     password_hash VARCHAR(255) NOT NULL,
 
+    must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -52,7 +54,18 @@ CREATE TABLE IF NOT EXISTS stations (
 
     longitude DECIMAL(9,6),
 
-    status VARCHAR(30)
+    status VARCHAR(30),
+
+    created_by_user_id INT,
+
+    recorded_by_username VARCHAR(50),
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_station_creator
+        FOREIGN KEY (created_by_user_id)
+        REFERENCES users(user_id)
+        ON DELETE SET NULL
 
 );
 
@@ -73,13 +86,22 @@ CREATE TABLE IF NOT EXISTS maintenance_records (
 
     technicians VARCHAR(255) NOT NULL,
 
+    created_by_user_id INT,
+
+    recorded_by_username VARCHAR(50),
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_maintenance_station
         FOREIGN KEY (station_id)
         REFERENCES stations(station_id)
         ON UPDATE CASCADE
-        ON DELETE RESTRICT
+        ON DELETE RESTRICT,
+
+    CONSTRAINT fk_maintenance_creator
+        FOREIGN KEY (created_by_user_id)
+        REFERENCES users(user_id)
+        ON DELETE SET NULL
 );
 
 
@@ -95,7 +117,16 @@ CREATE TABLE IF NOT EXISTS instruments (
 
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
 
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_by_user_id INT,
+
+    recorded_by_username VARCHAR(50),
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_instrument_creator
+        FOREIGN KEY (created_by_user_id)
+        REFERENCES users(user_id)
+        ON DELETE SET NULL
 );
 
 

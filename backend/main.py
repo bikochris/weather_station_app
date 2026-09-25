@@ -88,6 +88,11 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
+class PasswordChange(BaseModel):
+
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class UserCreate(BaseModel):
 
     full_name: str = Field(min_length=2, max_length=100)
@@ -127,6 +132,41 @@ class BootstrapUser(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
+def ensure_column(cursor, table_name, column_name, definition):
+    cursor.execute(
+        """
+        SELECT COUNT(*)
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = %s
+            AND COLUMN_NAME = %s
+        """,
+        (table_name, column_name),
+    )
+    if cursor.fetchone()[0] == 0:
+        cursor.execute(
+            f"ALTER TABLE `{table_name}` ADD COLUMN `{column_name}` {definition}"
+        )
+
+
+def ensure_foreign_key(cursor, table_name, constraint_name, definition):
+    cursor.execute(
+        """
+        SELECT COUNT(*)
+        FROM information_schema.TABLE_CONSTRAINTS
+        WHERE CONSTRAINT_SCHEMA = DATABASE()
+            AND TABLE_NAME = %s
+            AND CONSTRAINT_NAME = %s
+        """,
+        (table_name, constraint_name),
+    )
+    if cursor.fetchone()[0] == 0:
+        cursor.execute(
+            f"ALTER TABLE `{table_name}` "
+            f"ADD CONSTRAINT `{constraint_name}` {definition}"
+        )
+
+
 def ensure_application_tables(connection):
 
     cursor = connection.cursor()
@@ -141,6 +181,7 @@ def ensure_application_tables(connection):
                 email VARCHAR(150),
                 department ENUM('IT', 'Data') NOT NULL,
                 password_hash VARCHAR(255) NOT NULL,
+                must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
                 is_active BOOLEAN NOT NULL DEFAULT TRUE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -168,7 +209,14 @@ def ensure_application_tables(connection):
                 station_name VARCHAR(100) NOT NULL,
                 latitude DECIMAL(9,6),
                 longitude DECIMAL(9,6),
-                status VARCHAR(30)
+                status VARCHAR(30),
+                created_by_user_id INT,
+                recorded_by_username VARCHAR(50),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT fk_station_creator
+                    FOREIGN KEY (created_by_user_id)
+                    REFERENCES users(user_id)
+                    ON DELETE SET NULL
             )
             """
         )
@@ -182,12 +230,18 @@ def ensure_application_tables(connection):
                 activity_done TEXT NOT NULL,
                 recommendations TEXT,
                 technicians VARCHAR(255) NOT NULL,
+                created_by_user_id INT,
+                recorded_by_username VARCHAR(50),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 CONSTRAINT fk_maintenance_station
                     FOREIGN KEY (station_id)
                     REFERENCES stations(station_id)
                     ON UPDATE CASCADE
-                    ON DELETE RESTRICT
+                    ON DELETE RESTRICT,
+                CONSTRAINT fk_maintenance_creator
+                    FOREIGN KEY (created_by_user_id)
+                    REFERENCES users(user_id)
+                    ON DELETE SET NULL
             )
             """
         )
@@ -199,7 +253,13 @@ def ensure_application_tables(connection):
                 category VARCHAR(100),
                 description VARCHAR(1000),
                 is_active BOOLEAN NOT NULL DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_by_user_id INT,
+                recorded_by_username VARCHAR(50),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT fk_instrument_creator
+                    FOREIGN KEY (created_by_user_id)
+                    REFERENCES users(user_id)
+                    ON DELETE SET NULL
             )
             """
         )
@@ -221,6 +281,42 @@ def ensure_application_tables(connection):
                     ON DELETE RESTRICT
             )
             """
+        )
+        ensure_column(
+            cursor,
+            "users",
+            "must_change_password",
+            "BOOLEAN NOT NULL DEFAULT FALSE",
+        )
+        for table_name in ("stations", "maintenance_records", "instruments"):
+            ensure_column(cursor, table_name, "created_by_user_id", "INT NULL")
+            ensure_column(cursor, table_name, "recorded_by_username", "VARCHAR(50) NULL")
+        ensure_column(
+            cursor,
+            "stations",
+            "created_at",
+            "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        )
+        ensure_foreign_key(
+            cursor,
+            "stations",
+            "fk_station_creator",
+            "FOREIGN KEY (`created_by_user_id`) REFERENCES `users` (`user_id`) "
+            "ON DELETE SET NULL",
+        )
+        ensure_foreign_key(
+            cursor,
+            "maintenance_records",
+            "fk_maintenance_creator",
+            "FOREIGN KEY (`created_by_user_id`) REFERENCES `users` (`user_id`) "
+            "ON DELETE SET NULL",
+        )
+        ensure_foreign_key(
+            cursor,
+            "instruments",
+            "fk_instrument_creator",
+            "FOREIGN KEY (`created_by_user_id`) REFERENCES `users` (`user_id`) "
+            "ON DELETE SET NULL",
         )
         cursor.executemany(
             """
@@ -266,7 +362,8 @@ def get_current_user(
                 users.full_name,
                 users.username,
                 users.email,
-                users.department
+                users.department,
+                users.must_change_password
             FROM user_sessions
             INNER JOIN users ON users.user_id = user_sessions.user_id
             WHERE user_sessions.token_hash = %s
@@ -296,7 +393,13 @@ def get_current_user(
             connection.close()
 
 
-def require_it(user=Depends(get_current_user)):
+def require_password_change_complete(user=Depends(get_current_user)):
+    if user["must_change_password"]:
+        raise HTTPException(status_code=403, detail="Password change required")
+    return user
+
+
+def require_it(user=Depends(require_password_change_complete)):
     if user["department"] != "IT":
         raise HTTPException(status_code=403, detail="IT access required")
     return user
@@ -418,7 +521,7 @@ def delete_maintenance_record(
             connection.close()
 
 
-def insert_user(connection, user, department):
+def insert_user(connection, user, department, must_change_password):
     cursor = connection.cursor()
     try:
         cursor.execute(
@@ -428,9 +531,10 @@ def insert_user(connection, user, department):
                 username,
                 email,
                 department,
-                password_hash
+                password_hash,
+                must_change_password
             )
-            VALUES (%s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s)
             """,
             (
                 user.full_name.strip(),
@@ -438,6 +542,7 @@ def insert_user(connection, user, department):
                 user.email.strip().lower() if user.email else None,
                 department,
                 hash_password(user.password),
+                must_change_password,
             ),
         )
         connection.commit()
@@ -476,7 +581,7 @@ def bootstrap_it_user(user: BootstrapUser):
 
         cursor.close()
         del cursor
-        user_id = insert_user(connection, user, "IT")
+        user_id = insert_user(connection, user, "IT", False)
         return {"message": "IT administrator created", "user_id": user_id}
     except HTTPException:
         raise
@@ -505,7 +610,8 @@ def login(login_request: LoginRequest):
                 username,
                 email,
                 department,
-                password_hash
+                password_hash,
+                must_change_password
             FROM users
             WHERE username = %s AND is_active = TRUE
             """,
@@ -547,6 +653,47 @@ def get_my_profile(user=Depends(get_current_user)):
     return user
 
 
+@app.put("/auth/password")
+def change_password(
+    password_change: PasswordChange,
+    user=Depends(get_current_user),
+):
+    try:
+        connection = get_connection()
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT password_hash FROM users WHERE user_id = %s",
+            (user["user_id"],),
+        )
+        existing = cursor.fetchone()
+        if existing is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        if verify_password(password_change.new_password, existing["password_hash"]):
+            raise HTTPException(
+                status_code=400,
+                detail="New password must be different from the temporary password",
+            )
+        cursor.execute(
+            """
+            UPDATE users
+            SET password_hash = %s, must_change_password = FALSE
+            WHERE user_id = %s
+            """,
+            (hash_password(password_change.new_password), user["user_id"]),
+        )
+        connection.commit()
+        return {"message": "Password changed"}
+    except HTTPException:
+        raise
+    except MySQLError as exc:
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
+    finally:
+        if "cursor" in locals():
+            cursor.close()
+        if "connection" in locals() and connection.is_connected():
+            connection.close()
+
+
 @app.post("/auth/logout", status_code=204)
 def logout(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
@@ -576,7 +723,8 @@ def get_users(_admin=Depends(require_it)):
         cursor = connection.cursor(dictionary=True)
         cursor.execute(
             """
-            SELECT user_id, full_name, username, email, department, is_active, created_at
+            SELECT user_id, full_name, username, email, department,
+                must_change_password, is_active, created_at
             FROM users
             ORDER BY full_name, username
             """
@@ -595,7 +743,7 @@ def get_users(_admin=Depends(require_it)):
 def add_user(user: UserCreate, _admin=Depends(require_it)):
     try:
         connection = get_connection()
-        user_id = insert_user(connection, user, user.department)
+        user_id = insert_user(connection, user, user.department, True)
         return {"message": "User created", "user_id": user_id}
     except IntegrityError as exc:
         raise HTTPException(status_code=409, detail="Username already exists") from exc
@@ -656,7 +804,7 @@ def update_user(
         ]
         password_sql = ""
         if user.password:
-            password_sql = ", password_hash = %s"
+            password_sql = ", password_hash = %s, must_change_password = TRUE"
             values.append(hash_password(user.password))
         values.append(user_id)
 
@@ -747,7 +895,7 @@ def health():
 
 
 @app.get("/stations")
-def get_stations(_user=Depends(get_current_user)):
+def get_stations(_user=Depends(require_password_change_complete)):
 
     try:
         connection = get_connection()
@@ -761,8 +909,11 @@ def get_stations(_user=Depends(get_current_user)):
                 station_name,
                 CAST(latitude AS DOUBLE) AS latitude,
                 CAST(longitude AS DOUBLE) AS longitude,
-                status
+                status,
+                COALESCE(stations.recorded_by_username, creator.username) AS recorded_by
             FROM stations
+            LEFT JOIN users AS creator
+                ON creator.user_id = stations.created_by_user_id
             ORDER BY station_id
             """
         )
@@ -785,7 +936,7 @@ def get_stations(_user=Depends(get_current_user)):
 
 
 @app.post("/stations")
-def add_station(station: Station, _user=Depends(get_current_user)):
+def add_station(station: Station, user=Depends(require_password_change_complete)):
 
     try:
         connection = get_connection()
@@ -798,9 +949,11 @@ def add_station(station: Station, _user=Depends(get_current_user)):
                 station_name,
                 latitude,
                 longitude,
-                status
+                status,
+                created_by_user_id,
+                recorded_by_username
             )
-            VALUES (%s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """
 
         cursor.execute(
@@ -809,7 +962,9 @@ def add_station(station: Station, _user=Depends(get_current_user)):
                 station.station_name,
                 station.latitude,
                 station.longitude,
-                station.status
+                station.status,
+                user["user_id"],
+                user["username"],
             )
         )
 
@@ -903,7 +1058,7 @@ def delete_station(station_id: int, _admin=Depends(require_it)):
 @app.get("/instruments")
 def get_instruments(
     active_only: bool = False,
-    _user=Depends(get_current_user),
+    _user=Depends(require_password_change_complete),
 ):
 
     try:
@@ -913,18 +1068,21 @@ def get_instruments(
         cursor = connection.cursor(dictionary=True)
         query = """
             SELECT
-                instrument_id,
-                instrument_name,
-                category,
-                description,
-                is_active
+                instruments.instrument_id,
+                instruments.instrument_name,
+                instruments.category,
+                instruments.description,
+                instruments.is_active,
+                COALESCE(instruments.recorded_by_username, creator.username) AS recorded_by
             FROM instruments
+            LEFT JOIN users AS creator
+                ON creator.user_id = instruments.created_by_user_id
         """
 
         if active_only:
-            query += " WHERE is_active = TRUE"
+            query += " WHERE instruments.is_active = TRUE"
 
-        query += " ORDER BY instrument_name"
+        query += " ORDER BY instruments.instrument_name"
         cursor.execute(query)
 
         return cursor.fetchall()
@@ -943,7 +1101,7 @@ def get_instruments(
 
 
 @app.post("/instruments", status_code=201)
-def add_instrument(instrument: Instrument, _user=Depends(get_current_user)):
+def add_instrument(instrument: Instrument, user=Depends(require_password_change_complete)):
 
     try:
         connection = get_connection()
@@ -956,15 +1114,19 @@ def add_instrument(instrument: Instrument, _user=Depends(get_current_user)):
                 instrument_name,
                 category,
                 description,
-                is_active
+                is_active,
+                created_by_user_id,
+                recorded_by_username
             )
-            VALUES (%s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s)
             """,
             (
                 instrument.instrument_name.strip(),
                 instrument.category.strip() if instrument.category else None,
                 instrument.description.strip() if instrument.description else None,
-                instrument.is_active
+                instrument.is_active,
+                user["user_id"],
+                user["username"],
             )
         )
         connection.commit()
@@ -1074,7 +1236,7 @@ def delete_instrument(instrument_id: int, _admin=Depends(require_it)):
 @app.get("/maintenance")
 def get_maintenance_records(
     station_id: int | None = Query(default=None, gt=0),
-    _user=Depends(get_current_user),
+    _user=Depends(require_password_change_complete),
 ):
 
     try:
@@ -1092,11 +1254,17 @@ def get_maintenance_records(
                 activity_done,
                 recommendations,
                 technicians,
+                COALESCE(
+                    maintenance_records.recorded_by_username,
+                    creator.username
+                ) AS recorded_by,
                 instruments.instrument_id,
                 instruments.instrument_name
             FROM maintenance_records
             INNER JOIN stations
                 ON stations.station_id = maintenance_records.station_id
+            LEFT JOIN users AS creator
+                ON creator.user_id = maintenance_records.created_by_user_id
             LEFT JOIN maintenance_record_instruments
                 ON maintenance_record_instruments.maintenance_id =
                     maintenance_records.maintenance_id
@@ -1132,6 +1300,7 @@ def get_maintenance_records(
                     "activity_done": row["activity_done"],
                     "recommendations": row["recommendations"],
                     "technicians": row["technicians"],
+                    "recorded_by": row["recorded_by"],
                     "instruments": []
                 }
 
@@ -1159,7 +1328,7 @@ def get_maintenance_records(
 @app.post("/maintenance", status_code=201)
 def add_maintenance_record(
     record: MaintenanceRecord,
-    _user=Depends(get_current_user),
+    user=Depends(require_password_change_complete),
 ):
 
     try:
@@ -1205,9 +1374,11 @@ def add_maintenance_record(
                 issue,
                 activity_done,
                 recommendations,
-                technicians
+                technicians,
+                created_by_user_id,
+                recorded_by_username
             )
-            VALUES (%s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 record.station_id,
@@ -1216,7 +1387,9 @@ def add_maintenance_record(
                 record.activity_done.strip(),
                 record.recommendations.strip()
                     if record.recommendations else None,
-                record.technicians.strip()
+                record.technicians.strip(),
+                user["user_id"],
+                user["username"],
             )
         )
         maintenance_id = cursor.lastrowid

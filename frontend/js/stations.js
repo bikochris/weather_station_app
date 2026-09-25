@@ -39,11 +39,6 @@ async function deleteStation(stationId) {
 
 function appendStationActions(row, station) {
     const cell = appendCell(row, "");
-    if (!isITUser()) {
-        cell.textContent = "View only";
-        return;
-    }
-
     const group = document.createElement("div");
     group.className = "action-group";
     const editButton = document.createElement("button");
@@ -63,7 +58,8 @@ function appendStationActions(row, station) {
 
 async function loadStations() {
     const table = document.getElementById("stationTable");
-    showTableMessage(table, 6, "Loading stations...");
+    const columnCount = isITUser() ? 7 : 6;
+    showTableMessage(table, columnCount, "Loading stations...");
 
     try {
         const response = await apiFetch("/stations");
@@ -74,7 +70,7 @@ async function loadStations() {
         table.replaceChildren();
 
         if (!stationRecords.length) {
-            showTableMessage(table, 6, "No stations found.");
+            showTableMessage(table, columnCount, "No stations found.");
             return;
         }
 
@@ -85,11 +81,12 @@ async function loadStations() {
             appendCell(row, station.latitude);
             appendCell(row, station.longitude);
             appendCell(row, station.status);
-            appendStationActions(row, station);
+            appendCell(row, station.recorded_by || "Legacy record");
+            if (isITUser()) appendStationActions(row, station);
             table.appendChild(row);
         });
     } catch (error) {
-        showTableMessage(table, 6, error.message);
+        showTableMessage(table, columnCount, error.message);
     }
 }
 

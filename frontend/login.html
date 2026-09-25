@@ -56,6 +56,23 @@
                     <p id="setupMessage" class="message" aria-live="polite"></p>
                 </form>
             </div>
+
+            <div id="passwordChangeSection" hidden>
+                <h1>Choose a new password</h1>
+                <p class="muted">Replace the temporary password before continuing.</p>
+                <form id="passwordChangeForm" class="auth-form">
+                    <div class="field">
+                        <label for="newPassword">New password</label>
+                        <input type="password" id="newPassword" minlength="8" maxlength="128" autocomplete="new-password" required>
+                    </div>
+                    <div class="field">
+                        <label for="newPasswordConfirm">Confirm new password</label>
+                        <input type="password" id="newPasswordConfirm" minlength="8" maxlength="128" autocomplete="new-password" required>
+                    </div>
+                    <button type="submit">Set new password</button>
+                    <p id="passwordChangeMessage" class="message" aria-live="polite"></p>
+                </form>
+            </div>
         </section>
     </main>
 

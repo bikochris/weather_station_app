@@ -38,10 +38,6 @@ async function deleteInstrument(instrumentId) {
 
 function appendInstrumentActions(row, instrument) {
     const cell = appendCell(row, "");
-    if (!isITUser()) {
-        cell.textContent = "View only";
-        return;
-    }
     const group = document.createElement("div");
     group.className = "action-group";
     const editButton = document.createElement("button");
@@ -61,7 +57,8 @@ function appendInstrumentActions(row, instrument) {
 
 async function loadInstruments() {
     const table = document.getElementById("instrumentTable");
-    showTableMessage(table, 6, "Loading instruments...");
+    const columnCount = isITUser() ? 7 : 6;
+    showTableMessage(table, columnCount, "Loading instruments...");
     try {
         const response = await apiFetch("/instruments");
         if (!response.ok) {
@@ -70,7 +67,7 @@ async function loadInstruments() {
         instrumentRecords = await response.json();
         table.replaceChildren();
         if (!instrumentRecords.length) {
-            showTableMessage(table, 6, "No instruments found.");
+            showTableMessage(table, columnCount, "No instruments found.");
             return;
         }
         instrumentRecords.forEach((instrument) => {
@@ -84,11 +81,12 @@ async function loadInstruments() {
             status.className = instrument.is_active ? "status active" : "status";
             status.textContent = instrument.is_active ? "Active" : "Inactive";
             statusCell.appendChild(status);
-            appendInstrumentActions(row, instrument);
+            appendCell(row, instrument.recorded_by || "Legacy record");
+            if (isITUser()) appendInstrumentActions(row, instrument);
             table.appendChild(row);
         });
     } catch (error) {
-        showTableMessage(table, 6, error.message);
+        showTableMessage(table, columnCount, error.message);
     }
 }
 

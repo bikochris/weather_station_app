@@ -51,6 +51,10 @@ async function requireSession() {
     }
 
     currentUser = await response.json();
+    if (currentUser.must_change_password) {
+        window.location.href = "login.html";
+        return null;
+    }
     document.querySelectorAll("[data-user-name]").forEach((element) => {
         element.textContent = currentUser.full_name;
     });

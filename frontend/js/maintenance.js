@@ -103,10 +103,6 @@ async function deleteMaintenance(maintenanceId) {
 
 function appendMaintenanceActions(row, record) {
     const cell = appendCell(row, "");
-    if (!isITUser()) {
-        cell.textContent = "View only";
-        return;
-    }
     const group = document.createElement("div");
     group.className = "action-group";
     const editButton = document.createElement("button");
@@ -130,7 +126,8 @@ async function loadMaintenanceRecords() {
     const endpoint = stationId
         ? `/maintenance?station_id=${encodeURIComponent(stationId)}`
         : "/maintenance";
-    showTableMessage(table, 9, "Loading maintenance records...");
+    const columnCount = isITUser() ? 10 : 9;
+    showTableMessage(table, columnCount, "Loading maintenance records...");
 
     try {
         const response = await apiFetch(endpoint);
@@ -140,7 +137,7 @@ async function loadMaintenanceRecords() {
         maintenanceRecords = await response.json();
         table.replaceChildren();
         if (!maintenanceRecords.length) {
-            showTableMessage(table, 9, "No maintenance records found.");
+            showTableMessage(table, columnCount, "No maintenance records found.");
             return;
         }
         maintenanceRecords.forEach((record) => {
@@ -156,11 +153,12 @@ async function loadMaintenanceRecords() {
             appendCell(row, record.activity_done);
             appendCell(row, record.recommendations);
             appendCell(row, record.technicians);
-            appendMaintenanceActions(row, record);
+            appendCell(row, record.recorded_by || "Legacy record");
+            if (isITUser()) appendMaintenanceActions(row, record);
             table.appendChild(row);
         });
     } catch (error) {
-        showTableMessage(table, 9, error.message);
+        showTableMessage(table, columnCount, error.message);
     }
 }
 
