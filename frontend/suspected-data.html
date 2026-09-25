@@ -128,10 +128,11 @@
             </div>
 
             <form id="finalReviewForm" class="form-grid">
-                <input type="hidden" id="finalReviewRecordId">
                 <div class="field span-2">
                     <label for="finalReviewRecord">Resolved issue</label>
-                    <input type="text" id="finalReviewRecord" readonly>
+                    <select id="finalReviewRecord" required>
+                        <option value="">Loading resolved issues...</option>
+                    </select>
                 </div>
 
                 <div class="field">
@@ -148,8 +149,8 @@
                 </div>
 
                 <div class="form-actions span-2">
-                    <button type="submit">Save final review</button>
-                    <button class="secondary-button" type="button" id="cancelFinalReview">Cancel</button>
+                    <button type="submit" id="saveFinalReview">Save final review</button>
+                    <button class="secondary-button" type="button" id="cancelFinalReview">Clear</button>
                 </div>
                 <p id="finalReviewMessage" class="message span-2" aria-live="polite"></p>
             </form>
@@ -213,6 +214,6 @@
 
     <script src="js/config.js"></script>
     <script src="js/api.js?v=20260925"></script>
-    <script src="js/suspected-data.js?v=20260925c"></script>
+    <script src="js/suspected-data.js?v=20260925e"></script>
 </body>
 </html>

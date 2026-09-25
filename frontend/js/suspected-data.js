@@ -1,4 +1,5 @@
 let suspectedDataRecords = [];
+let finalReviewRecords = [];
 
 
 async function loadSuspectedDataStationOptions() {
@@ -35,28 +36,70 @@ function closeResolutionForm() {
 
 function closeFinalReviewForm() {
     document.getElementById("finalReviewForm").reset();
-    document.getElementById("finalReviewRecordId").value = "";
-    document.getElementById("finalReviewSection").hidden = true;
+    setFinalReviewControlsDisabled(true);
     setMessage(document.getElementById("finalReviewMessage"), "");
 }
 
 
-function reviewFinalResult(recordId) {
-    const record = suspectedDataRecords.find(
-        (item) => item.suspected_data_id === recordId
+function setFinalReviewControlsDisabled(disabled) {
+    document.getElementById("finalReviewSolved").disabled = disabled;
+    document.getElementById("finalReviewComment").disabled = disabled;
+    document.getElementById("saveFinalReview").disabled = disabled;
+}
+
+
+function populateFinalReviewOptions(selectedRecordId = "") {
+    const select = document.getElementById("finalReviewRecord");
+    const section = document.getElementById("finalReviewSection");
+    section.hidden =
+        !(isDataUser() || isITUser()) || !finalReviewRecords.length;
+    select.replaceChildren(new Option(
+        finalReviewRecords.length
+            ? "Select a resolved issue"
+            : "No resolved issues available for review",
+        ""
+    ));
+    finalReviewRecords.forEach((record) => {
+        const reviewState = record.final_comment ? "Reviewed" : "Awaiting review";
+        select.appendChild(new Option(
+            `${record.station_code} - ${record.station_name}: ${record.issue} (${reviewState})`,
+            record.suspected_data_id
+        ));
+    });
+    select.disabled = !finalReviewRecords.length;
+    if (selectedRecordId) select.value = String(selectedRecordId);
+    setFinalReviewControlsDisabled(!select.value);
+}
+
+
+function reviewFinalResult(recordId, scrollToSection = true) {
+    const record = finalReviewRecords.find(
+        (item) => item.suspected_data_id === Number(recordId)
     );
     if (!record || record.status !== "Resolved") return;
-    document.getElementById("finalReviewRecordId").value = record.suspected_data_id;
-    document.getElementById("finalReviewRecord").value =
-        `${record.station_code} - ${record.station_name}: ${record.issue}`;
+    document.getElementById("finalReviewRecord").value = record.suspected_data_id;
     document.getElementById("finalReviewSolved").value =
         record.final_is_solved === 0 || record.final_is_solved === false
             ? "false"
             : "true";
     document.getElementById("finalReviewComment").value = record.final_comment || "";
+    setFinalReviewControlsDisabled(false);
     const section = document.getElementById("finalReviewSection");
-    section.hidden = false;
-    section.scrollIntoView({behavior: "smooth"});
+    if (scrollToSection) section.scrollIntoView({behavior: "smooth"});
+}
+
+
+async function loadFinalReviewRecords() {
+    if (!(isDataUser() || isITUser())) return;
+    const response = await apiFetch("/suspected-data?status=Resolved");
+    if (!response.ok) {
+        throw new Error(await getErrorMessage(
+            response,
+            "Unable to load resolved issues for review"
+        ));
+    }
+    finalReviewRecords = await response.json();
+    populateFinalReviewOptions();
 }
 
 
@@ -167,6 +210,7 @@ async function loadSuspectedDataRecords() {
             ));
         }
         suspectedDataRecords = await response.json();
+        await loadFinalReviewRecords();
         table.replaceChildren();
         if (!suspectedDataRecords.length) {
             showTableMessage(table, columnCount, "No suspected data records found.");
@@ -247,6 +291,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     resolutionForm.addEventListener("submit", async (event) => {
         event.preventDefault();
         const recordId = document.getElementById("resolutionId").value;
+        const resolutionStatus = document.getElementById("resolutionStatus").value;
         setMessage(resolutionMessage, "Saving...");
         try {
             const response = await apiFetch(`/suspected-data/${recordId}`, {
@@ -259,7 +304,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     maintenance_date: document.getElementById("maintenanceDate").value || null,
                     maintenance_issue: document.getElementById("maintenanceIssue").value.trim() || null,
                     how_solved: document.getElementById("howSolved").value.trim() || null,
-                    status: document.getElementById("resolutionStatus").value
+                    status: resolutionStatus
                 })
             });
             if (!response.ok) {
@@ -267,6 +312,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
             closeResolutionForm();
             await loadSuspectedDataRecords();
+            if (resolutionStatus === "Resolved" && (isDataUser() || isITUser())) {
+                reviewFinalResult(recordId);
+            }
         } catch (error) {
             setMessage(resolutionMessage, error.message, "error");
         }
@@ -276,7 +324,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         "submit",
         async (event) => {
             event.preventDefault();
-            const recordId = document.getElementById("finalReviewRecordId").value;
+            const recordId = document.getElementById("finalReviewRecord").value;
+            if (!recordId) {
+                setMessage(finalReviewMessage, "Select a resolved issue to review.", "error");
+                return;
+            }
             setMessage(finalReviewMessage, "Saving...");
             try {
                 const response = await apiFetch(
@@ -309,6 +361,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("cancelFinalReview").addEventListener(
         "click",
         closeFinalReviewForm
+    );
+    document.getElementById("finalReviewRecord").addEventListener(
+        "change",
+        (event) => {
+            setMessage(finalReviewMessage, "");
+            if (!event.target.value) {
+                document.getElementById("finalReviewForm").reset();
+                setFinalReviewControlsDisabled(true);
+                return;
+            }
+            reviewFinalResult(event.target.value, false);
+        }
     );
     document.getElementById("refreshSuspectedData").addEventListener(
         "click",
