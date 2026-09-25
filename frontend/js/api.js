@@ -26,7 +26,11 @@ async function apiFetch(path, options = {}) {
         headers.set("Authorization", `Bearer ${token}`);
     }
 
-    const response = await fetch(`${API_URL}${path}`, {...options, headers});
+    const response = await fetch(`${API_URL}${path}`, {
+        ...options,
+        headers,
+        cache: options.cache || "no-store"
+    });
 
     if (response.status === 401) {
         clearAccessToken();
@@ -64,12 +68,28 @@ async function requireSession() {
     document.querySelectorAll(".it-only").forEach((element) => {
         element.hidden = currentUser.department !== "IT";
     });
+    document.querySelectorAll(".data-only").forEach((element) => {
+        element.hidden = currentUser.department !== "Data";
+    });
+    document.querySelectorAll(".maintenance-only").forEach((element) => {
+        element.hidden = currentUser.department !== "Maintenance";
+    });
     return currentUser;
 }
 
 
 function isITUser() {
     return currentUser?.department === "IT";
+}
+
+
+function isDataUser() {
+    return currentUser?.department === "Data";
+}
+
+
+function isMaintenanceUser() {
+    return currentUser?.department === "Maintenance";
 }
 
 

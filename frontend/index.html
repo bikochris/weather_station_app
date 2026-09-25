@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stations | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css">
+    <link rel="stylesheet" href="css/app.css?v=20260925c">
 </head>
 <body>
     <header class="app-header">
@@ -16,7 +16,9 @@
             <nav aria-label="Primary navigation">
                 <a class="active" href="index.html">Stations</a>
                 <a href="maintenance.html">Maintenance</a>
+                <a href="suspected-data.html">Suspected data</a>
                 <a href="instruments.html">Instruments</a>
+                <a href="station-instruments.html">Station instruments</a>
                 <a class="it-only" href="users.html" hidden>Users</a>
             </nav>
             <div class="user-menu">
@@ -37,7 +39,12 @@
 
             <form id="stationForm" class="form-grid">
                 <input type="hidden" id="stationEditId">
-                <div class="field span-2">
+                <div class="field">
+                    <label for="stationCode">Station ID</label>
+                    <input type="text" id="stationCode" maxlength="50" required>
+                </div>
+
+                <div class="field">
                     <label for="stationName">Station name</label>
                     <input type="text" id="stationName" maxlength="100" required>
                 </div>
@@ -52,13 +59,53 @@
                     <input type="number" step="any" min="-180" max="180" id="longitude" required>
                 </div>
 
-                <div class="field span-2">
-                    <label for="status">Status</label>
-                    <select id="status">
+                <div class="field">
+                    <label for="altitude">Altitude</label>
+                    <input type="number" step="any" id="altitude" required>
+                </div>
+
+                <div class="field">
+                    <label for="province">Province</label>
+                    <input type="text" id="province" maxlength="100" required>
+                </div>
+
+                <div class="field">
+                    <label for="district">District</label>
+                    <input type="text" id="district" maxlength="100" required>
+                </div>
+
+                <div class="field">
+                    <label for="sector">Sector</label>
+                    <input type="text" id="sector" maxlength="100" required>
+                </div>
+
+                <div class="field">
+                    <label for="stationCategory">Station category</label>
+                    <select id="stationCategory" required>
+                        <option value="">Select a category</option>
+                        <option value="Upper air station">Upper air station</option>
+                        <option value="Weather radar">Weather radar</option>
+                        <option value="Automatic Weather stations">Automatic Weather stations</option>
+                        <option value="Automatic Raingauge">Automatic Raingauge</option>
+                        <option value="Principal stations">Principal stations</option>
+                        <option value="Climatic stations">Climatic stations</option>
+                        <option value="Rainfall station">Rainfall station</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="status">Operational status</label>
+                    <select id="status" required>
                         <option value="Operational">Operational</option>
+                        <option value="Non-operational">Non-operational</option>
                         <option value="Maintenance">Maintenance</option>
                         <option value="Closed">Closed</option>
                     </select>
+                </div>
+
+                <div class="field span-2">
+                    <label for="stationComment">Comment</label>
+                    <textarea id="stationComment" maxlength="2000"></textarea>
                 </div>
 
                 <div class="form-actions span-2">
@@ -67,26 +114,67 @@
                 </div>
                 <p id="formMessage" class="message span-2" aria-live="polite"></p>
             </form>
+
+            <div class="import-tools">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Bulk entry</p>
+                        <h2>Import stations</h2>
+                    </div>
+                    <button class="secondary-button" id="downloadStationTemplate" type="button">CSV template</button>
+                </div>
+                <div class="form-grid">
+                    <div class="field span-2">
+                        <label for="stationCsvFile">CSV file</label>
+                        <input type="file" id="stationCsvFile" accept=".csv,text/csv">
+                    </div>
+                    <div class="form-actions span-2">
+                        <button type="button" id="uploadStations">Upload CSV</button>
+                    </div>
+                    <p id="importMessage" class="message span-2" aria-live="polite"></p>
+                </div>
+            </div>
         </section>
 
         <section>
-            <div class="section-heading">
+            <div class="section-heading history-heading">
                 <div>
                     <p class="eyebrow">Current network</p>
                     <h2>Stations</h2>
                 </div>
-                <button class="secondary-button" id="refreshStations" type="button">Refresh</button>
+                <div class="filter-bar">
+                    <div class="field filter-field">
+                        <label for="stationCategoryFilter">Station category</label>
+                        <select id="stationCategoryFilter">
+                            <option value="">All categories</option>
+                            <option value="Upper air station">Upper air station</option>
+                            <option value="Weather radar">Weather radar</option>
+                            <option value="Automatic Weather stations">Automatic Weather stations</option>
+                            <option value="Automatic Raingauge">Automatic Raingauge</option>
+                            <option value="Principal stations">Principal stations</option>
+                            <option value="Climatic stations">Climatic stations</option>
+                            <option value="Rainfall station">Rainfall station</option>
+                        </select>
+                    </div>
+                    <button class="secondary-button" id="refreshStations" type="button">Refresh</button>
+                </div>
             </div>
 
             <div class="table-wrap">
-                <table>
+                <table class="station-table">
                     <thead>
                         <tr>
-                            <th>ID</th>
+                            <th>Station ID</th>
                             <th>Station</th>
                             <th>Latitude</th>
                             <th>Longitude</th>
-                            <th>Status</th>
+                            <th>Altitude</th>
+                            <th>Province</th>
+                            <th>District</th>
+                            <th>Sector</th>
+                            <th>Station category</th>
+                            <th>Operational status</th>
+                            <th>Comment</th>
                             <th>Recorded by</th>
                             <th class="it-only" hidden>Actions</th>
                         </tr>
@@ -98,7 +186,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js"></script>
-    <script src="js/stations.js"></script>
+    <script src="js/api.js?v=20260925"></script>
+    <script src="js/stations.js?v=20260925d"></script>
 </body>
 </html>

@@ -14,10 +14,17 @@ function editStation(stationId) {
     if (!station) return;
 
     document.getElementById("stationEditId").value = station.station_id;
+    document.getElementById("stationCode").value = station.station_code;
     document.getElementById("stationName").value = station.station_name;
     document.getElementById("latitude").value = station.latitude;
     document.getElementById("longitude").value = station.longitude;
+    document.getElementById("altitude").value = station.altitude ?? "";
+    document.getElementById("province").value = station.province || "";
+    document.getElementById("district").value = station.district || "";
+    document.getElementById("sector").value = station.sector || "";
+    document.getElementById("stationCategory").value = station.station_category || "";
     document.getElementById("status").value = station.status;
+    document.getElementById("stationComment").value = station.comment || "";
     document.getElementById("stationSubmit").textContent = "Save changes";
     document.getElementById("cancelStationEdit").hidden = false;
     document.getElementById("stationForm").scrollIntoView({behavior: "smooth"});
@@ -58,7 +65,7 @@ function appendStationActions(row, station) {
 
 async function loadStations() {
     const table = document.getElementById("stationTable");
-    const columnCount = isITUser() ? 7 : 6;
+    const columnCount = isITUser() ? 13 : 12;
     showTableMessage(table, columnCount, "Loading stations...");
 
     try {
@@ -69,24 +76,112 @@ async function loadStations() {
         stationRecords = await response.json();
         table.replaceChildren();
 
-        if (!stationRecords.length) {
-            showTableMessage(table, columnCount, "No stations found.");
+        const categoryFilter = document.getElementById("stationCategoryFilter").value;
+        const visibleStations = categoryFilter
+            ? stationRecords.filter(
+                (station) => station.station_category === categoryFilter
+            )
+            : stationRecords;
+
+        if (!visibleStations.length) {
+            showTableMessage(
+                table,
+                columnCount,
+                categoryFilter
+                    ? "No stations found in this category."
+                    : "No stations found."
+            );
             return;
         }
 
-        stationRecords.forEach((station) => {
+        visibleStations.forEach((station) => {
             const row = document.createElement("tr");
-            appendCell(row, station.station_id);
+            appendCell(row, station.station_code);
             appendCell(row, station.station_name);
             appendCell(row, station.latitude);
             appendCell(row, station.longitude);
+            appendCell(row, station.altitude);
+            appendCell(row, station.province);
+            appendCell(row, station.district);
+            appendCell(row, station.sector);
+            appendCell(row, station.station_category || "Not classified");
             appendCell(row, station.status);
+            appendCell(row, station.comment);
             appendCell(row, station.recorded_by || "Legacy record");
             if (isITUser()) appendStationActions(row, station);
             table.appendChild(row);
         });
     } catch (error) {
         showTableMessage(table, columnCount, error.message);
+    }
+}
+
+
+function downloadStationTemplate() {
+    const header = [
+        "station_id",
+        "station_name",
+        "latitude",
+        "longitude",
+        "altitude",
+        "province",
+        "district",
+        "sector",
+        "station_category",
+        "operational_status",
+        "comment"
+    ];
+    const example = [
+        "ST-001",
+        "Central Station",
+        "-1.9441",
+        "30.0619",
+        "1490",
+        "Kigali City",
+        "Nyarugenge",
+        "Nyarugenge",
+        "Automatic Weather stations",
+        "Operational",
+        "Primary station"
+    ];
+    const blob = new Blob(
+        [`${header.join(",")}\r\n${example.join(",")}\r\n`],
+        {type: "text/csv;charset=utf-8"}
+    );
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "station_import_template.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+}
+
+
+async function uploadStations() {
+    const input = document.getElementById("stationCsvFile");
+    const message = document.getElementById("importMessage");
+    const file = input.files[0];
+    if (!file) {
+        setMessage(message, "Select a CSV file.", "error");
+        return;
+    }
+
+    setMessage(message, "Uploading stations...");
+    try {
+        const response = await apiFetch("/stations/import", {
+            method: "POST",
+            headers: {"Content-Type": "text/csv; charset=utf-8"},
+            body: await file.text()
+        });
+        if (!response.ok) {
+            throw new Error(await getErrorMessage(response, "Unable to import stations"));
+        }
+        const result = await response.json();
+        input.value = "";
+        setMessage(message, `${result.imported} station(s) imported.`, "success");
+        await loadStations();
+    } catch (error) {
+        setMessage(message, error.message, "error");
     }
 }
 
@@ -103,10 +198,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         setMessage(message, "Saving...");
         const editId = document.getElementById("stationEditId").value;
         const station = {
+            station_code: document.getElementById("stationCode").value.trim(),
             station_name: document.getElementById("stationName").value.trim(),
             latitude: Number(document.getElementById("latitude").value),
             longitude: Number(document.getElementById("longitude").value),
-            status: document.getElementById("status").value
+            altitude: Number(document.getElementById("altitude").value),
+            province: document.getElementById("province").value.trim(),
+            district: document.getElementById("district").value.trim(),
+            sector: document.getElementById("sector").value.trim(),
+            station_category: document.getElementById("stationCategory").value,
+            status: document.getElementById("status").value,
+            comment: document.getElementById("stationComment").value.trim() || null
         };
 
         try {
@@ -128,5 +230,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     document.getElementById("cancelStationEdit").addEventListener("click", resetStationForm);
     document.getElementById("refreshStations").addEventListener("click", loadStations);
+    document.getElementById("stationCategoryFilter").addEventListener(
+        "change",
+        loadStations
+    );
+    document.getElementById("downloadStationTemplate").addEventListener(
+        "click",
+        downloadStationTemplate
+    );
+    document.getElementById("uploadStations").addEventListener("click", uploadStations);
     loadStations();
 });

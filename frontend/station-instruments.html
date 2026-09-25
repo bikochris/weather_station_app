@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Station Instruments | Weather Station Management</title>
+    <link rel="stylesheet" href="css/app.css?v=20260925c">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div>
+                <p class="eyebrow">Operations</p>
+                <h1>Weather Station Management</h1>
+            </div>
+            <nav aria-label="Primary navigation">
+                <a href="index.html">Stations</a>
+                <a href="maintenance.html">Maintenance</a>
+                <a href="suspected-data.html">Suspected data</a>
+                <a href="instruments.html">Instruments</a>
+                <a class="active" href="station-instruments.html">Station instruments</a>
+                <a class="it-only" href="users.html" hidden>Users</a>
+            </nav>
+            <div class="user-menu">
+                <span><strong data-user-name></strong><small data-user-department></small></span>
+                <button class="header-button" type="button" data-logout>Sign out</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="wide-main">
+        <section id="stationInstrumentEditor">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Installed equipment</p>
+                    <h2>Add station instrument</h2>
+                </div>
+            </div>
+
+            <form id="stationInstrumentForm" class="form-grid">
+                <input type="hidden" id="stationInstrumentEditId">
+                <div class="field">
+                    <label for="stationId">Station</label>
+                    <select id="stationId" required></select>
+                </div>
+                <div class="field">
+                    <label for="instrumentId">Instrument</label>
+                    <select id="instrumentId" required></select>
+                </div>
+                <div class="field">
+                    <label for="model">Model <span class="muted">(optional)</span></label>
+                    <input type="text" id="model" maxlength="100">
+                </div>
+                <div class="field">
+                    <label for="manufacturer">Manufacturer <span class="muted">(optional)</span></label>
+                    <input type="text" id="manufacturer" maxlength="100">
+                </div>
+                <div class="field span-2">
+                    <label for="serialNumber">Serial number <span class="muted">(optional)</span></label>
+                    <input type="text" id="serialNumber" maxlength="100">
+                </div>
+                <div class="field">
+                    <label for="installationDate">Installation date</label>
+                    <input type="date" id="installationDate" required>
+                </div>
+                <div class="field">
+                    <label for="calibrationReplacementDate">Calibration / replacement date</label>
+                    <input type="date" id="calibrationReplacementDate" required>
+                </div>
+                <div class="field span-2">
+                    <label for="stationInstrumentStatus">Status</label>
+                    <select id="stationInstrumentStatus" required>
+                        <option value="Operational">Operational</option>
+                        <option value="Needs Calibration">Needs Calibration</option>
+                        <option value="Needs Replacement">Needs Replacement</option>
+                        <option value="Under Maintenance">Under Maintenance</option>
+                        <option value="Inactive">Inactive</option>
+                    </select>
+                </div>
+                <div class="form-actions span-2">
+                    <button type="submit" id="stationInstrumentSubmit">Add station instrument</button>
+                    <button class="secondary-button" type="button" id="cancelStationInstrumentEdit" hidden>Cancel</button>
+                </div>
+                <p id="stationInstrumentMessage" class="message span-2" aria-live="polite"></p>
+            </form>
+        </section>
+
+        <section>
+            <div class="section-heading history-heading">
+                <div>
+                    <p class="eyebrow">Station inventory</p>
+                    <h2>Instrument status by station</h2>
+                </div>
+                <div class="filter-bar">
+                    <div class="field filter-field">
+                        <label for="stationFilter">Station</label>
+                        <select id="stationFilter"></select>
+                    </div>
+                    <button class="secondary-button" type="button" id="refreshStationInstruments">Refresh</button>
+                </div>
+            </div>
+
+            <div class="table-wrap">
+                <table class="station-instrument-table">
+                    <thead>
+                        <tr>
+                            <th>Station</th>
+                            <th>Station category</th>
+                            <th>Instrument</th>
+                            <th>Parameters</th>
+                            <th>Model</th>
+                            <th>Manufacturer</th>
+                            <th>Serial number</th>
+                            <th>Installation date</th>
+                            <th>Calibration / replacement</th>
+                            <th>Status</th>
+                            <th>Recorded by</th>
+                            <th>Recorded at</th>
+                            <th>Updated by</th>
+                            <th>Updated at</th>
+                            <th id="stationInstrumentActionsHeading">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stationInstrumentTable">
+                        <tr><td colspan="15">Loading station instruments...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="js/config.js"></script>
+    <script src="js/api.js?v=20260925"></script>
+    <script src="js/station-instruments.js?v=20260925c"></script>
+</body>
+</html>

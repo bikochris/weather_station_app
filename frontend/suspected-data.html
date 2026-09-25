@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suspected Data | Weather Station Management</title>
+    <link rel="stylesheet" href="css/app.css?v=20260925c">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div>
+                <p class="eyebrow">Operations</p>
+                <h1>Weather Station Management</h1>
+            </div>
+            <nav aria-label="Primary navigation">
+                <a href="index.html">Stations</a>
+                <a href="maintenance.html">Maintenance</a>
+                <a class="active" href="suspected-data.html">Suspected data</a>
+                <a href="instruments.html">Instruments</a>
+                <a href="station-instruments.html">Station instruments</a>
+                <a class="it-only" href="users.html" hidden>Users</a>
+            </nav>
+            <div class="user-menu">
+                <span><strong data-user-name></strong><small data-user-department></small></span>
+                <button class="header-button" type="button" data-logout>Sign out</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="wide-main">
+        <section id="reportSection">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Data quality</p>
+                    <h2>Report suspected data</h2>
+                </div>
+            </div>
+
+            <form id="suspectedDataForm" class="form-grid">
+                <div class="field">
+                    <label for="stationId">Station</label>
+                    <select id="stationId" required>
+                        <option value="">Loading stations...</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="issue">Suspected issue</label>
+                    <input type="text" id="issue" maxlength="255" placeholder="What data appears incorrect?" required>
+                </div>
+
+                <div class="field span-2">
+                    <label for="description">Description</label>
+                    <textarea id="description" maxlength="2000" placeholder="Describe the value, time period, and reason for suspicion" required></textarea>
+                </div>
+
+                <div class="form-actions span-2">
+                    <button type="submit">Save report</button>
+                </div>
+                <p id="reportMessage" class="message span-2" aria-live="polite"></p>
+            </form>
+        </section>
+
+        <section id="resolutionSection" hidden>
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Maintenance resolution</p>
+                    <h2>Resolve suspected data</h2>
+                </div>
+            </div>
+
+            <form id="resolutionForm" class="form-grid">
+                <input type="hidden" id="resolutionId">
+                <div class="field">
+                    <label for="resolutionStationId">Station</label>
+                    <select id="resolutionStationId" required></select>
+                </div>
+
+                <div class="field">
+                    <label for="resolutionIssue">Suspected issue</label>
+                    <input type="text" id="resolutionIssue" maxlength="255" required>
+                </div>
+
+                <div class="field span-2">
+                    <label for="resolutionDescription">Description</label>
+                    <textarea id="resolutionDescription" maxlength="2000" required></textarea>
+                </div>
+
+                <div class="field">
+                    <label for="maintenanceDate">Maintenance date</label>
+                    <input type="date" id="maintenanceDate">
+                </div>
+
+                <div class="field">
+                    <label for="resolutionStatus">Status</label>
+                    <select id="resolutionStatus" required>
+                        <option value="Open">Open</option>
+                        <option value="Under Review">Under Review</option>
+                        <option value="Resolved">Resolved</option>
+                    </select>
+                </div>
+
+                <div class="field span-2">
+                    <label for="maintenanceIssue">Maintenance findings</label>
+                    <textarea id="maintenanceIssue" maxlength="2000" placeholder="Record the fault or cause found"></textarea>
+                </div>
+
+                <div class="field span-2">
+                    <label for="howSolved">How solved</label>
+                    <textarea id="howSolved" maxlength="2000" placeholder="Record the corrective action taken"></textarea>
+                </div>
+
+                <div class="form-actions span-2">
+                    <button type="submit">Save resolution</button>
+                    <button class="secondary-button" type="button" id="cancelResolution">Cancel</button>
+                </div>
+                <p id="resolutionMessage" class="message span-2" aria-live="polite"></p>
+            </form>
+        </section>
+
+        <section id="finalReviewSection" hidden>
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Data final review</p>
+                    <h2>Confirm the final result</h2>
+                </div>
+            </div>
+
+            <form id="finalReviewForm" class="form-grid">
+                <input type="hidden" id="finalReviewRecordId">
+                <div class="field span-2">
+                    <label for="finalReviewRecord">Resolved issue</label>
+                    <input type="text" id="finalReviewRecord" readonly>
+                </div>
+
+                <div class="field">
+                    <label for="finalReviewSolved">Is the issue finally solved?</label>
+                    <select id="finalReviewSolved" required>
+                        <option value="true">Yes</option>
+                        <option value="false">No</option>
+                    </select>
+                </div>
+
+                <div class="field span-2">
+                    <label for="finalReviewComment">Final Data comment</label>
+                    <textarea id="finalReviewComment" maxlength="2000" placeholder="Confirm the data result after maintenance" required></textarea>
+                </div>
+
+                <div class="form-actions span-2">
+                    <button type="submit">Save final review</button>
+                    <button class="secondary-button" type="button" id="cancelFinalReview">Cancel</button>
+                </div>
+                <p id="finalReviewMessage" class="message span-2" aria-live="polite"></p>
+            </form>
+        </section>
+
+        <section>
+            <div class="section-heading history-heading">
+                <div>
+                    <p class="eyebrow">Data quality history</p>
+                    <h2>Suspected data records</h2>
+                </div>
+                <div class="filter-bar">
+                    <div class="field filter-field">
+                        <label for="stationFilter">Station</label>
+                        <select id="stationFilter">
+                            <option value="">All stations</option>
+                        </select>
+                    </div>
+                    <div class="field filter-field status-filter-field">
+                        <label for="statusFilter">Status</label>
+                        <select id="statusFilter">
+                            <option value="">All statuses</option>
+                            <option value="Open">Open</option>
+                            <option value="Under Review">Under Review</option>
+                            <option value="Resolved">Resolved</option>
+                        </select>
+                    </div>
+                    <button class="secondary-button" type="button" id="refreshSuspectedData">Refresh</button>
+                </div>
+            </div>
+
+            <div class="table-wrap">
+                <table class="suspected-data-table">
+                    <thead>
+                        <tr>
+                            <th>Station</th>
+                            <th>Suspected issue</th>
+                            <th>Description</th>
+                            <th>Reported by</th>
+                            <th>Reported at</th>
+                            <th>Maintenance date</th>
+                            <th>Maintenance findings</th>
+                            <th>How solved</th>
+                            <th>Resolved by</th>
+                            <th>Resolved at</th>
+                            <th>Status</th>
+                            <th>Finally solved?</th>
+                            <th>Final comment</th>
+                            <th>Final reviewed by</th>
+                            <th>Final reviewed at</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="suspectedDataTable">
+                        <tr><td colspan="16">Loading suspected data records...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="js/config.js"></script>
+    <script src="js/api.js?v=20260925"></script>
+    <script src="js/suspected-data.js?v=20260925c"></script>
+</body>
+</html>

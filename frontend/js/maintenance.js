@@ -1,4 +1,6 @@
 let maintenanceRecords = [];
+let maintenanceStations = [];
+let maintenanceInstrumentCatalog = [];
 
 
 async function loadStationOptions() {
@@ -9,19 +11,22 @@ async function loadStationOptions() {
         throw new Error(await getErrorMessage(response, "Unable to load stations"));
     }
 
-    const stations = await response.json();
+    maintenanceStations = await response.json();
     formSelect.replaceChildren();
     filterSelect.replaceChildren();
     const placeholder = new Option(
-        stations.length ? "Select a station" : "No stations available",
+        maintenanceStations.length ? "Select a station" : "No stations available",
         ""
     );
     formSelect.appendChild(placeholder);
     filterSelect.appendChild(new Option("All stations", ""));
-    stations.forEach((station) => {
-        formSelect.appendChild(new Option(station.station_name, station.station_id));
-        filterSelect.appendChild(new Option(station.station_name, station.station_id));
+    maintenanceStations.forEach((station) => {
+        const category = station.station_category || "Not classified";
+        const label = `${station.station_code} - ${station.station_name} (${category})`;
+        formSelect.appendChild(new Option(label, station.station_id));
+        filterSelect.appendChild(new Option(label, station.station_id));
     });
+    renderMaintenanceInstrumentOptions();
 }
 
 
@@ -32,12 +37,39 @@ async function loadInstrumentOptions() {
         throw new Error(await getErrorMessage(response, "Unable to load instruments"));
     }
 
-    const instruments = await response.json();
+    maintenanceInstrumentCatalog = await response.json();
+    renderMaintenanceInstrumentOptions();
+}
+
+
+function renderMaintenanceInstrumentOptions(selectedIds = new Set()) {
+    const container = document.getElementById("instrumentOptions");
+    const stationId = Number(document.getElementById("stationId").value);
+    const station = maintenanceStations.find((item) => item.station_id === stationId);
+    const instruments = station?.station_category
+        ? maintenanceInstrumentCatalog.filter((instrument) =>
+            (instrument.station_categories || []).includes(station.station_category)
+        )
+        : [];
     container.replaceChildren();
+    if (!station) {
+        const message = document.createElement("p");
+        message.className = "muted";
+        message.textContent = "Select a station to see its assigned instruments.";
+        container.appendChild(message);
+        return;
+    }
+    if (!station.station_category) {
+        const message = document.createElement("p");
+        message.className = "muted";
+        message.textContent = "Classify this station before selecting instruments.";
+        container.appendChild(message);
+        return;
+    }
     if (!instruments.length) {
         const message = document.createElement("p");
         message.className = "muted";
-        message.textContent = "No active instruments are available.";
+        message.textContent = "No active instruments are assigned to this station category.";
         container.appendChild(message);
         return;
     }
@@ -49,6 +81,7 @@ async function loadInstrumentOptions() {
         checkbox.type = "checkbox";
         checkbox.name = "instrumentIds";
         checkbox.value = instrument.instrument_id;
+        checkbox.checked = selectedIds.has(instrument.instrument_id);
         const details = document.createElement("span");
         const name = document.createElement("strong");
         name.textContent = instrument.instrument_name;
@@ -67,6 +100,7 @@ function resetMaintenanceForm() {
     document.getElementById("maintenanceDate").value = new Date().toISOString().slice(0, 10);
     document.getElementById("maintenanceSubmit").textContent = "Save maintenance record";
     document.getElementById("cancelMaintenanceEdit").hidden = true;
+    renderMaintenanceInstrumentOptions();
 }
 
 
@@ -75,15 +109,13 @@ function editMaintenance(maintenanceId) {
     if (!record) return;
     document.getElementById("maintenanceEditId").value = record.maintenance_id;
     document.getElementById("stationId").value = record.station_id;
+    const selectedIds = new Set(record.instruments.map((item) => item.instrument_id));
+    renderMaintenanceInstrumentOptions(selectedIds);
     document.getElementById("maintenanceDate").value = record.maintenance_date;
     document.getElementById("issue").value = record.issue;
     document.getElementById("activityDone").value = record.activity_done;
     document.getElementById("recommendations").value = record.recommendations || "";
     document.getElementById("technicians").value = record.technicians;
-    const selectedIds = new Set(record.instruments.map((item) => item.instrument_id));
-    document.querySelectorAll('input[name="instrumentIds"]').forEach((checkbox) => {
-        checkbox.checked = selectedIds.has(Number(checkbox.value));
-    });
     document.getElementById("maintenanceSubmit").textContent = "Save changes";
     document.getElementById("cancelMaintenanceEdit").hidden = false;
     document.getElementById("maintenanceForm").scrollIntoView({behavior: "smooth"});
@@ -146,7 +178,7 @@ async function loadMaintenanceRecords() {
                 ? record.instruments.map((instrument) => instrument.instrument_name).join(", ")
                 : "Not specified";
             appendCell(row, record.maintenance_id);
-            appendCell(row, record.station_name);
+            appendCell(row, `${record.station_code} - ${record.station_name}`);
             appendCell(row, record.maintenance_date);
             appendCell(row, names);
             appendCell(row, record.issue);
@@ -221,4 +253,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("cancelMaintenanceEdit").addEventListener("click", resetMaintenanceForm);
     document.getElementById("refreshMaintenance").addEventListener("click", loadMaintenanceRecords);
     document.getElementById("stationFilter").addEventListener("change", loadMaintenanceRecords);
+    document.getElementById("stationId").addEventListener(
+        "change",
+        () => renderMaintenanceInstrumentOptions()
+    );
 });

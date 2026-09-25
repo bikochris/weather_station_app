@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Instruments | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css">
+    <link rel="stylesheet" href="css/app.css?v=20260925c">
 </head>
 <body>
     <header class="app-header">
@@ -16,7 +16,9 @@
             <nav aria-label="Primary navigation">
                 <a href="index.html">Stations</a>
                 <a href="maintenance.html">Maintenance</a>
+                <a href="suspected-data.html">Suspected data</a>
                 <a class="active" href="instruments.html">Instruments</a>
+                <a href="station-instruments.html">Station instruments</a>
                 <a class="it-only" href="users.html" hidden>Users</a>
             </nav>
             <div class="user-menu">
@@ -44,7 +46,25 @@
 
                 <div class="field">
                     <label for="category">Category</label>
-                    <input type="text" id="category" maxlength="100" placeholder="Power, wind, pressure...">
+                    <input type="text" id="category" maxlength="100" placeholder="Power, wind, pressure..." required>
+                </div>
+
+                <fieldset class="span-2">
+                    <legend>Available at station categories</legend>
+                    <div class="category-checkbox-grid">
+                        <label><input type="checkbox" name="stationCategories" value="Upper air station"> Upper air station</label>
+                        <label><input type="checkbox" name="stationCategories" value="Weather radar"> Weather radar</label>
+                        <label><input type="checkbox" name="stationCategories" value="Automatic Weather stations"> Automatic Weather stations</label>
+                        <label><input type="checkbox" name="stationCategories" value="Automatic Raingauge"> Automatic Raingauge</label>
+                        <label><input type="checkbox" name="stationCategories" value="Principal stations"> Principal stations</label>
+                        <label><input type="checkbox" name="stationCategories" value="Climatic stations"> Climatic stations</label>
+                        <label><input type="checkbox" name="stationCategories" value="Rainfall station"> Rainfall station</label>
+                    </div>
+                </fieldset>
+
+                <div class="field span-2">
+                    <label for="parametersTaken">Parameters it takes</label>
+                    <input type="text" id="parametersTaken" maxlength="1000" placeholder="Air temperature, relative humidity..." required>
                 </div>
 
                 <div class="field span-2">
@@ -63,6 +83,26 @@
                 </div>
                 <p id="formMessage" class="message span-2" aria-live="polite"></p>
             </form>
+
+            <div class="import-tools">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Bulk entry</p>
+                        <h2>Import instruments</h2>
+                    </div>
+                    <button class="secondary-button" type="button" id="downloadInstrumentTemplate">CSV template</button>
+                </div>
+                <div class="form-grid">
+                    <div class="field span-2">
+                        <label for="instrumentCsvFile">CSV file</label>
+                        <input type="file" id="instrumentCsvFile" accept=".csv,text/csv">
+                    </div>
+                    <div class="form-actions span-2">
+                        <button type="button" id="uploadInstruments">Upload CSV</button>
+                    </div>
+                    <p id="importMessage" class="message span-2" aria-live="polite"></p>
+                </div>
+            </div>
         </section>
 
         <section>
@@ -75,12 +115,14 @@
             </div>
 
             <div class="table-wrap">
-                <table>
+                <table class="instrument-table">
                     <thead>
                         <tr>
                             <th>ID</th>
                             <th>Instrument</th>
+                            <th>Parameters it takes</th>
                             <th>Category</th>
+                            <th>Station categories</th>
                             <th>Description</th>
                             <th>Status</th>
                             <th>Recorded by</th>
@@ -94,7 +136,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js"></script>
-    <script src="js/instruments.js"></script>
+    <script src="js/api.js?v=20260925"></script>
+    <script src="js/instruments.js?v=20260925c"></script>
 </body>
 </html>

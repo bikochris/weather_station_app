@@ -10,12 +10,24 @@ function resetInstrumentForm() {
 }
 
 
+function selectedStationCategories() {
+    return Array.from(
+        document.querySelectorAll('input[name="stationCategories"]:checked')
+    ).map((checkbox) => checkbox.value);
+}
+
+
 function editInstrument(instrumentId) {
     const instrument = instrumentRecords.find((item) => item.instrument_id === instrumentId);
     if (!instrument) return;
     document.getElementById("instrumentEditId").value = instrument.instrument_id;
     document.getElementById("instrumentName").value = instrument.instrument_name;
+    document.getElementById("parametersTaken").value = instrument.parameters_taken || "";
     document.getElementById("category").value = instrument.category || "";
+    const categories = new Set(instrument.station_categories || []);
+    document.querySelectorAll('input[name="stationCategories"]').forEach((checkbox) => {
+        checkbox.checked = categories.has(checkbox.value);
+    });
     document.getElementById("description").value = instrument.description || "";
     document.getElementById("isActive").checked = Boolean(instrument.is_active);
     document.getElementById("instrumentSubmit").textContent = "Save changes";
@@ -57,7 +69,7 @@ function appendInstrumentActions(row, instrument) {
 
 async function loadInstruments() {
     const table = document.getElementById("instrumentTable");
-    const columnCount = isITUser() ? 7 : 6;
+    const columnCount = isITUser() ? 9 : 8;
     showTableMessage(table, columnCount, "Loading instruments...");
     try {
         const response = await apiFetch("/instruments");
@@ -74,7 +86,12 @@ async function loadInstruments() {
             const row = document.createElement("tr");
             appendCell(row, instrument.instrument_id);
             appendCell(row, instrument.instrument_name);
+            appendCell(row, instrument.parameters_taken || "Not specified");
             appendCell(row, instrument.category || "Not categorized");
+            appendCell(
+                row,
+                instrument.station_categories?.join(", ") || "Not assigned"
+            );
             appendCell(row, instrument.description || "");
             const statusCell = appendCell(row, "");
             const status = document.createElement("span");
@@ -91,6 +108,54 @@ async function loadInstruments() {
 }
 
 
+function downloadInstrumentTemplate() {
+    const csv = [
+        "instrument_name,parameters_it_takes,category,station_categories,description",
+        'Temperature Sensor,"Air temperature",Temperature,"Automatic Weather stations|Principal stations","Measures air temperature"'
+    ].join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], {type: "text/csv;charset=utf-8"}));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "instrument_import_template.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+
+async function uploadInstruments() {
+    const input = document.getElementById("instrumentCsvFile");
+    const message = document.getElementById("importMessage");
+    const file = input.files[0];
+    if (!file) {
+        setMessage(message, "Choose a CSV file first.", "error");
+        return;
+    }
+    setMessage(message, "Uploading...");
+    try {
+        const response = await apiFetch("/instruments/import", {
+            method: "POST",
+            headers: {"Content-Type": "text/csv;charset=utf-8"},
+            body: await file.text()
+        });
+        if (!response.ok) {
+            throw new Error(await getErrorMessage(response, "Unable to import instruments"));
+        }
+        const result = await response.json();
+        input.value = "";
+        setMessage(
+            message,
+            `${result.imported} instrument${result.imported === 1 ? "" : "s"} imported.`,
+            "success"
+        );
+        await loadInstruments();
+    } catch (error) {
+        setMessage(message, error.message, "error");
+    }
+}
+
+
 document.addEventListener("DOMContentLoaded", async () => {
     initializeShell();
     if (!await requireSession()) return;
@@ -101,9 +166,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         event.preventDefault();
         setMessage(message, "Saving...");
         const editId = document.getElementById("instrumentEditId").value;
+        const stationCategories = selectedStationCategories();
+        if (!stationCategories.length) {
+            setMessage(message, "Select at least one station category.", "error");
+            return;
+        }
         const instrument = {
             instrument_name: document.getElementById("instrumentName").value.trim(),
-            category: document.getElementById("category").value.trim() || null,
+            parameters_taken: document.getElementById("parametersTaken").value.trim(),
+            category: document.getElementById("category").value.trim(),
+            station_categories: stationCategories,
             description: document.getElementById("description").value.trim() || null,
             is_active: document.getElementById("isActive").checked
         };
@@ -129,5 +201,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     document.getElementById("cancelInstrumentEdit").addEventListener("click", resetInstrumentForm);
     document.getElementById("refreshInstruments").addEventListener("click", loadInstruments);
+    document.getElementById("downloadInstrumentTemplate").addEventListener(
+        "click",
+        downloadInstrumentTemplate
+    );
+    document.getElementById("uploadInstruments").addEventListener("click", uploadInstruments);
     loadInstruments();
 });

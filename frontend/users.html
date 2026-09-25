@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Users | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css">
+    <link rel="stylesheet" href="css/app.css?v=20260925c">
 </head>
 <body>
     <header class="app-header">
@@ -16,7 +16,9 @@
             <nav aria-label="Primary navigation">
                 <a href="index.html">Stations</a>
                 <a href="maintenance.html">Maintenance</a>
+                <a href="suspected-data.html">Suspected data</a>
                 <a href="instruments.html">Instruments</a>
+                <a href="station-instruments.html">Station instruments</a>
                 <a class="active it-only" href="users.html" hidden>Users</a>
             </nav>
             <div class="user-menu">
@@ -53,6 +55,7 @@
                     <label for="department">Department</label>
                     <select id="department" required>
                         <option value="Data">Data</option>
+                        <option value="Maintenance">Maintenance</option>
                         <option value="IT">IT</option>
                     </select>
                 </div>
@@ -99,7 +102,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js"></script>
-    <script src="js/users.js"></script>
+    <script src="js/api.js?v=20260925"></script>
+    <script src="js/users.js?v=20260925"></script>
 </body>
 </html>
