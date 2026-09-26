@@ -11,7 +11,7 @@ function renderSuspectedDataStatistics(summary) {
     renderBreakdown(
         "suspectedStatusBreakdown",
         Object.entries(summary.statuses || {}),
-        "No suspected data reports in this period"
+        "No QC reports in this period"
     );
     renderBreakdown(
         "suspectedMeasurementBreakdown",
@@ -51,12 +51,27 @@ function closeResolutionForm() {
     document.getElementById("resolutionForm").reset();
     document.getElementById("resolutionId").value = "";
     document.getElementById("resolutionSection").hidden = true;
+    updateMaintenanceOutcomeFields();
     setMessage(document.getElementById("resolutionMessage"), "");
+}
+
+
+function updateMaintenanceOutcomeFields() {
+    const outcome = document.getElementById("maintenanceOutcome").value;
+    const needsWayForward = outcome === "Not Solved" || outcome === "Not Maintained";
+    const wayForwardField = document.getElementById("wayForwardField");
+    const wayForward = document.getElementById("wayForward");
+    const howSolved = document.getElementById("howSolved");
+    wayForwardField.hidden = !needsWayForward;
+    wayForward.required = needsWayForward;
+    howSolved.required = outcome === "Solved";
+    if (!needsWayForward) wayForward.value = "";
 }
 
 
 function closeFinalReviewForm() {
     document.getElementById("finalReviewForm").reset();
+    document.getElementById("finalReviewSection").hidden = true;
     setFinalReviewControlsDisabled(true);
     setMessage(document.getElementById("finalReviewMessage"), "");
 }
@@ -71,8 +86,6 @@ function setFinalReviewControlsDisabled(disabled) {
 
 function populateFinalReviewOptions(selectedRecordId = "") {
     const select = document.getElementById("finalReviewRecord");
-    const section = document.getElementById("finalReviewSection");
-    section.hidden = !canPerformDataQualityActions() || !finalReviewRecords.length;
     select.replaceChildren(new Option(
         finalReviewRecords.length
             ? "Select a resolved issue"
@@ -105,6 +118,7 @@ function reviewFinalResult(recordId, scrollToSection = true) {
     document.getElementById("finalReviewComment").value = record.final_comment || "";
     setFinalReviewControlsDisabled(false);
     const section = document.getElementById("finalReviewSection");
+    section.hidden = false;
     if (scrollToSection) section.scrollIntoView({behavior: "smooth"});
 }
 
@@ -136,7 +150,10 @@ function reviewSuspectedData(recordId) {
         record.maintenance_date || new Date().toISOString().slice(0, 10);
     document.getElementById("maintenanceIssue").value = record.maintenance_issue || "";
     document.getElementById("howSolved").value = record.how_solved || "";
-    document.getElementById("resolutionStatus").value = record.status;
+    document.getElementById("maintenanceOutcome").value =
+        record.maintenance_outcome || (record.status === "Resolved" ? "Solved" : "");
+    document.getElementById("wayForward").value = record.way_forward || "";
+    updateMaintenanceOutcomeFields();
     const section = document.getElementById("resolutionSection");
     section.hidden = false;
     section.scrollIntoView({behavior: "smooth"});
@@ -144,7 +161,7 @@ function reviewSuspectedData(recordId) {
 
 
 async function deleteSuspectedData(recordId) {
-    if (!window.confirm("Delete this suspected data record?")) return;
+    if (!window.confirm("Delete this QC record?")) return;
     const response = await apiFetch(`/suspected-data/${recordId}`, {method: "DELETE"});
     if (!response.ok) {
         window.alert(await getErrorMessage(response, "Unable to delete record"));
@@ -222,14 +239,14 @@ async function loadSuspectedDataRecords() {
         date_to: document.getElementById("suspectedDateTo").value
     });
     const endpoint = `/suspected-data?${parameters}`;
-    const columnCount = 16;
-    showTableMessage(table, columnCount, "Loading suspected data records...");
+    const columnCount = 18;
+    showTableMessage(table, columnCount, "Loading QC records...");
     try {
         const response = await apiFetch(endpoint);
         if (!response.ok) {
             throw new Error(await getErrorMessage(
                 response,
-                "Unable to load suspected data records"
+                "Unable to load QC records"
             ));
         }
         const result = await response.json();
@@ -244,7 +261,7 @@ async function loadSuspectedDataRecords() {
         await loadFinalReviewRecords();
         table.replaceChildren();
         if (!suspectedDataRecords.length) {
-            showTableMessage(table, columnCount, "No suspected data records found.");
+            showTableMessage(table, columnCount, "No QC records found.");
             return;
         }
         suspectedDataRecords.forEach((record) => {
@@ -257,6 +274,8 @@ async function loadSuspectedDataRecords() {
             appendCell(row, record.maintenance_date || "-");
             appendCell(row, record.maintenance_issue || "-");
             appendCell(row, record.how_solved || "-");
+            appendCell(row, record.maintenance_outcome || "-");
+            appendCell(row, record.way_forward || "-");
             appendCell(row, record.resolved_by || "-");
             appendCell(row, formatTimestamp(record.resolved_at));
             appendStatusCell(row, record.status);
@@ -313,7 +332,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 throw new Error(await getErrorMessage(response, "Unable to save report"));
             }
             reportForm.reset();
-            setMessage(reportMessage, "Suspected data report saved.", "success");
+            setMessage(reportMessage, "QC report saved.", "success");
             await loadSuspectedDataRecords();
         } catch (error) {
             setMessage(reportMessage, error.message, "error");
@@ -323,7 +342,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     resolutionForm.addEventListener("submit", async (event) => {
         event.preventDefault();
         const recordId = document.getElementById("resolutionId").value;
-        const resolutionStatus = document.getElementById("resolutionStatus").value;
+        const maintenanceOutcome = document.getElementById("maintenanceOutcome").value;
+        const resolutionStatus = maintenanceOutcome === "Solved"
+            ? "Resolved"
+            : "Under Review";
         setMessage(resolutionMessage, "Saving...");
         try {
             const response = await apiFetch(`/suspected-data/${recordId}`, {
@@ -336,6 +358,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                     maintenance_date: document.getElementById("maintenanceDate").value || null,
                     maintenance_issue: document.getElementById("maintenanceIssue").value.trim() || null,
                     how_solved: document.getElementById("howSolved").value.trim() || null,
+                    maintenance_outcome: maintenanceOutcome,
+                    way_forward: document.getElementById("wayForward").value.trim() || null,
                     status: resolutionStatus
                 })
             });
@@ -344,9 +368,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
             closeResolutionForm();
             await loadSuspectedDataRecords();
-            if (resolutionStatus === "Resolved" && canPerformDataQualityActions()) {
-                reviewFinalResult(recordId);
-            }
         } catch (error) {
             setMessage(resolutionMessage, error.message, "error");
         }
@@ -390,6 +411,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     );
 
     document.getElementById("cancelResolution").addEventListener("click", closeResolutionForm);
+    document.getElementById("maintenanceOutcome").addEventListener(
+        "change",
+        updateMaintenanceOutcomeFields
+    );
     document.getElementById("cancelFinalReview").addEventListener(
         "click",
         closeFinalReviewForm

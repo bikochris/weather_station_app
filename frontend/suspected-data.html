@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Suspected Data | Weather Station Management</title>
+    <title>Quality Control | Weather Station Management</title>
     <link rel="stylesheet" href="css/app.css?v=20260926a">
 </head>
 <body>
@@ -16,7 +16,7 @@
             <nav aria-label="Primary navigation">
                 <a href="index.html">Stations</a>
                 <a href="maintenance.html">Maintenance</a>
-                <a class="active" href="suspected-data.html">Suspected data</a>
+                <a class="active" href="suspected-data.html">QC</a>
                 <a href="instruments.html">Instruments</a>
                 <a href="station-instruments.html">Station instruments</a>
                 <a class="it-only" href="users.html" hidden>Users</a>
@@ -34,7 +34,7 @@
             <div class="section-heading">
                 <div>
                     <p class="eyebrow">Data quality</p>
-                    <h2>Report suspected data</h2>
+                    <h2>Report QC issue</h2>
                 </div>
             </div>
 
@@ -87,7 +87,7 @@
             <div class="section-heading">
                 <div>
                     <p class="eyebrow">Maintenance resolution</p>
-                    <h2>Resolve suspected data</h2>
+                    <h2>Resolve QC issue</h2>
                 </div>
             </div>
 
@@ -114,11 +114,13 @@
                 </div>
 
                 <div class="field">
-                    <label for="resolutionStatus">Status</label>
-                    <select id="resolutionStatus" required>
-                        <option value="Open">Open</option>
-                        <option value="Under Review">Under Review</option>
-                        <option value="Resolved">Resolved</option>
+                    <label for="maintenanceOutcome">Maintenance outcome</label>
+                    <select id="maintenanceOutcome" required>
+                        <option value="">Select an outcome</option>
+                        <option value="Under Maintenance">Under Maintenance</option>
+                        <option value="Solved">Solved</option>
+                        <option value="Not Solved">Not Solved</option>
+                        <option value="Not Maintained">Not Maintained</option>
                     </select>
                 </div>
 
@@ -130,6 +132,11 @@
                 <div class="field span-2">
                     <label for="howSolved">How solved</label>
                     <textarea id="howSolved" maxlength="2000" placeholder="Record the corrective action taken"></textarea>
+                </div>
+
+                <div class="field span-2" id="wayForwardField" hidden>
+                    <label for="wayForward">Way forward</label>
+                    <textarea id="wayForward" maxlength="2000" placeholder="Explain the next action, responsible team, and expected timeline"></textarea>
                 </div>
 
                 <div class="form-actions span-2">
@@ -181,7 +188,7 @@
             <div class="section-heading history-heading">
                 <div>
                     <p class="eyebrow">Data quality history</p>
-                    <h2>Suspected data records</h2>
+                    <h2>QC records</h2>
                 </div>
                 <div class="filter-bar">
                     <div class="field filter-field">
@@ -213,7 +220,7 @@
 
             <div class="table-tools">
                 <div class="field search-field">
-                    <label for="suspectedDataSearch">Search suspected data</label>
+                    <label for="suspectedDataSearch">Search QC records</label>
                     <input type="search" id="suspectedDataSearch" placeholder="Station, measurement, description, reporter or status">
                 </div>
                 <div class="field">
@@ -241,6 +248,8 @@
                             <th>Maintenance date</th>
                             <th>Maintenance findings</th>
                             <th>How solved</th>
+                            <th>Maintenance outcome</th>
+                            <th>Way forward</th>
                             <th>Resolved by</th>
                             <th data-sort="resolved_at">Resolved at</th>
                             <th data-sort="status">Status</th>
@@ -252,7 +261,7 @@
                         </tr>
                     </thead>
                     <tbody id="suspectedDataTable">
-                        <tr><td colspan="16">Loading suspected data records...</td></tr>
+                        <tr><td colspan="18">Loading QC records...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -260,9 +269,9 @@
         </section>
         </div>
 
-        <aside class="dashboard-sidebar" aria-label="Suspected data statistics">
+        <aside class="dashboard-sidebar" aria-label="Quality Control statistics">
             <p class="eyebrow">Quality analytics</p>
-            <h2>Suspected data overview</h2>
+            <h2>QC overview</h2>
             <div class="summary-panel">
                 <div class="metric-grid">
                     <div class="metric-item"><span>Reported</span><strong id="suspectedReportedMetric">0</strong></div>
@@ -286,6 +295,6 @@
 
     <script src="js/config.js"></script>
     <script src="js/api.js?v=20260926a"></script>
-    <script src="js/suspected-data.js?v=20260926a"></script>
+    <script src="js/suspected-data.js?v=20260926c"></script>
 </body>
 </html>

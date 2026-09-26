@@ -118,9 +118,10 @@ function editStationInstrument(recordId) {
     document.getElementById("manufacturer").value = record.manufacturer || "";
     document.getElementById("serialNumber").value = record.serial_number || "";
     document.getElementById("installationDate").value = record.installation_date;
-    document.getElementById("calibrationReplacementDate").value =
-        record.calibration_replacement_date;
+    document.getElementById("calibrationDate").value = record.calibration_date || "";
+    document.getElementById("replacementDate").value = record.replacement_date || "";
     document.getElementById("stationInstrumentStatus").value = record.status;
+    document.getElementById("stationInstrumentComment").value = record.comment || "";
     document.getElementById("stationInstrumentSubmit").textContent = "Save changes";
     document.getElementById("cancelStationInstrumentEdit").hidden = false;
     document.getElementById("stationInstrumentForm").scrollIntoView({behavior: "smooth"});
@@ -167,7 +168,7 @@ async function loadStationInstruments() {
     const table = document.getElementById("stationInstrumentTable");
     const stationId = document.getElementById("stationFilter").value;
     const canManage = isITUser() || isMaintenanceUser();
-    const columnCount = canManage ? 15 : 14;
+    const columnCount = canManage ? 17 : 16;
     const parameters = collectionParameters(stationInstrumentCollection, {
         station_id: stationId,
         date_from: document.getElementById("installationDateFrom").value,
@@ -207,8 +208,10 @@ async function loadStationInstruments() {
             appendCell(row, record.manufacturer || "-");
             appendCell(row, record.serial_number || "-");
             appendCell(row, record.installation_date);
-            appendCell(row, record.calibration_replacement_date);
+            appendCell(row, record.calibration_date || "-");
+            appendCell(row, record.replacement_date || "-");
             appendCell(row, record.status);
+            appendCell(row, record.comment || "-");
             appendCell(row, record.recorded_by || "Legacy record");
             appendCell(row, formatStationInstrumentTimestamp(record.created_at));
             appendCell(row, record.updated_by || "-");
@@ -262,9 +265,13 @@ document.addEventListener("DOMContentLoaded", async () => {
                         serial_number:
                             document.getElementById("serialNumber").value.trim() || null,
                         installation_date: document.getElementById("installationDate").value,
-                        calibration_replacement_date:
-                            document.getElementById("calibrationReplacementDate").value,
-                        status: document.getElementById("stationInstrumentStatus").value
+                        calibration_date:
+                            document.getElementById("calibrationDate").value || null,
+                        replacement_date:
+                            document.getElementById("replacementDate").value || null,
+                        status: document.getElementById("stationInstrumentStatus").value,
+                        comment:
+                            document.getElementById("stationInstrumentComment").value.trim() || null
                     })
                 }
             );

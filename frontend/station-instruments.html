@@ -16,7 +16,7 @@
             <nav aria-label="Primary navigation">
                 <a href="index.html">Stations</a>
                 <a href="maintenance.html">Maintenance</a>
-                <a href="suspected-data.html">Suspected data</a>
+                <a href="suspected-data.html">QC</a>
                 <a href="instruments.html">Instruments</a>
                 <a class="active" href="station-instruments.html">Station instruments</a>
                 <a class="it-only" href="users.html" hidden>Users</a>
@@ -65,8 +65,12 @@
                     <input type="date" id="installationDate" required>
                 </div>
                 <div class="field">
-                    <label for="calibrationReplacementDate">Calibration / replacement date</label>
-                    <input type="date" id="calibrationReplacementDate" required>
+                    <label for="calibrationDate">Calibration date <span class="muted">(optional)</span></label>
+                    <input type="date" id="calibrationDate">
+                </div>
+                <div class="field">
+                    <label for="replacementDate">Replacement date <span class="muted">(optional)</span></label>
+                    <input type="date" id="replacementDate">
                 </div>
                 <div class="field span-2">
                     <label for="stationInstrumentStatus">Status</label>
@@ -77,6 +81,10 @@
                         <option value="Under Maintenance">Under Maintenance</option>
                         <option value="Inactive">Inactive</option>
                     </select>
+                </div>
+                <div class="field span-2">
+                    <label for="stationInstrumentComment">Comment <span class="muted">(optional)</span></label>
+                    <textarea id="stationInstrumentComment" maxlength="2000" placeholder="Condition, calibration, replacement or service notes"></textarea>
                 </div>
                 <div class="form-actions span-2">
                     <button type="submit" id="stationInstrumentSubmit">Add station instrument</button>
@@ -139,8 +147,10 @@
                             <th>Manufacturer</th>
                             <th>Serial number</th>
                             <th data-sort="installation_date">Installation date</th>
-                            <th data-sort="calibration_date">Calibration / replacement</th>
+                            <th data-sort="calibration_date">Calibration date</th>
+                            <th data-sort="replacement_date">Replacement date</th>
                             <th data-sort="status">Status</th>
+                            <th>Comment</th>
                             <th>Recorded by</th>
                             <th>Recorded at</th>
                             <th>Updated by</th>
@@ -149,7 +159,7 @@
                         </tr>
                     </thead>
                     <tbody id="stationInstrumentTable">
-                        <tr><td colspan="15">Loading station instruments...</td></tr>
+                        <tr><td colspan="17">Loading station instruments...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -183,6 +193,6 @@
 
     <script src="js/config.js"></script>
     <script src="js/api.js?v=20260926a"></script>
-    <script src="js/station-instruments.js?v=20260926a"></script>
+    <script src="js/station-instruments.js?v=20260926b"></script>
 </body>
 </html>

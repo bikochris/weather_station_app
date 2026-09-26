@@ -7,6 +7,9 @@ function renderStationStatistics(summary) {
     setMetric("stationTotalMetric", summary.total || 0);
     setMetric("stationOperationalMetric", summary.operational || 0);
     setMetric("stationAttentionMetric", summary.attention || 0);
+    setMetric("stationSuspendedMetric", summary.suspended || 0);
+    setMetric("stationSuspendedAwsMetric", summary.suspended_aws || 0);
+    setMetric("stationSuspendedArgMetric", summary.suspended_arg || 0);
     setMetric("stationCategoryMetric", categories.length);
     renderBreakdown(
         "stationCategoryBreakdown",
@@ -41,7 +44,9 @@ function editStation(stationId) {
     document.getElementById("sector").value = station.sector || "";
     document.getElementById("stationCategory").value = station.station_category || "";
     document.getElementById("status").value = station.status;
+    document.getElementById("stationSuspended").checked = Boolean(station.suspended);
     document.getElementById("stationComment").value = station.comment || "";
+    document.getElementById("stationAction").value = station.action || "";
     document.getElementById("stationSubmit").textContent = "Save changes";
     document.getElementById("cancelStationEdit").hidden = false;
     document.getElementById("stationForm").scrollIntoView({behavior: "smooth"});
@@ -82,14 +87,15 @@ function appendStationActions(row, station) {
 
 async function loadStations() {
     const table = document.getElementById("stationTable");
-    const columnCount = isITUser() ? 14 : 13;
+    const columnCount = isITUser() ? 16 : 15;
     showTableMessage(table, columnCount, "Loading stations...");
 
     try {
         const parameters = collectionParameters(stationCollection, {
             date_from: document.getElementById("stationDateFrom").value,
             date_to: document.getElementById("stationDateTo").value,
-            station_category: document.getElementById("stationCategoryFilter").value
+            station_category: document.getElementById("stationCategoryFilter").value,
+            suspended: document.getElementById("stationSuspendedFilter").value
         });
         const response = await apiFetch(`/stations?${parameters}`);
         if (!response.ok) {
@@ -122,7 +128,9 @@ async function loadStations() {
             appendCell(row, station.sector);
             appendCell(row, station.station_category || "Not classified");
             appendCell(row, station.status);
+            appendCell(row, station.suspended ? "1" : "0");
             appendCell(row, station.comment);
+            appendCell(row, station.action);
             appendCell(
                 row,
                 station.created_at
@@ -151,7 +159,9 @@ function downloadStationTemplate() {
         "sector",
         "station_category",
         "operational_status",
-        "comment"
+        "suspended",
+        "comment",
+        "action"
     ];
     const example = [
         "ST-001",
@@ -164,7 +174,9 @@ function downloadStationTemplate() {
         "Nyarugenge",
         "Automatic Weather stations",
         "Operational",
-        "Primary station"
+        "0",
+        "Primary station",
+        "Corrective maintenance by next quarter"
     ];
     const blob = new Blob(
         [`${header.join(",")}\r\n${example.join(",")}\r\n`],
@@ -231,7 +243,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             sector: document.getElementById("sector").value.trim(),
             station_category: document.getElementById("stationCategory").value,
             status: document.getElementById("status").value,
-            comment: document.getElementById("stationComment").value.trim() || null
+            suspended: document.getElementById("stationSuspended").checked,
+            comment: document.getElementById("stationComment").value.trim() || null,
+            action: document.getElementById("stationAction").value.trim() || null
         };
 
         try {
@@ -260,6 +274,13 @@ document.addEventListener("DOMContentLoaded", async () => {
             loadStations();
         }
     );
+    document.getElementById("stationSuspendedFilter").addEventListener(
+        "change",
+        () => {
+            stationCollection.page = 1;
+            loadStations();
+        }
+    );
     document.getElementById("stationDateFrom").addEventListener("change", () => {
         stationCollection.page = 1;
         loadStations();
@@ -280,7 +301,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         getExtraParameters: () => ({
             date_from: document.getElementById("stationDateFrom").value,
             date_to: document.getElementById("stationDateTo").value,
-            station_category: document.getElementById("stationCategoryFilter").value
+            station_category: document.getElementById("stationCategoryFilter").value,
+            suspended: document.getElementById("stationSuspendedFilter").value
         })
     });
     document.getElementById("downloadStationTemplate").addEventListener(

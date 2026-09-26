@@ -16,7 +16,7 @@
             <nav aria-label="Primary navigation">
                 <a class="active" href="index.html">Stations</a>
                 <a href="maintenance.html">Maintenance</a>
-                <a href="suspected-data.html">Suspected data</a>
+                <a href="suspected-data.html">QC</a>
                 <a href="instruments.html">Instruments</a>
                 <a href="station-instruments.html">Station instruments</a>
                 <a class="it-only" href="users.html" hidden>Users</a>
@@ -104,9 +104,19 @@
                     </select>
                 </div>
 
+                <label class="checkbox-row span-2" for="stationSuspended">
+                    <input type="checkbox" id="stationSuspended">
+                    <span>Station is suspended</span>
+                </label>
+
                 <div class="field span-2">
                     <label for="stationComment">Comment</label>
                     <textarea id="stationComment" maxlength="2000"></textarea>
+                </div>
+
+                <div class="field span-2">
+                    <label for="stationAction">Action</label>
+                    <textarea id="stationAction" maxlength="2000" placeholder="Planned corrective action"></textarea>
                 </div>
 
                 <div class="form-actions span-2">
@@ -165,6 +175,14 @@
                             <option value="Rainfall station">Rainfall station</option>
                         </select>
                     </div>
+                    <div class="field filter-field">
+                        <label for="stationSuspendedFilter">Suspension</label>
+                        <select id="stationSuspendedFilter">
+                            <option value="">All stations</option>
+                            <option value="1">Suspended</option>
+                            <option value="0">Not suspended</option>
+                        </select>
+                    </div>
                     <button class="secondary-button" id="refreshStations" type="button">Refresh</button>
                 </div>
             </div>
@@ -201,10 +219,12 @@
                             <th>Sector</th>
                             <th data-sort="station_category">Station category</th>
                             <th data-sort="status">Operational status</th>
+                            <th data-sort="suspended">Suspended</th>
                             <th>Comment</th>
+                            <th>Action</th>
                             <th data-sort="created_at">Registered at</th>
                             <th>Recorded by</th>
-                            <th class="it-only" hidden>Actions</th>
+                            <th class="it-only" hidden>Manage</th>
                         </tr>
                     </thead>
                     <tbody id="stationTable"></tbody>
@@ -222,6 +242,9 @@
                     <div class="metric-item"><span>Overall stations</span><strong id="stationTotalMetric">0</strong></div>
                     <div class="metric-item"><span>Operational</span><strong id="stationOperationalMetric">0</strong></div>
                     <div class="metric-item"><span>Need attention</span><strong id="stationAttentionMetric">0</strong></div>
+                    <div class="metric-item"><span>Suspended</span><strong id="stationSuspendedMetric">0</strong></div>
+                    <div class="metric-item"><span>Suspended AWS</span><strong id="stationSuspendedAwsMetric">0</strong></div>
+                    <div class="metric-item"><span>Suspended ARG</span><strong id="stationSuspendedArgMetric">0</strong></div>
                     <div class="metric-item"><span>Station categories</span><strong id="stationCategoryMetric">0</strong></div>
                 </div>
                 <div id="stationCategoryBreakdown" class="breakdown-grid"></div>
@@ -231,6 +254,6 @@
 
     <script src="js/config.js"></script>
     <script src="js/api.js?v=20260926a"></script>
-    <script src="js/stations.js?v=20260926a"></script>
+    <script src="js/stations.js?v=20260926d"></script>
 </body>
 </html>
