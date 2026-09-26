@@ -1,29 +1,21 @@
 let suspectedDataRecords = [];
 let finalReviewRecords = [];
+const suspectedDataCollection = createCollectionState("reported_at", "desc");
 
 
-function renderSuspectedDataStatistics(records) {
-    const statuses = new Map();
-    const measurements = new Map();
-    records.forEach((record) => {
-        statuses.set(record.status, (statuses.get(record.status) || 0) + 1);
-        const measurement = record.issue || "Not specified";
-        measurements.set(measurement, (measurements.get(measurement) || 0) + 1);
-    });
-    const resolved = records.filter((record) => record.status === "Resolved").length;
-    const reviewed = records.filter((record) => record.final_reviewed_at).length;
-    setMetric("suspectedReportedMetric", records.length);
-    setMetric("suspectedOpenMetric", records.length - resolved);
-    setMetric("suspectedResolvedMetric", resolved);
-    setMetric("suspectedReviewedMetric", reviewed);
+function renderSuspectedDataStatistics(summary) {
+    setMetric("suspectedReportedMetric", summary.reported || 0);
+    setMetric("suspectedOpenMetric", summary.open || 0);
+    setMetric("suspectedResolvedMetric", summary.resolved || 0);
+    setMetric("suspectedReviewedMetric", summary.reviewed || 0);
     renderBreakdown(
         "suspectedStatusBreakdown",
-        Array.from(statuses.entries()),
+        Object.entries(summary.statuses || {}),
         "No suspected data reports in this period"
     );
     renderBreakdown(
         "suspectedMeasurementBreakdown",
-        Array.from(measurements.entries()).sort((left, right) =>
+        Object.entries(summary.measurements || {}).sort((left, right) =>
             right[1] - left[1] || left[0].localeCompare(right[0])
         ),
         "No measurements reported in this period"
@@ -223,10 +215,13 @@ async function loadSuspectedDataRecords() {
     const table = document.getElementById("suspectedDataTable");
     const stationId = document.getElementById("stationFilter").value;
     const status = document.getElementById("statusFilter").value;
-    const parameters = new URLSearchParams();
-    if (stationId) parameters.set("station_id", stationId);
-    if (status) parameters.set("status", status);
-    const endpoint = `/suspected-data${parameters.size ? `?${parameters}` : ""}`;
+    const parameters = collectionParameters(suspectedDataCollection, {
+        station_id: stationId,
+        status,
+        date_from: document.getElementById("suspectedDateFrom").value,
+        date_to: document.getElementById("suspectedDateTo").value
+    });
+    const endpoint = `/suspected-data?${parameters}`;
     const columnCount = 16;
     showTableMessage(table, columnCount, "Loading suspected data records...");
     try {
@@ -237,13 +232,15 @@ async function loadSuspectedDataRecords() {
                 "Unable to load suspected data records"
             ));
         }
-        const records = await response.json();
-        const dateFrom = document.getElementById("suspectedDateFrom").value;
-        const dateTo = document.getElementById("suspectedDateTo").value;
-        suspectedDataRecords = records.filter((record) =>
-            isWithinDateRange(record.reported_at, dateFrom, dateTo)
+        const result = await response.json();
+        suspectedDataRecords = result.items;
+        renderSuspectedDataStatistics(result.summary);
+        renderPagination(
+            "suspectedDataPagination",
+            result,
+            suspectedDataCollection,
+            loadSuspectedDataRecords
         );
-        renderSuspectedDataStatistics(suspectedDataRecords);
         await loadFinalReviewRecords();
         table.replaceChildren();
         if (!suspectedDataRecords.length) {
@@ -415,18 +412,46 @@ document.addEventListener("DOMContentLoaded", async () => {
     );
     document.getElementById("stationFilter").addEventListener(
         "change",
-        loadSuspectedDataRecords
+        () => {
+            suspectedDataCollection.page = 1;
+            loadSuspectedDataRecords();
+        }
     );
     document.getElementById("statusFilter").addEventListener(
         "change",
-        loadSuspectedDataRecords
+        () => {
+            suspectedDataCollection.page = 1;
+            loadSuspectedDataRecords();
+        }
     );
     document.getElementById("suspectedDateFrom").addEventListener(
         "change",
-        loadSuspectedDataRecords
+        () => {
+            suspectedDataCollection.page = 1;
+            loadSuspectedDataRecords();
+        }
     );
     document.getElementById("suspectedDateTo").addEventListener(
         "change",
-        loadSuspectedDataRecords
+        () => {
+            suspectedDataCollection.page = 1;
+            loadSuspectedDataRecords();
+        }
     );
+    bindCollectionControls({
+        state: suspectedDataCollection,
+        reload: loadSuspectedDataRecords,
+        searchId: "suspectedDataSearch",
+        pageSizeId: "suspectedDataPageSize",
+        tableSelector: ".suspected-data-table",
+        exportBasePath: "/suspected-data",
+        csvButtonId: "suspectedDataExportCsv",
+        pdfButtonId: "suspectedDataExportPdf",
+        getExtraParameters: () => ({
+            station_id: document.getElementById("stationFilter").value,
+            status: document.getElementById("statusFilter").value,
+            date_from: document.getElementById("suspectedDateFrom").value,
+            date_to: document.getElementById("suspectedDateTo").value
+        })
+    });
 });

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Instruments | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css?v=20260925c">
+    <link rel="stylesheet" href="css/app.css?v=20260926a">
 </head>
 <body>
     <header class="app-header">
@@ -114,17 +114,34 @@
                 <button class="secondary-button" id="refreshInstruments" type="button">Refresh</button>
             </div>
 
+            <div class="table-tools">
+                <div class="field search-field">
+                    <label for="instrumentSearch">Search instruments</label>
+                    <input type="search" id="instrumentSearch" placeholder="Instrument, parameter, category or description">
+                </div>
+                <div class="field">
+                    <label for="instrumentPageSize">Rows per page</label>
+                    <select id="instrumentPageSize">
+                        <option value="10">10</option>
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+                <button class="secondary-button" id="instrumentExportCsv" type="button">Export CSV</button>
+                <button class="secondary-button" id="instrumentExportPdf" type="button">Export PDF</button>
+            </div>
             <div class="table-wrap">
                 <table class="instrument-table">
                     <thead>
                         <tr>
                             <th>ID</th>
-                            <th>Instrument</th>
+                            <th data-sort="instrument_name">Instrument</th>
                             <th>Parameters it takes</th>
-                            <th>Category</th>
+                            <th data-sort="category">Category</th>
                             <th>Station categories</th>
                             <th>Description</th>
-                            <th>Status</th>
+                            <th data-sort="status">Status</th>
                             <th>Recorded by</th>
                             <th class="it-only" hidden>Actions</th>
                         </tr>
@@ -132,11 +149,12 @@
                     <tbody id="instrumentTable"></tbody>
                 </table>
             </div>
+            <div id="instrumentPagination" class="pagination-bar"></div>
         </section>
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20260925c"></script>
-    <script src="js/instruments.js?v=20260925c"></script>
+    <script src="js/api.js?v=20260926a"></script>
+    <script src="js/instruments.js?v=20260926a"></script>
 </body>
 </html>

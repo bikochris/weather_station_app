@@ -1,4 +1,5 @@
 let instrumentRecords = [];
+const instrumentCollection = createCollectionState("instrument_name", "asc");
 
 
 function resetInstrumentForm() {
@@ -72,11 +73,18 @@ async function loadInstruments() {
     const columnCount = isITUser() ? 9 : 8;
     showTableMessage(table, columnCount, "Loading instruments...");
     try {
-        const response = await apiFetch("/instruments");
+        const response = await apiFetch(`/instruments?${collectionParameters(instrumentCollection)}`);
         if (!response.ok) {
             throw new Error(await getErrorMessage(response, "Unable to load instruments"));
         }
-        instrumentRecords = await response.json();
+        const result = await response.json();
+        instrumentRecords = result.items;
+        renderPagination(
+            "instrumentPagination",
+            result,
+            instrumentCollection,
+            loadInstruments
+        );
         table.replaceChildren();
         if (!instrumentRecords.length) {
             showTableMessage(table, columnCount, "No instruments found.");
@@ -205,6 +213,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     document.getElementById("cancelInstrumentEdit").addEventListener("click", resetInstrumentForm);
     document.getElementById("refreshInstruments").addEventListener("click", loadInstruments);
+    bindCollectionControls({
+        state: instrumentCollection,
+        reload: loadInstruments,
+        searchId: "instrumentSearch",
+        pageSizeId: "instrumentPageSize",
+        tableSelector: ".instrument-table",
+        exportBasePath: "/instruments",
+        csvButtonId: "instrumentExportCsv",
+        pdfButtonId: "instrumentExportPdf"
+    });
     document.getElementById("downloadInstrumentTemplate").addEventListener(
         "click",
         downloadInstrumentTemplate

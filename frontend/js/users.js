@@ -1,4 +1,5 @@
 let userRecords = [];
+const userCollection = createCollectionState("full_name", "asc");
 let stationRecords = [];
 
 
@@ -115,11 +116,13 @@ async function loadUsers() {
     const table = document.getElementById("userTable");
     showTableMessage(table, 7, "Loading users...");
     try {
-        const response = await apiFetch("/users");
+        const response = await apiFetch(`/users?${collectionParameters(userCollection)}`);
         if (!response.ok) {
             throw new Error(await getErrorMessage(response, "Unable to load users"));
         }
-        userRecords = await response.json();
+        const result = await response.json();
+        userRecords = result.items;
+        renderPagination("userPagination", result, userCollection, loadUsers);
         table.replaceChildren();
         userRecords.forEach((user) => {
             const row = document.createElement("tr");
@@ -211,6 +214,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         updateStationAssignmentVisibility
     );
     document.getElementById("refreshUsers").addEventListener("click", loadUsers);
+    bindCollectionControls({
+        state: userCollection,
+        reload: loadUsers,
+        searchId: "userSearch",
+        pageSizeId: "userPageSize",
+        tableSelector: ".user-table",
+        exportBasePath: "/users",
+        csvButtonId: "userExportCsv",
+        pdfButtonId: "userExportPdf"
+    });
     try {
         await loadAssignmentStations();
         await loadUsers();

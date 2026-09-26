@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Suspected Data | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css?v=20260925f">
+    <link rel="stylesheet" href="css/app.css?v=20260926a">
 </head>
 <body>
     <header class="app-header">
@@ -211,21 +211,39 @@
                 </div>
             </div>
 
+            <div class="table-tools">
+                <div class="field search-field">
+                    <label for="suspectedDataSearch">Search suspected data</label>
+                    <input type="search" id="suspectedDataSearch" placeholder="Station, measurement, description, reporter or status">
+                </div>
+                <div class="field">
+                    <label for="suspectedDataPageSize">Rows per page</label>
+                    <select id="suspectedDataPageSize">
+                        <option value="10">10</option>
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+                <button class="secondary-button" id="suspectedDataExportCsv" type="button">Export CSV</button>
+                <button class="secondary-button" id="suspectedDataExportPdf" type="button">Export PDF</button>
+            </div>
+
             <div class="table-wrap">
                 <table class="suspected-data-table">
                     <thead>
                         <tr>
-                            <th>Station</th>
-                            <th>Measurement</th>
+                            <th data-sort="station">Station</th>
+                            <th data-sort="measurement">Measurement</th>
                             <th>Description</th>
                             <th>Reported by</th>
-                            <th>Reported at</th>
+                            <th data-sort="reported_at">Reported at</th>
                             <th>Maintenance date</th>
                             <th>Maintenance findings</th>
                             <th>How solved</th>
                             <th>Resolved by</th>
-                            <th>Resolved at</th>
-                            <th>Status</th>
+                            <th data-sort="resolved_at">Resolved at</th>
+                            <th data-sort="status">Status</th>
                             <th>Finally solved?</th>
                             <th>Final comment</th>
                             <th>Final reviewed by</th>
@@ -238,6 +256,7 @@
                     </tbody>
                 </table>
             </div>
+            <div id="suspectedDataPagination" class="pagination-bar"></div>
         </section>
         </div>
 
@@ -266,7 +285,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20260925d"></script>
-    <script src="js/suspected-data.js?v=20260925h"></script>
+    <script src="js/api.js?v=20260926a"></script>
+    <script src="js/suspected-data.js?v=20260926a"></script>
 </body>
 </html>

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Users | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css?v=20260925d">
+    <link rel="stylesheet" href="css/app.css?v=20260926a">
 </head>
 <body>
     <header class="app-header">
@@ -89,27 +89,45 @@
                 </div>
                 <button class="secondary-button" id="refreshUsers" type="button">Refresh</button>
             </div>
+            <div class="table-tools">
+                <div class="field search-field">
+                    <label for="userSearch">Search users</label>
+                    <input type="search" id="userSearch" placeholder="Name, username, email, role or assigned station">
+                </div>
+                <div class="field">
+                    <label for="userPageSize">Rows per page</label>
+                    <select id="userPageSize">
+                        <option value="10">10</option>
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+                <button class="secondary-button" id="userExportCsv" type="button">Export CSV</button>
+                <button class="secondary-button" id="userExportPdf" type="button">Export PDF</button>
+            </div>
             <div class="table-wrap">
-                <table>
+                <table class="user-table">
                     <thead>
                         <tr>
-                            <th>Name</th>
-                            <th>Username</th>
+                            <th data-sort="full_name">Name</th>
+                            <th data-sort="username">Username</th>
                             <th>Email</th>
-                            <th>Role</th>
+                            <th data-sort="department">Role</th>
                             <th>Assigned stations</th>
-                            <th>Status</th>
+                            <th data-sort="status">Status</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="userTable"></tbody>
                 </table>
             </div>
+            <div id="userPagination" class="pagination-bar"></div>
         </section>
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20260925c"></script>
-    <script src="js/users.js?v=20260925b"></script>
+    <script src="js/api.js?v=20260926a"></script>
+    <script src="js/users.js?v=20260926a"></script>
 </body>
 </html>

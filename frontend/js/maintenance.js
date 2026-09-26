@@ -1,32 +1,17 @@
 let maintenanceRecords = [];
 let maintenanceStations = [];
 let maintenanceInstrumentCatalog = [];
+const maintenanceCollection = createCollectionState("maintenance_date", "desc");
 
 
-function renderMaintenanceStatistics(records) {
-    const stationIds = new Set(records.map((record) => record.station_id));
-    const instrumentIds = new Set();
-    const categories = new Map();
-    records.forEach((record) => {
-        record.instruments.forEach((instrument) => {
-            instrumentIds.add(instrument.instrument_id);
-        });
-        const category = record.station_category || "Not classified";
-        categories.set(category, (categories.get(category) || 0) + 1);
-    });
-    const latest = records.reduce(
-        (value, record) => !value || record.maintenance_date > value
-            ? record.maintenance_date
-            : value,
-        ""
-    );
-    setMetric("maintenanceTotalMetric", records.length);
-    setMetric("maintenanceStationMetric", stationIds.size);
-    setMetric("maintenanceInstrumentMetric", instrumentIds.size);
-    setMetric("maintenanceLatestMetric", latest || "-");
+function renderMaintenanceStatistics(summary) {
+    setMetric("maintenanceTotalMetric", summary.total || 0);
+    setMetric("maintenanceStationMetric", summary.stations || 0);
+    setMetric("maintenanceInstrumentMetric", summary.instruments || 0);
+    setMetric("maintenanceLatestMetric", summary.latest || "-");
     renderBreakdown(
         "maintenanceCategoryBreakdown",
-        Array.from(categories.entries()).sort(([left], [right]) =>
+        Object.entries(summary.categories || {}).sort(([left], [right]) =>
             left.localeCompare(right)
         ),
         "No maintenance activity in this period"
@@ -186,9 +171,12 @@ function appendMaintenanceActions(row, record) {
 async function loadMaintenanceRecords() {
     const table = document.getElementById("maintenanceTable");
     const stationId = document.getElementById("stationFilter").value;
-    const endpoint = stationId
-        ? `/maintenance?station_id=${encodeURIComponent(stationId)}`
-        : "/maintenance";
+    const parameters = collectionParameters(maintenanceCollection, {
+        station_id: stationId,
+        date_from: document.getElementById("maintenanceDateFrom").value,
+        date_to: document.getElementById("maintenanceDateTo").value
+    });
+    const endpoint = `/maintenance?${parameters}`;
     const canManage = canManageMaintenance();
     const columnCount = canManage ? 10 : 9;
     showTableMessage(table, columnCount, "Loading maintenance records...");
@@ -198,13 +186,15 @@ async function loadMaintenanceRecords() {
         if (!response.ok) {
             throw new Error(await getErrorMessage(response, "Unable to load maintenance records"));
         }
-        const records = await response.json();
-        const dateFrom = document.getElementById("maintenanceDateFrom").value;
-        const dateTo = document.getElementById("maintenanceDateTo").value;
-        maintenanceRecords = records.filter((record) =>
-            isWithinDateRange(record.maintenance_date, dateFrom, dateTo)
+        const result = await response.json();
+        maintenanceRecords = result.items;
+        renderMaintenanceStatistics(result.summary);
+        renderPagination(
+            "maintenancePagination",
+            result,
+            maintenanceCollection,
+            loadMaintenanceRecords
         );
-        renderMaintenanceStatistics(maintenanceRecords);
         table.replaceChildren();
         if (!maintenanceRecords.length) {
             showTableMessage(table, columnCount, "No maintenance records found.");
@@ -297,15 +287,39 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     document.getElementById("cancelMaintenanceEdit").addEventListener("click", resetMaintenanceForm);
     document.getElementById("refreshMaintenance").addEventListener("click", loadMaintenanceRecords);
-    document.getElementById("stationFilter").addEventListener("change", loadMaintenanceRecords);
+    document.getElementById("stationFilter").addEventListener("change", () => {
+        maintenanceCollection.page = 1;
+        loadMaintenanceRecords();
+    });
     document.getElementById("maintenanceDateFrom").addEventListener(
         "change",
-        loadMaintenanceRecords
+        () => {
+            maintenanceCollection.page = 1;
+            loadMaintenanceRecords();
+        }
     );
     document.getElementById("maintenanceDateTo").addEventListener(
         "change",
-        loadMaintenanceRecords
+        () => {
+            maintenanceCollection.page = 1;
+            loadMaintenanceRecords();
+        }
     );
+    bindCollectionControls({
+        state: maintenanceCollection,
+        reload: loadMaintenanceRecords,
+        searchId: "maintenanceSearch",
+        pageSizeId: "maintenancePageSize",
+        tableSelector: ".maintenance-table",
+        exportBasePath: "/maintenance",
+        csvButtonId: "maintenanceExportCsv",
+        pdfButtonId: "maintenanceExportPdf",
+        getExtraParameters: () => ({
+            station_id: document.getElementById("stationFilter").value,
+            date_from: document.getElementById("maintenanceDateFrom").value,
+            date_to: document.getElementById("maintenanceDateTo").value
+        })
+    });
     document.getElementById("stationId").addEventListener(
         "change",
         () => renderMaintenanceInstrumentOptions()

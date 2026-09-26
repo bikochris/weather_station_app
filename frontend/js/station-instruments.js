@@ -1,30 +1,22 @@
 let stationInstrumentRecords = [];
 let stationInstrumentStations = [];
 let stationInstrumentCatalog = [];
+const stationInstrumentCollection = createCollectionState("station", "asc");
 
 
-function renderStationInstrumentStatistics(records) {
-    const stationIds = new Set(records.map((record) => record.station_id));
-    const statuses = new Map();
-    const categories = new Map();
-    records.forEach((record) => {
-        statuses.set(record.status, (statuses.get(record.status) || 0) + 1);
-        const category = record.station_category || "Not classified";
-        categories.set(category, (categories.get(category) || 0) + 1);
-    });
-    const operational = statuses.get("Operational") || 0;
-    setMetric("stationInstrumentTotalMetric", records.length);
-    setMetric("stationInstrumentStationMetric", stationIds.size);
-    setMetric("stationInstrumentOperationalMetric", operational);
-    setMetric("stationInstrumentAttentionMetric", records.length - operational);
+function renderStationInstrumentStatistics(summary) {
+    setMetric("stationInstrumentTotalMetric", summary.total || 0);
+    setMetric("stationInstrumentStationMetric", summary.stations || 0);
+    setMetric("stationInstrumentOperationalMetric", summary.operational || 0);
+    setMetric("stationInstrumentAttentionMetric", summary.attention || 0);
     renderBreakdown(
         "stationInstrumentStatusBreakdown",
-        Array.from(statuses.entries()),
+        Object.entries(summary.statuses || {}),
         "No instruments installed in this period"
     );
     renderBreakdown(
         "stationInstrumentCategoryBreakdown",
-        Array.from(categories.entries()).sort(([left], [right]) =>
+        Object.entries(summary.categories || {}).sort(([left], [right]) =>
             left.localeCompare(right)
         ),
         "No station categories in this period"
@@ -176,9 +168,12 @@ async function loadStationInstruments() {
     const stationId = document.getElementById("stationFilter").value;
     const canManage = isITUser() || isMaintenanceUser();
     const columnCount = canManage ? 15 : 14;
-    const endpoint = stationId
-        ? `/station-instruments?station_id=${encodeURIComponent(stationId)}`
-        : "/station-instruments";
+    const parameters = collectionParameters(stationInstrumentCollection, {
+        station_id: stationId,
+        date_from: document.getElementById("installationDateFrom").value,
+        date_to: document.getElementById("installationDateTo").value
+    });
+    const endpoint = `/station-instruments?${parameters}`;
     showTableMessage(table, columnCount, "Loading station instruments...");
     try {
         const response = await apiFetch(endpoint);
@@ -188,13 +183,15 @@ async function loadStationInstruments() {
                 "Unable to load station instruments"
             ));
         }
-        const records = await response.json();
-        const dateFrom = document.getElementById("installationDateFrom").value;
-        const dateTo = document.getElementById("installationDateTo").value;
-        stationInstrumentRecords = records.filter((record) =>
-            isWithinDateRange(record.installation_date, dateFrom, dateTo)
+        const result = await response.json();
+        stationInstrumentRecords = result.items;
+        renderStationInstrumentStatistics(result.summary);
+        renderPagination(
+            "stationInstrumentPagination",
+            result,
+            stationInstrumentCollection,
+            loadStationInstruments
         );
-        renderStationInstrumentStatistics(stationInstrumentRecords);
         table.replaceChildren();
         if (!stationInstrumentRecords.length) {
             showTableMessage(table, columnCount, "No station instruments found.");
@@ -299,16 +296,40 @@ document.addEventListener("DOMContentLoaded", async () => {
     );
     document.getElementById("stationFilter").addEventListener(
         "change",
-        loadStationInstruments
+        () => {
+            stationInstrumentCollection.page = 1;
+            loadStationInstruments();
+        }
     );
     document.getElementById("installationDateFrom").addEventListener(
         "change",
-        loadStationInstruments
+        () => {
+            stationInstrumentCollection.page = 1;
+            loadStationInstruments();
+        }
     );
     document.getElementById("installationDateTo").addEventListener(
         "change",
-        loadStationInstruments
+        () => {
+            stationInstrumentCollection.page = 1;
+            loadStationInstruments();
+        }
     );
+    bindCollectionControls({
+        state: stationInstrumentCollection,
+        reload: loadStationInstruments,
+        searchId: "stationInstrumentSearch",
+        pageSizeId: "stationInstrumentPageSize",
+        tableSelector: ".station-instrument-table",
+        exportBasePath: "/station-instruments",
+        csvButtonId: "stationInstrumentExportCsv",
+        pdfButtonId: "stationInstrumentExportPdf",
+        getExtraParameters: () => ({
+            station_id: document.getElementById("stationFilter").value,
+            date_from: document.getElementById("installationDateFrom").value,
+            date_to: document.getElementById("installationDateTo").value
+        })
+    });
     document.getElementById("stationId").addEventListener(
         "change",
         () => populateStationCategoryInstruments()

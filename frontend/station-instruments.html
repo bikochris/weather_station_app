@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Station Instruments | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css?v=20260925f">
+    <link rel="stylesheet" href="css/app.css?v=20260926a">
 </head>
 <body>
     <header class="app-header">
@@ -109,20 +109,38 @@
                 </div>
             </div>
 
+            <div class="table-tools">
+                <div class="field search-field">
+                    <label for="stationInstrumentSearch">Search inventory</label>
+                    <input type="search" id="stationInstrumentSearch" placeholder="Station, instrument, model, serial number or status">
+                </div>
+                <div class="field">
+                    <label for="stationInstrumentPageSize">Rows per page</label>
+                    <select id="stationInstrumentPageSize">
+                        <option value="10">10</option>
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+                <button class="secondary-button" id="stationInstrumentExportCsv" type="button">Export CSV</button>
+                <button class="secondary-button" id="stationInstrumentExportPdf" type="button">Export PDF</button>
+            </div>
+
             <div class="table-wrap">
                 <table class="station-instrument-table">
                     <thead>
                         <tr>
-                            <th>Station</th>
+                            <th data-sort="station">Station</th>
                             <th>Station category</th>
-                            <th>Instrument</th>
+                            <th data-sort="instrument">Instrument</th>
                             <th>Parameters</th>
                             <th>Model</th>
                             <th>Manufacturer</th>
                             <th>Serial number</th>
-                            <th>Installation date</th>
-                            <th>Calibration / replacement</th>
-                            <th>Status</th>
+                            <th data-sort="installation_date">Installation date</th>
+                            <th data-sort="calibration_date">Calibration / replacement</th>
+                            <th data-sort="status">Status</th>
                             <th>Recorded by</th>
                             <th>Recorded at</th>
                             <th>Updated by</th>
@@ -135,6 +153,7 @@
                     </tbody>
                 </table>
             </div>
+            <div id="stationInstrumentPagination" class="pagination-bar"></div>
         </section>
         </div>
 
@@ -163,7 +182,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20260925d"></script>
-    <script src="js/station-instruments.js?v=20260925e"></script>
+    <script src="js/api.js?v=20260926a"></script>
+    <script src="js/station-instruments.js?v=20260926a"></script>
 </body>
 </html>

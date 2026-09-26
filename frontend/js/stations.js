@@ -1,22 +1,16 @@
 let stationRecords = [];
+const stationCollection = createCollectionState("station_name");
 
 
-function renderStationStatistics(stations) {
-    const categories = new Map();
-    stations.forEach((station) => {
-        const category = station.station_category || "Not classified";
-        categories.set(category, (categories.get(category) || 0) + 1);
-    });
-    const operational = stations.filter(
-        (station) => station.status === "Operational"
-    ).length;
-    setMetric("stationTotalMetric", stations.length);
-    setMetric("stationOperationalMetric", operational);
-    setMetric("stationAttentionMetric", stations.length - operational);
-    setMetric("stationCategoryMetric", categories.size);
+function renderStationStatistics(summary) {
+    const categories = Object.entries(summary.categories || {});
+    setMetric("stationTotalMetric", summary.total || 0);
+    setMetric("stationOperationalMetric", summary.operational || 0);
+    setMetric("stationAttentionMetric", summary.attention || 0);
+    setMetric("stationCategoryMetric", categories.length);
     renderBreakdown(
         "stationCategoryBreakdown",
-        Array.from(categories.entries()).sort(([left], [right]) =>
+        categories.sort(([left], [right]) =>
             left.localeCompare(right)
         ),
         "No stations registered in this period"
@@ -92,38 +86,31 @@ async function loadStations() {
     showTableMessage(table, columnCount, "Loading stations...");
 
     try {
-        const response = await apiFetch("/stations");
+        const parameters = collectionParameters(stationCollection, {
+            date_from: document.getElementById("stationDateFrom").value,
+            date_to: document.getElementById("stationDateTo").value,
+            station_category: document.getElementById("stationCategoryFilter").value
+        });
+        const response = await apiFetch(`/stations?${parameters}`);
         if (!response.ok) {
             throw new Error(await getErrorMessage(response, "Unable to load stations"));
         }
-        stationRecords = await response.json();
+        const result = await response.json();
+        stationRecords = result.items;
+        renderStationStatistics(result.summary);
+        renderPagination("stationPagination", result, stationCollection, loadStations);
         table.replaceChildren();
 
-        const categoryFilter = document.getElementById("stationCategoryFilter").value;
-        const dateFrom = document.getElementById("stationDateFrom").value;
-        const dateTo = document.getElementById("stationDateTo").value;
-        const periodStations = stationRecords.filter((station) =>
-            isWithinDateRange(station.created_at, dateFrom, dateTo)
-        );
-        renderStationStatistics(periodStations);
-        const visibleStations = categoryFilter
-            ? periodStations.filter(
-                (station) => station.station_category === categoryFilter
-            )
-            : periodStations;
-
-        if (!visibleStations.length) {
+        if (!stationRecords.length) {
             showTableMessage(
                 table,
                 columnCount,
-                categoryFilter
-                    ? "No stations found in this category."
-                    : "No stations found."
+                "No stations found."
             );
             return;
         }
 
-        visibleStations.forEach((station) => {
+        stationRecords.forEach((station) => {
             const row = document.createElement("tr");
             appendCell(row, station.station_code);
             appendCell(row, station.station_name);
@@ -268,10 +255,34 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("refreshStations").addEventListener("click", loadStations);
     document.getElementById("stationCategoryFilter").addEventListener(
         "change",
-        loadStations
+        () => {
+            stationCollection.page = 1;
+            loadStations();
+        }
     );
-    document.getElementById("stationDateFrom").addEventListener("change", loadStations);
-    document.getElementById("stationDateTo").addEventListener("change", loadStations);
+    document.getElementById("stationDateFrom").addEventListener("change", () => {
+        stationCollection.page = 1;
+        loadStations();
+    });
+    document.getElementById("stationDateTo").addEventListener("change", () => {
+        stationCollection.page = 1;
+        loadStations();
+    });
+    bindCollectionControls({
+        state: stationCollection,
+        reload: loadStations,
+        searchId: "stationSearch",
+        pageSizeId: "stationPageSize",
+        tableSelector: ".station-table",
+        exportBasePath: "/stations",
+        csvButtonId: "stationExportCsv",
+        pdfButtonId: "stationExportPdf",
+        getExtraParameters: () => ({
+            date_from: document.getElementById("stationDateFrom").value,
+            date_to: document.getElementById("stationDateTo").value,
+            station_category: document.getElementById("stationCategoryFilter").value
+        })
+    });
     document.getElementById("downloadStationTemplate").addEventListener(
         "click",
         downloadStationTemplate
