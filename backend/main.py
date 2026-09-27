@@ -1187,8 +1187,8 @@ def require_instrument_catalog_access(user=Depends(require_password_change_compl
 
 
 def require_user_directory_access(user=Depends(require_password_change_complete)):
-    if user["department"] != "Admin" and user["department"] not in READ_ONLY_ALL_ROLES:
-        raise HTTPException(status_code=403, detail="User directory access is not allowed")
+    if user["department"] != "Admin":
+        raise HTTPException(status_code=403, detail="Administrator access required")
     return user
 
 
@@ -4619,7 +4619,7 @@ def delete_data_request(
 
 
 @app.get("/kpi")
-def get_kpi(month: str | None = None, _user=Depends(require_password_change_complete)):
+def get_kpi(month: str | None = None, _user=Depends(require_it)):
     selected_month = month_start(month) if month else date.today().replace(day=1)
     next_month = (selected_month.replace(day=28) + timedelta(days=4)).replace(day=1)
     try:
@@ -4670,7 +4670,7 @@ def get_kpi(month: str | None = None, _user=Depends(require_password_change_comp
 def search_database(
     q: str = Query(min_length=2, max_length=200),
     context_station_id: int | None = Query(default=None, ge=1),
-    user=Depends(require_password_change_complete),
+    user=Depends(require_it),
 ):
     term = q.strip()
     like = f"%{term}%"

@@ -16,6 +16,11 @@ const READ_ONLY_ALL_ROLES = new Set([
     "Division Manager"
 ]);
 const MAINTENANCE_ROLE = "Instrument Maintenance and Calibration Officer";
+const ADMIN_ONLY_PAGES = new Set([
+    "users.html",
+    "kpi.html",
+    "search.html"
+]);
 
 
 function getAccessToken() {
@@ -92,35 +97,45 @@ async function requireSession() {
     document.querySelectorAll(".user-directory-access").forEach((element) => {
         element.hidden = !canViewUserDirectory();
     });
+    document.querySelectorAll("nav a[href]").forEach((link) => {
+        if (ADMIN_ONLY_PAGES.has(link.getAttribute("href"))) {
+            link.hidden = !isITUser();
+        }
+    });
     const allowedPages = {
         "Admin": null,
         [MAINTENANCE_ROLE]: new Set([
             "index.html", "maintenance.html", "suspected-data.html",
-            "station-instruments.html", "kpi.html", "search.html"
+            "station-instruments.html"
         ]),
         "Data Quality Control Officer": new Set([
             "index.html", "maintenance.html", "suspected-data.html",
             "station-instruments.html", "volunteer-data.html", "reporting-status.html",
-            "data-requests.html", "kpi.html", "search.html"
+            "data-requests.html"
         ]),
         "Observation Processing Officer": new Set([
             "index.html", "maintenance.html", "suspected-data.html",
             "station-instruments.html", "volunteer-data.html", "reporting-status.html",
-            "data-requests.html", "kpi.html", "search.html"
+            "data-requests.html"
         ]),
         "Observation Officer": new Set([
             "index.html", "maintenance.html", "suspected-data.html",
-            "station-instruments.html", "volunteer-data.html", "kpi.html", "search.html"
+            "station-instruments.html", "volunteer-data.html"
         ]),
         "Observation Supervisor": new Set([
             "index.html", "maintenance.html", "suspected-data.html",
             "station-instruments.html", "volunteer-data.html", "reporting-status.html",
-            "data-requests.html", "kpi.html", "search.html"
+            "data-requests.html"
         ]),
         "Big Data Specialist": null,
         "Data Quality Control Specialist": null,
         "Division Manager": null
     };
+    const currentPage = window.location.pathname.split("/").pop() || "index.html";
+    if (ADMIN_ONLY_PAGES.has(currentPage) && !isITUser()) {
+        window.location.href = "index.html";
+        return null;
+    }
     const pageAccess = allowedPages[currentUser.department];
     document.querySelectorAll("nav a[href]").forEach((link) => {
         if (pageAccess && !pageAccess.has(link.getAttribute("href"))) {
@@ -158,7 +173,7 @@ function isReadOnlyAllUser() {
 
 
 function canViewUserDirectory() {
-    return isITUser() || isReadOnlyAllUser();
+    return isITUser();
 }
 
 
