@@ -129,8 +129,7 @@ async function requireSession() {
         ]),
         "Observation Supervisor": new Set([
             "index.html", "maintenance.html", "suspected-data.html",
-            "station-instruments.html", "volunteer-data.html", "reporting-status.html",
-            "data-requests.html"
+            "station-instruments.html", "volunteer-data.html"
         ]),
         "Observation Supervisor at HQ": new Set([
             "index.html", "maintenance.html", "suspected-data.html",
@@ -191,11 +190,6 @@ function canViewInstrumentCatalog() {
 }
 
 
-function isObservationSupervisor() {
-    return currentUser?.department === "Observation Supervisor";
-}
-
-
 function canWriteDataOperations() {
     return isITUser() || DATA_OPERATIONS_ROLES.has(currentUser?.department);
 }
@@ -209,7 +203,7 @@ function canAccessVolunteerData() {
 
 function canViewMonthlyReporting() {
     return isITUser() || DATA_QUALITY_ROLES.has(currentUser?.department) ||
-        isReadOnlyAllUser() || isObservationSupervisor();
+        isReadOnlyAllUser();
 }
 
 

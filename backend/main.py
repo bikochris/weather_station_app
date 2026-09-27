@@ -114,7 +114,6 @@ VOLUNTEER_DATA_ROLES = {
 REPORTING_VIEW_ROLES = {
     *DATA_OPERATIONS_ROLES,
     *READ_ONLY_ALL_ROLES,
-    "Observation Supervisor",
     "Observation Supervisor at HQ",
 }
 
@@ -1218,12 +1217,6 @@ def require_data_operations_writer(user=Depends(require_password_change_complete
 def require_reporting_view(user=Depends(require_password_change_complete)):
     if user["department"] != "Admin" and user["department"] not in REPORTING_VIEW_ROLES:
         raise HTTPException(status_code=403, detail="Monthly reporting access is not allowed")
-    return user
-
-
-def require_observation_supervisor_or_it(user=Depends(require_password_change_complete)):
-    if user["department"] not in ("Admin", "Observation Supervisor"):
-        raise HTTPException(status_code=403, detail="Observation Supervisor access is required")
     return user
 
 
@@ -4126,10 +4119,10 @@ def get_volunteer_data(user=Depends(require_volunteer_data_access)):
             "permissions": {
                 "upload_qc": user["department"] == "Admin" or user["department"] in QC_FILE_UPLOAD_ROLES,
                 "upload_filtered": user["department"] == "Admin" or user["department"] in QC_FILE_UPLOAD_ROLES,
-                "upload_filled": user["department"] in ("Admin", "Observation Supervisor"),
-                "comment": user["department"] in ("Admin", "Observation Supervisor"),
-                "edit": user["department"] == "Admin" or user["department"] in QC_FILE_UPLOAD_ROLES or user["department"] == "Observation Supervisor",
-                "delete": user["department"] == "Admin" or user["department"] in QC_FILE_UPLOAD_ROLES or user["department"] == "Observation Supervisor",
+                "upload_filled": user["department"] == "Admin",
+                "comment": user["department"] == "Admin",
+                "edit": user["department"] == "Admin" or user["department"] in QC_FILE_UPLOAD_ROLES,
+                "delete": user["department"] == "Admin" or user["department"] in QC_FILE_UPLOAD_ROLES,
             },
         }
     except MySQLError as exc:
@@ -4153,8 +4146,8 @@ async def upload_volunteer_data_file(
                 status_code=403,
                 detail="Only authorized data-quality and HQ supervision roles can upload this file",
             )
-    elif user["department"] not in ("Admin", "Observation Supervisor"):
-        raise HTTPException(status_code=403, detail="Only the Observation Supervisor can upload filled data")
+    elif user["department"] != "Admin":
+        raise HTTPException(status_code=403, detail="Only an Administrator can upload filled data")
     clean_filename = Path(filename).name
     extension = Path(clean_filename).suffix.lower()
     if extension not in {".csv", ".xlsx", ".xls", ".pdf"}:
@@ -4218,7 +4211,7 @@ def download_volunteer_data_file(file_id: int, _user=Depends(require_volunteer_d
 @app.post("/volunteer-data/comments", status_code=201)
 def add_volunteer_report_comment(
     item: VolunteerReportComment,
-    user=Depends(require_observation_supervisor_or_it),
+    user=Depends(require_it),
 ):
     try:
         connection = get_connection()
@@ -4257,12 +4250,6 @@ def delete_volunteer_month(
         elif user["department"] in QC_FILE_UPLOAD_ROLES:
             cursor.execute(
                 "DELETE FROM volunteer_data_files WHERE report_month = %s AND file_kind IN ('monthly_qc', 'filtered_data')",
-                (target_month,),
-            )
-        elif user["department"] == "Observation Supervisor":
-            cursor.execute("DELETE FROM volunteer_report_comments WHERE report_month = %s", (target_month,))
-            cursor.execute(
-                "DELETE FROM volunteer_data_files WHERE report_month = %s AND file_kind = 'filled_data'",
                 (target_month,),
             )
         else:
