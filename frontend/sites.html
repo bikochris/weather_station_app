@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sites | Weather Station Management</title>
+    <link rel="stylesheet" href="css/app.css?v=20260927a">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div>
+                <p class="eyebrow">Operations</p>
+                <h1>Weather Station Management</h1>
+            </div>
+            <nav aria-label="Primary navigation">
+                <a href="index.html">Stations</a>
+                <a class="active" href="sites.html">Sites</a>
+                <a href="maintenance.html">Maintenance</a>
+                <a href="suspected-data.html">QC</a>
+                <a href="instruments.html">Instruments</a>
+                <a href="station-instruments.html">Station instruments</a>
+                <a href="volunteer-data.html">Volunteer data</a>
+                <a href="reporting-status.html">Reporting</a>
+                <a href="data-requests.html">Requests</a>
+                <a href="kpi.html">KPI</a>
+                <a href="search.html">Search</a>
+                <a class="user-directory-access" href="users.html" hidden>Users</a>
+            </nav>
+            <div class="user-menu">
+                <span><strong data-user-name></strong><small data-user-department></small></span>
+                <button class="header-button" type="button" data-logout>Sign out</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="dashboard-layout">
+        <div class="dashboard-content">
+            <section>
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Physical network</p>
+                        <h2>Sites</h2>
+                    </div>
+                    <button class="secondary-button" id="refreshSites" type="button">Refresh</button>
+                </div>
+                <div class="table-tools">
+                    <div class="field search-field">
+                        <label for="siteSearch">Search sites</label>
+                        <input type="search" id="siteSearch" placeholder="Site, station, district, sector or category">
+                    </div>
+                    <div class="field">
+                        <label for="sitePageSize">Rows per page</label>
+                        <select id="sitePageSize">
+                            <option value="10">10</option>
+                            <option value="25" selected>25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table class="site-table">
+                        <thead>
+                            <tr>
+                                <th data-sort="site_code">Site ID</th>
+                                <th data-sort="site_name">Site</th>
+                                <th>Latitude</th>
+                                <th>Longitude</th>
+                                <th data-sort="altitude">Altitude</th>
+                                <th data-sort="province">Province</th>
+                                <th data-sort="district">District</th>
+                                <th>Sector</th>
+                                <th data-sort="station_count">Station count</th>
+                                <th>Stations at site</th>
+                            </tr>
+                        </thead>
+                        <tbody id="siteTable"></tbody>
+                    </table>
+                </div>
+                <div id="sitePagination" class="pagination-bar"></div>
+            </section>
+        </div>
+
+        <aside class="dashboard-sidebar" aria-label="Site statistics">
+            <p class="eyebrow">Network footprint</p>
+            <h2>Site overview</h2>
+            <div class="summary-panel">
+                <div class="metric-grid">
+                    <div class="metric-item"><span>Total sites</span><strong id="totalSitesMetric">0</strong></div>
+                    <div class="metric-item"><span>Stations</span><strong id="siteStationsMetric">0</strong></div>
+                    <div class="metric-item"><span>Shared sites</span><strong id="sharedSitesMetric">0</strong></div>
+                    <div class="metric-item"><span>Single-station sites</span><strong id="singleSitesMetric">0</strong></div>
+                </div>
+            </div>
+        </aside>
+    </main>
+
+    <script src="js/config.js"></script>
+    <script src="js/api.js?v=20260926e"></script>
+    <script src="js/sites.js?v=20260927a"></script>
+</body>
+</html>

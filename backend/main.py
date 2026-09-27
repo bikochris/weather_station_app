@@ -2100,6 +2100,99 @@ def export_stations(
     return pdf_download("stations.pdf", "Station Registry", headers, rows, user["username"])
 
 
+@app.get("/sites")
+def get_sites(
+    page: int | None = Query(default=None, ge=1),
+    page_size: int = Query(default=25, ge=10, le=100),
+    search: str | None = Query(default=None, max_length=100),
+    sort_by: str = "site_name",
+    sort_order: Literal["asc", "desc"] = "asc",
+    user=Depends(require_password_change_complete),
+):
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        query = """
+            SELECT stations.station_id, station_code, station_name,
+                CAST(latitude AS DOUBLE) AS latitude,
+                CAST(longitude AS DOUBLE) AS longitude,
+                CAST(altitude AS DOUBLE) AS altitude,
+                province, district, sector, station_category, status, suspended
+            FROM stations
+        """
+        parameters = []
+        if user["department"] in ASSIGNED_STATION_ROLES:
+            query += """
+                INNER JOIN user_station_assignments
+                    ON user_station_assignments.station_id = stations.station_id
+                    AND user_station_assignments.user_id = %s
+            """
+            parameters.append(user["user_id"])
+        query += " ORDER BY latitude, longitude, altitude, station_name"
+        cursor.execute(query, tuple(parameters))
+        grouped = {}
+        for station in cursor.fetchall():
+            coordinate_key = (
+                station["latitude"], station["longitude"], station["altitude"]
+            )
+            grouped.setdefault(coordinate_key, []).append(station)
+        sites = []
+        for number, (coordinate_key, stations) in enumerate(grouped.items(), start=1):
+            representative = min(
+                stations,
+                key=lambda item: (len(item["station_name"]), item["station_name"].casefold()),
+            )
+            site_name = representative["station_name"]
+            for suffix in ("_AWS", "_ARG", "_WR", "_UAS"):
+                if site_name.upper().endswith(suffix):
+                    site_name = site_name[:-len(suffix)]
+                    break
+            station_labels = [
+                f'{item["station_code"]} - {item["station_name"]}' for item in stations
+            ]
+            sites.append({
+                "site_id": number,
+                "site_code": f"SITE-{number:04d}",
+                "site_name": site_name.replace("_", " "),
+                "latitude": coordinate_key[0],
+                "longitude": coordinate_key[1],
+                "altitude": coordinate_key[2],
+                "province": representative["province"],
+                "district": representative["district"],
+                "sector": representative["sector"],
+                "station_count": len(stations),
+                "stations": stations,
+                "station_search": " ".join(station_labels),
+                "categories": sorted({item["station_category"] for item in stations}),
+            })
+        sites = filter_sort_collection(
+            sites, search,
+            [
+                "site_code", "site_name", "province", "district", "sector",
+                "station_search", "categories",
+            ],
+            sort_by, sort_order,
+            {
+                "site_code": "site_code", "site_name": "site_name",
+                "station_count": "station_count", "altitude": "altitude",
+                "province": "province", "district": "district",
+            },
+        )
+        summary = {
+            "total_sites": len(sites),
+            "shared_sites": sum(item["station_count"] > 1 for item in sites),
+            "single_station_sites": sum(item["station_count"] == 1 for item in sites),
+            "stations": sum(item["station_count"] for item in sites),
+        }
+        return paginate_collection(sites, page, page_size, summary)
+    except MySQLError as exc:
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
 @app.post("/stations")
 def add_station(station: Station, user=Depends(require_it)):
 
@@ -4175,7 +4268,7 @@ def get_reporting_status(_user=Depends(require_reporting_view)):
         ensure_application_tables(connection)
         cursor = connection.cursor(dictionary=True)
         cursor.execute(
-            "SELECT COUNT(*) AS total FROM stations WHERE status = 'Operational' AND suspended = FALSE"
+            "SELECT COUNT(*) AS total FROM stations WHERE status = 'Operational'"
         )
         operational_stations = cursor.fetchone()["total"]
         cursor.execute(
@@ -4218,7 +4311,7 @@ def save_reporting_status(item: MonthlyReportingStatus, user=Depends(require_dat
         ensure_application_tables(connection)
         cursor = connection.cursor()
         cursor.execute(
-            "SELECT COUNT(*) FROM stations WHERE status = 'Operational' AND suspended = FALSE"
+            "SELECT COUNT(*) FROM stations WHERE status = 'Operational'"
         )
         expected_stations = cursor.fetchone()[0]
         if item.reported_stations > expected_stations:
@@ -4341,18 +4434,36 @@ def delete_reporting_status(
 
 
 @app.get("/data-requests")
-def get_data_requests(_user=Depends(require_reporting_view)):
+def get_data_requests(
+    month_from: str | None = Query(default=None, max_length=7),
+    month_to: str | None = Query(default=None, max_length=7),
+    _user=Depends(require_reporting_view),
+):
+    start_month = month_start(month_from) if month_from else None
+    end_month = month_start(month_to) if month_to else None
+    if start_month and end_month and start_month > end_month:
+        raise HTTPException(status_code=400, detail="From month cannot be after To month")
     try:
         connection = get_connection()
         ensure_application_tables(connection)
         cursor = connection.cursor(dictionary=True)
-        cursor.execute(
-            """
+        query = """
             SELECT data_request_id, DATE_FORMAT(request_month, '%Y-%m') AS request_month,
                 category, served_requests, notes, recorded_by_username, updated_at
-            FROM monthly_data_requests ORDER BY request_month DESC, category
-            """
-        )
+            FROM monthly_data_requests
+        """
+        conditions = []
+        parameters = []
+        if start_month:
+            conditions.append("request_month >= %s")
+            parameters.append(start_month)
+        if end_month:
+            conditions.append("request_month <= %s")
+            parameters.append(end_month)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY request_month DESC, category"
+        cursor.execute(query, tuple(parameters))
         items = cursor.fetchall()
         totals = {}
         categories = {}

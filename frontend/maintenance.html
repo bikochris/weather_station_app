@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Maintenance | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css?v=20260926e">
+    <link rel="stylesheet" href="css/app.css?v=20260927c">
 </head>
 <body>
     <header class="app-header">
@@ -15,6 +15,7 @@
             </div>
             <nav aria-label="Primary navigation">
                 <a href="index.html">Stations</a>
+                <a href="sites.html">Sites</a>
                 <a class="active" href="maintenance.html">Maintenance</a>
                 <a href="suspected-data.html">QC</a>
                 <a href="instruments.html">Instruments</a>
@@ -111,11 +112,19 @@
                 </div>
                 <fieldset class="span-2">
                     <legend>Stations covered by this report</legend>
-                    <div class="field report-station-search">
-                        <label for="reportStationSearch">Find stations</label>
-                        <input type="search" id="reportStationSearch" placeholder="Search by station ID or name">
+                    <div class="report-station-picker">
+                        <div class="report-district-panel">
+                            <strong>District</strong>
+                            <div id="maintenanceReportDistricts" class="report-district-list"></div>
+                        </div>
+                        <div class="report-stations-panel">
+                            <div class="field report-station-search">
+                                <label for="reportStationSearch">Stations in selected district</label>
+                                <input type="search" id="reportStationSearch" placeholder="Search by station ID or name">
+                            </div>
+                            <div id="maintenanceReportStations" class="report-station-list"></div>
+                        </div>
                     </div>
-                    <div id="maintenanceReportStations" class="report-station-list"></div>
                     <p class="field-help"><strong id="selectedReportStationCount">0</strong> stations selected</p>
                 </fieldset>
                 <div class="field">
@@ -233,6 +242,6 @@
 
     <script src="js/config.js"></script>
     <script src="js/api.js?v=20260926e"></script>
-    <script src="js/maintenance.js?v=20260926b"></script>
+    <script src="js/maintenance.js?v=20260927c"></script>
 </body>
 </html>

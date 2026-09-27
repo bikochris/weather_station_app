@@ -1,5 +1,17 @@
 # Deployment and account setup
 
+## Windows network launcher
+
+Double-click `Start Weather Station App.bat` to open the local launcher. Enter
+the MariaDB server hostname or IP address shown in the HeidiSQL session settings,
+test the connection, and select **Start app**. The launcher displays the network
+URL that other users on the same network can open.
+
+The database password is stored only in the local `.env` file, which is excluded
+from Git. A remote MariaDB server must allow connections from the computer running
+the application. Windows Firewall must also allow inbound TCP traffic to the
+selected application port (8000 by default).
+
 ## Railway deployment
 
 1. Create a private GitHub repository and push this project to it. Confirm that

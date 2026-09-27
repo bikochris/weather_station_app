@@ -120,8 +120,26 @@ function populateCategorySuggestions(categories) {
 }
 
 async function loadDataRequests() {
-    const response = await apiFetch("/data-requests");
-    if (!response.ok) throw new Error(await getErrorMessage(response, "Unable to load data requests"));
+    const parameters = new URLSearchParams();
+    const monthFrom = document.getElementById("requestMonthFrom").value;
+    const monthTo = document.getElementById("requestMonthTo").value;
+    if (monthFrom && monthTo && monthFrom > monthTo) {
+        setMessage(
+            document.getElementById("requestRangeMessage"),
+            "From month cannot be after To month.",
+            "error"
+        );
+        return;
+    }
+    if (monthFrom) parameters.set("month_from", monthFrom);
+    if (monthTo) parameters.set("month_to", monthTo);
+    const response = await apiFetch(`/data-requests?${parameters}`);
+    if (!response.ok) {
+        const message = await getErrorMessage(response, "Unable to load data requests");
+        setMessage(document.getElementById("requestRangeMessage"), message, "error");
+        return;
+    }
+    setMessage(document.getElementById("requestRangeMessage"), "");
     const result = await response.json();
     dataRequestRecords = result.items;
     canManageRequests = result.can_manage;
@@ -202,6 +220,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         await loadDataRequests();
     });
     document.getElementById("refreshRequests").addEventListener("click", loadDataRequests);
+    document.getElementById("clearRequestRange").addEventListener("click", () => {
+        document.getElementById("requestMonthFrom").value = "";
+        document.getElementById("requestMonthTo").value = "";
+        loadDataRequests();
+    });
+    document.getElementById("requestMonthFrom").addEventListener("change", loadDataRequests);
+    document.getElementById("requestMonthTo").addEventListener("change", loadDataRequests);
     try {
         await loadDataRequests();
     } catch (error) {

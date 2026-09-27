@@ -3,6 +3,7 @@ let maintenanceStations = [];
 let maintenanceInstrumentCatalog = [];
 let maintenanceReports = [];
 let selectedMaintenanceReportStationIds = new Set();
+let activeMaintenanceReportDistrict = "";
 const maintenanceCollection = createCollectionState("maintenance_date", "desc");
 
 
@@ -45,7 +46,41 @@ async function loadStationOptions() {
         filterSelect.appendChild(new Option(label, station.station_id));
     });
     renderMaintenanceInstrumentOptions();
+    renderMaintenanceReportDistricts();
     renderMaintenanceReportStationOptions();
+}
+
+
+function renderMaintenanceReportDistricts() {
+    const container = document.getElementById("maintenanceReportDistricts");
+    const districts = Array.from(new Set(
+        maintenanceStations.map((station) => station.district).filter(Boolean)
+    )).sort((left, right) => left.localeCompare(right));
+    if (!districts.includes(activeMaintenanceReportDistrict)) {
+        activeMaintenanceReportDistrict = districts[0] || "";
+    }
+    container.replaceChildren();
+    districts.forEach((district) => {
+        const districtStations = maintenanceStations.filter((station) => station.district === district);
+        const selected = districtStations.filter((station) =>
+            selectedMaintenanceReportStationIds.has(station.station_id)).length;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "report-district-tab";
+        button.classList.toggle("active", district === activeMaintenanceReportDistrict);
+        const name = document.createElement("span");
+        name.textContent = district;
+        const count = document.createElement("small");
+        count.textContent = selected ? `${selected}/${districtStations.length}` : districtStations.length;
+        button.append(name, count);
+        button.addEventListener("click", () => {
+            activeMaintenanceReportDistrict = district;
+            document.getElementById("reportStationSearch").value = "";
+            renderMaintenanceReportDistricts();
+            renderMaintenanceReportStationOptions();
+        });
+        container.appendChild(button);
+    });
 }
 
 
@@ -54,7 +89,8 @@ function renderMaintenanceReportStationOptions() {
     const search = document.getElementById("reportStationSearch").value.trim().toLowerCase();
     container.replaceChildren();
     const matching = maintenanceStations.filter((station) =>
-        !search || `${station.station_code} ${station.station_name}`.toLowerCase().includes(search)
+        station.district === activeMaintenanceReportDistrict
+        && (!search || `${station.station_code} ${station.station_name}`.toLowerCase().includes(search))
     );
     matching.forEach((station) => {
         const label = document.createElement("label");
@@ -67,16 +103,20 @@ function renderMaintenanceReportStationOptions() {
             if (checkbox.checked) selectedMaintenanceReportStationIds.add(station.station_id);
             else selectedMaintenanceReportStationIds.delete(station.station_id);
             setMetric("selectedReportStationCount", selectedMaintenanceReportStationIds.size);
+            renderMaintenanceReportDistricts();
         });
         const text = document.createElement("span");
-        text.textContent = `${station.station_code} - ${station.station_name}`;
+        text.textContent = station.station_name;
+        text.title = station.station_name;
         label.append(checkbox, text);
         container.appendChild(label);
     });
     if (!matching.length) {
         const message = document.createElement("p");
         message.className = "muted";
-        message.textContent = "No stations match this search.";
+        message.textContent = activeMaintenanceReportDistrict
+            ? "No stations match this search in the selected district."
+            : "No district stations are available.";
         container.appendChild(message);
     }
     setMetric("selectedReportStationCount", selectedMaintenanceReportStationIds.size);
@@ -89,6 +129,8 @@ function resetMaintenanceReportForm() {
     document.getElementById("reportPeriodStart").value = today;
     document.getElementById("reportPeriodEnd").value = today;
     selectedMaintenanceReportStationIds.clear();
+    document.getElementById("reportStationSearch").value = "";
+    renderMaintenanceReportDistricts();
     renderMaintenanceReportStationOptions();
 }
 

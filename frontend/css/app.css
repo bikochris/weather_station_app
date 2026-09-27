@@ -528,6 +528,10 @@ button:hover {
     min-width: 260px;
 }
 
+.month-range-field {
+    min-width: 165px;
+}
+
 .table-wrap {
     overflow-x: auto;
     border: 1px solid #d5dee6;
@@ -544,6 +548,32 @@ table {
 
 .station-table {
     min-width: 1750px;
+}
+
+.site-table {
+    min-width: 1320px;
+}
+
+.site-station-list {
+    min-width: 330px;
+    display: grid;
+    gap: 7px;
+}
+
+.site-station-list > div {
+    display: grid;
+    gap: 2px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid #e3e9ee;
+}
+
+.site-station-list > div:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+}
+
+.site-station-list small {
+    color: #657785;
 }
 
 .instrument-table {
@@ -666,18 +696,73 @@ table {
 }
 
 .report-station-search {
-    max-width: 520px;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
+}
+
+.report-station-picker {
+    min-height: 330px;
+    display: grid;
+    grid-template-columns: minmax(210px, 0.7fr) minmax(360px, 1.5fr);
+    border: 1px solid #cbd6de;
+    background: white;
+}
+
+.report-district-panel,
+.report-stations-panel {
+    min-width: 0;
+    padding: 14px;
+}
+
+.report-district-panel {
+    border-right: 1px solid #cbd6de;
+    background: #f4f7f9;
+}
+
+.report-district-list {
+    max-height: 285px;
+    display: grid;
+    gap: 4px;
+    margin-top: 10px;
+    overflow-y: auto;
+}
+
+.report-district-tab {
+    width: 100%;
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 10px;
+    border-color: transparent;
+    background: transparent;
+    color: #173f63;
+    text-align: left;
+}
+
+.report-district-tab:hover,
+.report-district-tab.active {
+    border-color: #72bbb7;
+    background: white;
+}
+
+.report-district-tab.active {
+    box-shadow: inset 3px 0 #168d88;
+}
+
+.report-district-tab small {
+    min-width: 28px;
+    color: #657785;
+    text-align: right;
 }
 
 .report-station-list {
-    max-height: 270px;
+    max-height: 240px;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1px;
+    gap: 6px;
     overflow-y: auto;
-    border: 1px solid #cbd6de;
-    background: #dfe6eb;
+    overflow-x: hidden;
 }
 
 .report-station-option {
@@ -686,7 +771,9 @@ table {
     align-items: center;
     gap: 10px;
     padding: 10px 12px;
+    border: 1px solid #d5dee6;
     background: white;
+    color: #17212b;
     cursor: pointer;
 }
 
@@ -695,11 +782,17 @@ table {
 }
 
 .report-station-option input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
     flex: 0 0 auto;
 }
 
 .report-station-option span {
-    overflow-wrap: anywhere;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .maintenance-report-table-wrap {
@@ -817,9 +910,28 @@ table {
 }
 
 .category-checkbox-grid label {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
+    min-height: 42px;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid #d5dee6;
+    background: white;
+    color: #17212b;
+    line-height: 1.25;
+    cursor: pointer;
+}
+
+.category-checkbox-grid label:hover {
+    border-color: #72bbb7;
+    background: #f1f7f8;
+}
+
+.category-checkbox-grid input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
 }
 
 .station-assignment-list {
@@ -1119,6 +1231,19 @@ tbody tr:last-child td {
 
     .report-station-list {
         grid-template-columns: 1fr;
+    }
+
+    .report-station-picker {
+        grid-template-columns: 1fr;
+    }
+
+    .report-district-panel {
+        border-right: 0;
+        border-bottom: 1px solid #cbd6de;
+    }
+
+    .report-district-list {
+        max-height: 190px;
     }
 
     .chat-message {
