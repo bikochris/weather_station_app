@@ -73,6 +73,7 @@ UserRole = Literal[
     "Admin",
     "Observation Officer",
     "Observation Supervisor",
+    "Observation Supervisor at HQ",
     "Data Quality Control Officer",
     "Observation Processing Officer",
     "Big Data Specialist",
@@ -88,6 +89,7 @@ ASSIGNED_STATION_ROLES = {
 DATA_QUALITY_ACTION_ROLES = {
     "Data Quality Control Officer",
     "Observation Processing Officer",
+    "Observation Supervisor at HQ",
     *ASSIGNED_STATION_ROLES,
 }
 READ_ONLY_ALL_ROLES = {
@@ -100,15 +102,20 @@ DATA_OPERATIONS_ROLES = {
     "Data Quality Control Officer",
     "Observation Processing Officer",
 }
+QC_FILE_UPLOAD_ROLES = {
+    *DATA_OPERATIONS_ROLES,
+    "Observation Supervisor at HQ",
+}
 VOLUNTEER_DATA_ROLES = {
     *ASSIGNED_STATION_ROLES,
-    *DATA_OPERATIONS_ROLES,
+    *QC_FILE_UPLOAD_ROLES,
     *READ_ONLY_ALL_ROLES,
 }
 REPORTING_VIEW_ROLES = {
     *DATA_OPERATIONS_ROLES,
     *READ_ONLY_ALL_ROLES,
     "Observation Supervisor",
+    "Observation Supervisor at HQ",
 }
 
 
@@ -520,6 +527,7 @@ def ensure_department_options(cursor):
         "Admin",
         "Observation Officer",
         "Observation Supervisor",
+        "Observation Supervisor at HQ",
         "Data Quality Control Officer",
         "Observation Processing Officer",
         "Big Data Specialist",
@@ -535,7 +543,8 @@ def ensure_department_options(cursor):
                 ENUM(
                     'IT', 'Data', 'Quality Control', 'Maintenance',
                     'Admin', 'Data Quality Control', 'Observation Officer',
-                    'Observation Supervisor', 'Data Quality Control Officer',
+                    'Observation Supervisor', 'Observation Supervisor at HQ',
+                    'Data Quality Control Officer',
                     'Observation Processing Officer', 'Big Data Specialist',
                     'Data Quality Control Specialist', 'Division Manager',
                     'Instrument Maintenance and Calibration Officer'
@@ -560,6 +569,7 @@ def ensure_department_options(cursor):
             ALTER TABLE users
             MODIFY COLUMN department ENUM(
                 'Admin', 'Observation Officer', 'Observation Supervisor',
+                'Observation Supervisor at HQ',
                 'Data Quality Control Officer', 'Observation Processing Officer',
                 'Big Data Specialist', 'Data Quality Control Specialist',
                 'Division Manager',
@@ -583,6 +593,7 @@ def ensure_application_tables(connection):
                 email VARCHAR(150),
                 department ENUM(
                     'Admin', 'Observation Officer', 'Observation Supervisor',
+                    'Observation Supervisor at HQ',
                     'Data Quality Control Officer', 'Observation Processing Officer',
                     'Big Data Specialist', 'Data Quality Control Specialist',
                     'Division Manager',
@@ -3674,6 +3685,7 @@ def update_suspected_data_record(
                     "Observation Processing Officer",
                     "Observation Officer",
                     "Observation Supervisor",
+                    "Observation Supervisor at HQ",
                 ],
                 "suspected_data_resolved", "Final review required",
                 f"{record.issue.strip()} at {station[0]} - {station[1]} is ready for final review.",
@@ -4112,12 +4124,12 @@ def get_volunteer_data(user=Depends(require_volunteer_data_access)):
         return {
             "items": sorted(months.values(), key=lambda item: item["report_month"], reverse=True),
             "permissions": {
-                "upload_qc": user["department"] == "Admin" or user["department"] in DATA_OPERATIONS_ROLES,
-                "upload_filtered": user["department"] == "Admin" or user["department"] in DATA_OPERATIONS_ROLES,
+                "upload_qc": user["department"] == "Admin" or user["department"] in QC_FILE_UPLOAD_ROLES,
+                "upload_filtered": user["department"] == "Admin" or user["department"] in QC_FILE_UPLOAD_ROLES,
                 "upload_filled": user["department"] in ("Admin", "Observation Supervisor"),
                 "comment": user["department"] in ("Admin", "Observation Supervisor"),
-                "edit": user["department"] == "Admin" or user["department"] in DATA_OPERATIONS_ROLES or user["department"] == "Observation Supervisor",
-                "delete": user["department"] == "Admin" or user["department"] in DATA_OPERATIONS_ROLES or user["department"] == "Observation Supervisor",
+                "edit": user["department"] == "Admin" or user["department"] in QC_FILE_UPLOAD_ROLES or user["department"] == "Observation Supervisor",
+                "delete": user["department"] == "Admin" or user["department"] in QC_FILE_UPLOAD_ROLES or user["department"] == "Observation Supervisor",
             },
         }
     except MySQLError as exc:
@@ -4136,8 +4148,11 @@ async def upload_volunteer_data_file(
     user=Depends(require_volunteer_data_access),
 ):
     if file_kind in ("monthly_qc", "filtered_data"):
-        if user["department"] != "Admin" and user["department"] not in DATA_OPERATIONS_ROLES:
-            raise HTTPException(status_code=403, detail="Only Data Quality and Processing Officers can upload this file")
+        if user["department"] != "Admin" and user["department"] not in QC_FILE_UPLOAD_ROLES:
+            raise HTTPException(
+                status_code=403,
+                detail="Only authorized data-quality and HQ supervision roles can upload this file",
+            )
     elif user["department"] not in ("Admin", "Observation Supervisor"):
         raise HTTPException(status_code=403, detail="Only the Observation Supervisor can upload filled data")
     clean_filename = Path(filename).name
@@ -4239,7 +4254,7 @@ def delete_volunteer_month(
         if user["department"] == "Admin":
             cursor.execute("DELETE FROM volunteer_report_comments WHERE report_month = %s", (target_month,))
             cursor.execute("DELETE FROM volunteer_data_files WHERE report_month = %s", (target_month,))
-        elif user["department"] in DATA_OPERATIONS_ROLES:
+        elif user["department"] in QC_FILE_UPLOAD_ROLES:
             cursor.execute(
                 "DELETE FROM volunteer_data_files WHERE report_month = %s AND file_kind IN ('monthly_qc', 'filtered_data')",
                 (target_month,),

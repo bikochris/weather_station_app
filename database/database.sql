@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
         'Admin',
         'Observation Officer',
         'Observation Supervisor',
+        'Observation Supervisor at HQ',
         'Data Quality Control Officer',
         'Observation Processing Officer',
         'Big Data Specialist',

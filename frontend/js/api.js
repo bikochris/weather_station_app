@@ -8,6 +8,11 @@ const OBSERVATION_ROLES = new Set([
 ]);
 const DATA_QUALITY_ROLES = new Set([
     "Data Quality Control Officer",
+    "Observation Processing Officer",
+    "Observation Supervisor at HQ"
+]);
+const DATA_OPERATIONS_ROLES = new Set([
+    "Data Quality Control Officer",
     "Observation Processing Officer"
 ]);
 const READ_ONLY_ALL_ROLES = new Set([
@@ -127,6 +132,10 @@ async function requireSession() {
             "station-instruments.html", "volunteer-data.html", "reporting-status.html",
             "data-requests.html"
         ]),
+        "Observation Supervisor at HQ": new Set([
+            "index.html", "maintenance.html", "suspected-data.html",
+            "station-instruments.html", "volunteer-data.html", "reporting-status.html"
+        ]),
         "Big Data Specialist": null,
         "Data Quality Control Specialist": null,
         "Division Manager": null
@@ -188,7 +197,7 @@ function isObservationSupervisor() {
 
 
 function canWriteDataOperations() {
-    return isITUser() || DATA_QUALITY_ROLES.has(currentUser?.department);
+    return isITUser() || DATA_OPERATIONS_ROLES.has(currentUser?.department);
 }
 
 
