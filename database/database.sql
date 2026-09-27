@@ -15,9 +15,14 @@ CREATE TABLE IF NOT EXISTS users (
 
     department ENUM(
         'Admin',
-        'Maintenance',
-        'Data Quality Control',
-        'Observation Officer'
+        'Observation Officer',
+        'Observation Supervisor',
+        'Data Quality Control Officer',
+        'Observation Processing Officer',
+        'Big Data Specialist',
+        'Data Quality Control Specialist',
+        'Division Manager',
+        'Instrument Maintenance and Calibration Officer'
     ) NOT NULL,
 
     password_hash VARCHAR(255) NOT NULL,
@@ -46,6 +51,76 @@ CREATE TABLE IF NOT EXISTS user_sessions (
         FOREIGN KEY (user_id)
         REFERENCES users(user_id)
         ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS volunteer_data_files (
+    file_id INT AUTO_INCREMENT PRIMARY KEY,
+    report_month DATE NOT NULL,
+    file_kind ENUM('monthly_qc', 'filtered_data', 'filled_data') NOT NULL,
+    original_filename VARCHAR(255) NOT NULL,
+    content_type VARCHAR(120) NOT NULL,
+    file_size INT NOT NULL,
+    file_data LONGBLOB NOT NULL,
+    uploaded_by_user_id INT,
+    uploaded_by_username VARCHAR(50),
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_volunteer_month_kind (report_month, file_kind),
+    CONSTRAINT fk_volunteer_file_user FOREIGN KEY (uploaded_by_user_id)
+        REFERENCES users(user_id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS volunteer_report_comments (
+    comment_id INT AUTO_INCREMENT PRIMARY KEY,
+    report_month DATE NOT NULL,
+    comment TEXT NOT NULL,
+    commented_by_user_id INT,
+    commented_by_username VARCHAR(50),
+    commented_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_volunteer_comment_user FOREIGN KEY (commented_by_user_id)
+        REFERENCES users(user_id) ON DELETE SET NULL,
+    INDEX idx_volunteer_comment_month (report_month, commented_at)
+);
+
+CREATE TABLE IF NOT EXISTS monthly_reporting_status (
+    reporting_status_id INT AUTO_INCREMENT PRIMARY KEY,
+    report_month DATE NOT NULL UNIQUE,
+    expected_stations INT NOT NULL,
+    reported_stations INT NOT NULL,
+    validated_reports INT NOT NULL,
+    notes TEXT,
+    recorded_by_user_id INT,
+    recorded_by_username VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_reporting_status_user FOREIGN KEY (recorded_by_user_id)
+        REFERENCES users(user_id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS monthly_non_reported_station_files (
+    file_id INT AUTO_INCREMENT PRIMARY KEY,
+    report_month DATE NOT NULL UNIQUE,
+    original_filename VARCHAR(255) NOT NULL,
+    content_type VARCHAR(100) NOT NULL,
+    file_size INT NOT NULL,
+    file_data LONGBLOB NOT NULL,
+    uploaded_by_user_id INT,
+    uploaded_by_username VARCHAR(50),
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_non_reported_file_user FOREIGN KEY (uploaded_by_user_id)
+        REFERENCES users(user_id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS monthly_data_requests (
+    data_request_id INT AUTO_INCREMENT PRIMARY KEY,
+    request_month DATE NOT NULL,
+    category VARCHAR(100) NOT NULL,
+    served_requests INT NOT NULL,
+    notes VARCHAR(1000),
+    recorded_by_user_id INT,
+    recorded_by_username VARCHAR(50),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_request_month_category (request_month, category),
+    CONSTRAINT fk_data_request_user FOREIGN KEY (recorded_by_user_id)
+        REFERENCES users(user_id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS notifications (
@@ -140,6 +215,32 @@ CREATE TABLE IF NOT EXISTS maintenance_records (
         FOREIGN KEY (created_by_user_id)
         REFERENCES users(user_id)
         ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS maintenance_reports (
+    report_id INT AUTO_INCREMENT PRIMARY KEY,
+    period_start DATE NOT NULL,
+    period_end DATE NOT NULL,
+    notes VARCHAR(2000),
+    original_filename VARCHAR(255) NOT NULL,
+    content_type VARCHAR(100) NOT NULL,
+    file_size INT NOT NULL,
+    file_data LONGBLOB NOT NULL,
+    uploaded_by_user_id INT,
+    uploaded_by_username VARCHAR(50),
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_maintenance_report_user FOREIGN KEY (uploaded_by_user_id)
+        REFERENCES users(user_id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS maintenance_report_stations (
+    report_id INT NOT NULL,
+    station_id INT NOT NULL,
+    PRIMARY KEY (report_id, station_id),
+    CONSTRAINT fk_maintenance_report_station_report FOREIGN KEY (report_id)
+        REFERENCES maintenance_reports(report_id) ON DELETE CASCADE,
+    CONSTRAINT fk_maintenance_report_station_station FOREIGN KEY (station_id)
+        REFERENCES stations(station_id) ON UPDATE CASCADE ON DELETE RESTRICT
 );
 
 

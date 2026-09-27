@@ -1,6 +1,8 @@
 let maintenanceRecords = [];
 let maintenanceStations = [];
 let maintenanceInstrumentCatalog = [];
+let maintenanceReports = [];
+let selectedMaintenanceReportStationIds = new Set();
 const maintenanceCollection = createCollectionState("maintenance_date", "desc");
 
 
@@ -43,6 +45,119 @@ async function loadStationOptions() {
         filterSelect.appendChild(new Option(label, station.station_id));
     });
     renderMaintenanceInstrumentOptions();
+    renderMaintenanceReportStationOptions();
+}
+
+
+function renderMaintenanceReportStationOptions() {
+    const container = document.getElementById("maintenanceReportStations");
+    const search = document.getElementById("reportStationSearch").value.trim().toLowerCase();
+    container.replaceChildren();
+    const matching = maintenanceStations.filter((station) =>
+        !search || `${station.station_code} ${station.station_name}`.toLowerCase().includes(search)
+    );
+    matching.forEach((station) => {
+        const label = document.createElement("label");
+        label.className = "report-station-option";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = station.station_id;
+        checkbox.checked = selectedMaintenanceReportStationIds.has(station.station_id);
+        checkbox.addEventListener("change", () => {
+            if (checkbox.checked) selectedMaintenanceReportStationIds.add(station.station_id);
+            else selectedMaintenanceReportStationIds.delete(station.station_id);
+            setMetric("selectedReportStationCount", selectedMaintenanceReportStationIds.size);
+        });
+        const text = document.createElement("span");
+        text.textContent = `${station.station_code} - ${station.station_name}`;
+        label.append(checkbox, text);
+        container.appendChild(label);
+    });
+    if (!matching.length) {
+        const message = document.createElement("p");
+        message.className = "muted";
+        message.textContent = "No stations match this search.";
+        container.appendChild(message);
+    }
+    setMetric("selectedReportStationCount", selectedMaintenanceReportStationIds.size);
+}
+
+
+function resetMaintenanceReportForm() {
+    document.getElementById("maintenanceReportForm").reset();
+    const today = new Date().toISOString().slice(0, 10);
+    document.getElementById("reportPeriodStart").value = today;
+    document.getElementById("reportPeriodEnd").value = today;
+    selectedMaintenanceReportStationIds.clear();
+    renderMaintenanceReportStationOptions();
+}
+
+
+async function downloadMaintenanceReport(report) {
+    const response = await apiFetch(`/maintenance-reports/${report.report_id}/file`);
+    if (!response.ok) {
+        window.alert(await getErrorMessage(response, "Unable to download maintenance report"));
+        return;
+    }
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(await response.blob());
+    link.download = report.original_filename;
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
+
+
+async function deleteMaintenanceReport(reportId) {
+    if (!window.confirm("Delete this maintenance report?")) return;
+    const response = await apiFetch(`/maintenance-reports/${reportId}`, {method: "DELETE"});
+    if (!response.ok) {
+        window.alert(await getErrorMessage(response, "Unable to delete maintenance report"));
+        return;
+    }
+    await loadMaintenanceReports();
+}
+
+
+async function loadMaintenanceReports() {
+    const table = document.getElementById("maintenanceReportTable");
+    const response = await apiFetch("/maintenance-reports");
+    if (!response.ok) throw new Error(await getErrorMessage(response, "Unable to load maintenance reports"));
+    const result = await response.json();
+    maintenanceReports = result.items;
+    document.getElementById("maintenanceReportActionsHeading").hidden = !result.can_manage;
+    table.replaceChildren();
+    if (!maintenanceReports.length) {
+        showTableMessage(table, result.can_manage ? 7 : 6, "No maintenance reports uploaded.");
+        return;
+    }
+    maintenanceReports.forEach((report) => {
+        const row = document.createElement("tr");
+        appendCell(row, report.period_start === report.period_end
+            ? report.period_start
+            : `${report.period_start} to ${report.period_end}`);
+        appendCell(row, report.stations.map((station) =>
+            `${station.station_code} - ${station.station_name}`).join(", ") || "-");
+        const fileCell = appendCell(row, "");
+        const download = document.createElement("button");
+        download.type = "button";
+        download.className = "text-button";
+        download.textContent = report.original_filename;
+        download.addEventListener("click", () => downloadMaintenanceReport(report));
+        fileCell.appendChild(download);
+        appendCell(row, report.notes || "-");
+        appendCell(row, report.uploaded_by_username || "Legacy record");
+        appendCell(row, new Date(report.uploaded_at).toLocaleString());
+        if (result.can_manage) {
+            const actions = appendCell(row, "");
+            const remove = document.createElement("button");
+            remove.type = "button";
+            remove.className = "danger-button compact-button";
+            remove.textContent = "Delete";
+            remove.addEventListener("click", () => deleteMaintenanceReport(report.report_id));
+            actions.appendChild(remove);
+        }
+        table.appendChild(row);
+    });
 }
 
 
@@ -228,10 +343,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!await requireSession()) return;
     const canManage = canManageMaintenance();
     document.getElementById("maintenanceEditor").hidden = !canManage;
+    document.getElementById("maintenanceReportForm").hidden = !canManage;
     document.getElementById("maintenanceActionsHeading").hidden = !canManage;
     const form = document.getElementById("maintenanceForm");
     const message = document.getElementById("formMessage");
     resetMaintenanceForm();
+    resetMaintenanceReportForm();
 
     try {
         if (canManage) {
@@ -239,7 +356,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         } else {
             await loadStationOptions();
         }
-        await loadMaintenanceRecords();
+        await Promise.all([loadMaintenanceRecords(), loadMaintenanceReports()]);
     } catch (error) {
         setMessage(message, error.message, "error");
     }
@@ -285,6 +402,43 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     });
 
+    document.getElementById("maintenanceReportForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const message = document.getElementById("maintenanceReportMessage");
+        const start = document.getElementById("reportPeriodStart").value;
+        const end = document.getElementById("reportPeriodEnd").value;
+        const file = document.getElementById("maintenanceReportFile").files[0];
+        if (!selectedMaintenanceReportStationIds.size) {
+            setMessage(message, "Select at least one station covered by this report.", "error");
+            return;
+        }
+        if (end < start) {
+            setMessage(message, "Maintenance end date cannot be before the start date.", "error");
+            return;
+        }
+        const parameters = new URLSearchParams({
+            period_start: start,
+            period_end: end,
+            station_ids: Array.from(selectedMaintenanceReportStationIds).join(","),
+            filename: file.name
+        });
+        const notes = document.getElementById("maintenanceReportNotes").value.trim();
+        if (notes) parameters.set("notes", notes);
+        setMessage(message, "Uploading report...");
+        const response = await apiFetch(`/maintenance-reports?${parameters}`, {
+            method: "POST",
+            headers: {"Content-Type": file.type || "application/octet-stream"},
+            body: file
+        });
+        if (!response.ok) {
+            setMessage(message, await getErrorMessage(response, "Unable to upload maintenance report"), "error");
+            return;
+        }
+        resetMaintenanceReportForm();
+        setMessage(message, "Maintenance report saved for the selected stations.", "success");
+        await loadMaintenanceReports();
+    });
+
     document.getElementById("cancelMaintenanceEdit").addEventListener("click", resetMaintenanceForm);
     document.getElementById("refreshMaintenance").addEventListener("click", loadMaintenanceRecords);
     document.getElementById("stationFilter").addEventListener("change", () => {
@@ -323,5 +477,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("stationId").addEventListener(
         "change",
         () => renderMaintenanceInstrumentOptions()
+    );
+    document.getElementById("reportStationSearch").addEventListener(
+        "input",
+        renderMaintenanceReportStationOptions
     );
 });

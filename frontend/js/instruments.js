@@ -167,10 +167,11 @@ async function uploadInstruments() {
 document.addEventListener("DOMContentLoaded", async () => {
     initializeShell();
     if (!await requireSession()) return;
-    if (!isITUser()) {
+    if (!canViewInstrumentCatalog()) {
         window.location.href = "index.html";
         return;
     }
+    document.getElementById("instrumentEditor").hidden = !isITUser();
     const form = document.getElementById("instrumentForm");
     const message = document.getElementById("formMessage");
 

@@ -2,6 +2,20 @@ const API_URL = window.WEATHER_API_URL || window.location.origin;
 const TOKEN_KEY = "weather_station_access_token";
 let currentUser = null;
 let notificationTimer = null;
+const OBSERVATION_ROLES = new Set([
+    "Observation Officer",
+    "Observation Supervisor"
+]);
+const DATA_QUALITY_ROLES = new Set([
+    "Data Quality Control Officer",
+    "Observation Processing Officer"
+]);
+const READ_ONLY_ALL_ROLES = new Set([
+    "Big Data Specialist",
+    "Data Quality Control Specialist",
+    "Division Manager"
+]);
+const MAINTENANCE_ROLE = "Instrument Maintenance and Calibration Officer";
 
 
 function getAccessToken() {
@@ -70,25 +84,42 @@ async function requireSession() {
         element.hidden = currentUser.department !== "Admin";
     });
     document.querySelectorAll(".data-only").forEach((element) => {
-        element.hidden = currentUser.department !== "Data Quality Control";
+        element.hidden = !DATA_QUALITY_ROLES.has(currentUser.department);
     });
     document.querySelectorAll(".maintenance-only").forEach((element) => {
-        element.hidden = currentUser.department !== "Maintenance";
+        element.hidden = currentUser.department !== MAINTENANCE_ROLE;
+    });
+    document.querySelectorAll(".user-directory-access").forEach((element) => {
+        element.hidden = !canViewUserDirectory();
     });
     const allowedPages = {
         "Admin": null,
-        "Maintenance": new Set([
+        [MAINTENANCE_ROLE]: new Set([
             "index.html", "maintenance.html", "suspected-data.html",
-            "station-instruments.html"
+            "station-instruments.html", "kpi.html", "search.html"
         ]),
-        "Data Quality Control": new Set([
+        "Data Quality Control Officer": new Set([
             "index.html", "maintenance.html", "suspected-data.html",
-            "station-instruments.html"
+            "station-instruments.html", "volunteer-data.html", "reporting-status.html",
+            "data-requests.html", "kpi.html", "search.html"
+        ]),
+        "Observation Processing Officer": new Set([
+            "index.html", "maintenance.html", "suspected-data.html",
+            "station-instruments.html", "volunteer-data.html", "reporting-status.html",
+            "data-requests.html", "kpi.html", "search.html"
         ]),
         "Observation Officer": new Set([
             "index.html", "maintenance.html", "suspected-data.html",
-            "station-instruments.html"
-        ])
+            "station-instruments.html", "volunteer-data.html", "kpi.html", "search.html"
+        ]),
+        "Observation Supervisor": new Set([
+            "index.html", "maintenance.html", "suspected-data.html",
+            "station-instruments.html", "volunteer-data.html", "reporting-status.html",
+            "data-requests.html", "kpi.html", "search.html"
+        ]),
+        "Big Data Specialist": null,
+        "Data Quality Control Specialist": null,
+        "Division Manager": null
     };
     const pageAccess = allowedPages[currentUser.department];
     document.querySelectorAll("nav a[href]").forEach((link) => {
@@ -107,17 +138,54 @@ function isITUser() {
 
 
 function isDataUser() {
-    return currentUser?.department === "Data Quality Control";
+    return DATA_QUALITY_ROLES.has(currentUser?.department);
 }
 
 
 function isMaintenanceUser() {
-    return currentUser?.department === "Maintenance";
+    return currentUser?.department === MAINTENANCE_ROLE;
 }
 
 
 function isObservationOfficer() {
-    return currentUser?.department === "Observation Officer";
+    return OBSERVATION_ROLES.has(currentUser?.department);
+}
+
+
+function isReadOnlyAllUser() {
+    return READ_ONLY_ALL_ROLES.has(currentUser?.department);
+}
+
+
+function canViewUserDirectory() {
+    return isITUser() || isReadOnlyAllUser();
+}
+
+
+function canViewInstrumentCatalog() {
+    return isITUser() || isMaintenanceUser() || isReadOnlyAllUser();
+}
+
+
+function isObservationSupervisor() {
+    return currentUser?.department === "Observation Supervisor";
+}
+
+
+function canWriteDataOperations() {
+    return isITUser() || DATA_QUALITY_ROLES.has(currentUser?.department);
+}
+
+
+function canAccessVolunteerData() {
+    return isITUser() || OBSERVATION_ROLES.has(currentUser?.department) ||
+        DATA_QUALITY_ROLES.has(currentUser?.department) || isReadOnlyAllUser();
+}
+
+
+function canViewMonthlyReporting() {
+    return isITUser() || DATA_QUALITY_ROLES.has(currentUser?.department) ||
+        isReadOnlyAllUser() || isObservationSupervisor();
 }
 
 

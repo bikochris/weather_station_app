@@ -25,8 +25,8 @@ body {
 }
 
 .header-inner {
-    width: min(1320px, 94%);
-    min-height: 92px;
+    width: min(1760px, 96%);
+    min-height: 104px;
     margin: 0 auto;
     display: flex;
     align-items: center;
@@ -65,6 +65,8 @@ h2 {
 
 nav {
     display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
     align-self: stretch;
     margin-left: auto;
 }
@@ -72,10 +74,12 @@ nav {
 nav a {
     display: flex;
     align-items: center;
-    padding: 0 15px;
+    min-height: 48px;
+    padding: 8px 10px;
     color: #eaf2f8;
     border-bottom: 3px solid transparent;
     text-decoration: none;
+    font-size: 13px;
 }
 
 nav a:hover,
@@ -91,6 +95,7 @@ nav a.active {
     gap: 12px;
     padding-left: 16px;
     border-left: 1px solid #426985;
+    flex: 0 0 auto;
 }
 
 .notification-host {
@@ -436,6 +441,29 @@ fieldset {
     gap: 10px;
 }
 
+.table-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.compact-button {
+    min-height: 34px;
+    padding: 6px 10px;
+    font-size: 13px;
+}
+
+.table-actions .danger-button {
+    border-color: #b42318;
+    background: white;
+    color: #b42318;
+}
+
+.table-actions .danger-button:hover {
+    background: #fff1f0;
+}
+
 .import-tools {
     max-width: 820px;
     margin-top: 30px;
@@ -520,6 +548,266 @@ table {
 
 .instrument-table {
     min-width: 1250px;
+}
+
+.wide-data-table {
+    min-width: 1050px;
+}
+
+.comment-entry {
+    max-width: 420px;
+    padding: 7px 0;
+    border-bottom: 1px solid #dfe6eb;
+    line-height: 1.4;
+}
+
+.comment-entry:last-child {
+    border-bottom: 0;
+}
+
+.bar-chart {
+    min-height: 260px;
+    display: flex;
+    align-items: flex-end;
+    gap: 14px;
+    padding: 22px 12px 0;
+    overflow-x: auto;
+    border-left: 1px solid #c7d3dc;
+    border-bottom: 1px solid #c7d3dc;
+}
+
+.bar-group {
+    min-width: 68px;
+    height: 220px;
+    display: grid;
+    grid-template-rows: 22px 1fr 28px;
+    gap: 5px;
+    text-align: center;
+}
+
+.bar-group strong,
+.bar-group span {
+    font-size: 12px;
+}
+
+.bar-track {
+    display: flex;
+    align-items: flex-end;
+    background: #e8eef2;
+}
+
+.bar-fill {
+    width: 100%;
+    min-height: 2px;
+    background: #208b86;
+}
+
+.horizontal-chart {
+    display: grid;
+    gap: 12px;
+}
+
+.horizontal-bar-row {
+    display: grid;
+    grid-template-columns: minmax(120px, 190px) 1fr 50px;
+    align-items: center;
+    gap: 12px;
+}
+
+.horizontal-bar-track {
+    height: 18px;
+    background: #e8eef2;
+}
+
+.horizontal-bar-fill {
+    height: 100%;
+    min-width: 2px;
+    background: #208b86;
+}
+
+.compact-field {
+    width: min(240px, 100%);
+}
+
+.readonly-value {
+    min-height: 43px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 10px 11px;
+    border: 1px solid #c7d3dc;
+    background: #f4f7f9;
+}
+
+.readonly-value strong {
+    color: #173f63;
+    font-size: 20px;
+}
+
+.readonly-value span {
+    color: #657785;
+    font-size: 13px;
+}
+
+.request-category-list {
+    display: grid;
+    gap: 10px;
+    margin: 18px 0;
+}
+
+.request-category-row {
+    display: grid;
+    grid-template-columns: minmax(180px, 1.3fr) minmax(130px, 0.6fr) minmax(180px, 1fr) 42px;
+    align-items: end;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid #d5dee6;
+    background: #f8fafb;
+}
+
+.report-station-search {
+    max-width: 520px;
+    margin-bottom: 12px;
+}
+
+.report-station-list {
+    max-height: 270px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    overflow-y: auto;
+    border: 1px solid #cbd6de;
+    background: #dfe6eb;
+}
+
+.report-station-option {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: white;
+    cursor: pointer;
+}
+
+.report-station-option:hover {
+    background: #f1f7f8;
+}
+
+.report-station-option input {
+    flex: 0 0 auto;
+}
+
+.report-station-option span {
+    overflow-wrap: anywhere;
+}
+
+.maintenance-report-table-wrap {
+    margin-top: 24px;
+}
+
+.icon-button {
+    width: 42px;
+    min-height: 42px;
+    padding: 6px;
+    font-size: 22px;
+    line-height: 1;
+}
+
+.search-workspace {
+    display: grid;
+    gap: 22px;
+}
+
+.chat-thread {
+    max-height: 480px;
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+    overflow-y: auto;
+    border: 1px solid #d5dee6;
+    background: #f4f7f9;
+}
+
+.chat-message {
+    max-width: 82%;
+    padding: 13px 15px;
+    border: 1px solid #cbd6de;
+    background: white;
+}
+
+.chat-message strong {
+    display: block;
+    margin-bottom: 5px;
+    color: #173f63;
+    font-size: 13px;
+}
+
+.chat-message p {
+    margin: 0;
+    line-height: 1.5;
+}
+
+.user-message {
+    justify-self: end;
+    border-color: #85bfbc;
+    background: #e8f5f4;
+}
+
+.assistant-message {
+    justify-self: start;
+}
+
+.prompt-form {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: 12px;
+}
+
+.prompt-form textarea {
+    min-height: 110px;
+}
+
+.answer-panel {
+    padding: 18px;
+    border-left: 4px solid #208b86;
+    background: #eff8f7;
+    font-size: 18px;
+    line-height: 1.5;
+}
+
+.search-results {
+    display: grid;
+    gap: 1px;
+    background: #d5dee6;
+    border: 1px solid #d5dee6;
+}
+
+.search-result {
+    display: grid;
+    grid-template-columns: 120px minmax(180px, 280px) 1fr;
+    align-items: start;
+    gap: 14px;
+    padding: 14px;
+    background: white;
+}
+
+.search-result p {
+    margin: 0;
+    color: #526474;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 .category-checkbox-grid {
@@ -810,7 +1098,8 @@ tbody tr:last-child td {
 
     .table-tools,
     .pagination-bar,
-    .pagination-buttons {
+    .pagination-buttons,
+    .prompt-form {
         align-items: stretch;
         flex-direction: column;
     }
@@ -820,5 +1109,19 @@ tbody tr:last-child td {
     .table-tools button,
     .pagination-buttons button {
         width: 100%;
+    }
+
+    .horizontal-bar-row,
+    .search-result,
+    .request-category-row {
+        grid-template-columns: 1fr;
+    }
+
+    .report-station-list {
+        grid-template-columns: 1fr;
+    }
+
+    .chat-message {
+        max-width: 94%;
     }
 }

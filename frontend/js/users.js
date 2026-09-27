@@ -3,9 +3,14 @@ const userCollection = createCollectionState("full_name", "asc");
 let stationRecords = [];
 
 
+function isAssignedStationRole(role) {
+    return role === "Observation Officer" || role === "Observation Supervisor";
+}
+
+
 function updateStationAssignmentVisibility() {
     document.getElementById("stationAssignmentFieldset").hidden =
-        document.getElementById("department").value !== "Observation Officer";
+        !isAssignedStationRole(document.getElementById("department").value);
 }
 
 
@@ -114,7 +119,8 @@ function appendUserActions(row, user) {
 
 async function loadUsers() {
     const table = document.getElementById("userTable");
-    showTableMessage(table, 7, "Loading users...");
+    const columnCount = isITUser() ? 7 : 6;
+    showTableMessage(table, columnCount, "Loading users...");
     try {
         const response = await apiFetch(`/users?${collectionParameters(userCollection)}`);
         if (!response.ok) {
@@ -136,7 +142,7 @@ async function loadUsers() {
             });
             appendCell(
                 row,
-                user.department === "Observation Officer"
+                isAssignedStationRole(user.department)
                     ? (assignedStations.join(", ") || "None")
                     : "-"
             );
@@ -147,11 +153,11 @@ async function loadUsers() {
                     ? `${status} - password change required`
                     : status
             );
-            appendUserActions(row, user);
+            if (isITUser()) appendUserActions(row, user);
             table.appendChild(row);
         });
     } catch (error) {
-        showTableMessage(table, 7, error.message);
+        showTableMessage(table, columnCount, error.message);
     }
 }
 
@@ -160,10 +166,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     initializeShell();
     const signedInUser = await requireSession();
     if (!signedInUser) return;
-    if (!isITUser()) {
+    if (!canViewUserDirectory()) {
         window.location.href = "index.html";
         return;
     }
+    document.getElementById("userEditor").hidden = !isITUser();
 
     const form = document.getElementById("userForm");
     const message = document.getElementById("formMessage");
@@ -181,8 +188,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             password: password || null,
             station_ids: selectedStationIds()
         };
-        if (user.department === "Observation Officer" && !user.station_ids.length) {
-            setMessage(message, "Assign at least one station to the Observation Officer.", "error");
+        if (isAssignedStationRole(user.department) && !user.station_ids.length) {
+            setMessage(message, "Assign at least one station to this observation role.", "error");
             return;
         }
         if (editId) {

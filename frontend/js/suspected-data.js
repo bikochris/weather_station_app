@@ -239,7 +239,8 @@ async function loadSuspectedDataRecords() {
         date_to: document.getElementById("suspectedDateTo").value
     });
     const endpoint = `/suspected-data?${parameters}`;
-    const columnCount = 18;
+    const canAct = isITUser() || isMaintenanceUser() || canPerformDataQualityActions();
+    const columnCount = canAct ? 18 : 17;
     showTableMessage(table, columnCount, "Loading QC records...");
     try {
         const response = await apiFetch(endpoint);
@@ -288,7 +289,7 @@ async function loadSuspectedDataRecords() {
             appendCell(row, record.final_comment || "-");
             appendCell(row, record.final_reviewed_by || "-");
             appendCell(row, formatTimestamp(record.final_reviewed_at));
-            appendSuspectedDataActions(row, record);
+            if (canAct) appendSuspectedDataActions(row, record);
             table.appendChild(row);
         });
     } catch (error) {
@@ -307,6 +308,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const finalReviewMessage = document.getElementById("finalReviewMessage");
     document.getElementById("reportSection").hidden =
         !canPerformDataQualityActions();
+    document.getElementById("suspectedDataActionsHeading").hidden =
+        !(isITUser() || isMaintenanceUser() || canPerformDataQualityActions());
 
     try {
         await loadSuspectedDataStationOptions();
