@@ -344,7 +344,26 @@ function initializeNotificationCenter() {
 async function getErrorMessage(response, fallback) {
     try {
         const body = await response.json();
-        return body.detail || fallback;
+        const detail = body.detail;
+        if (typeof detail === "string") return detail;
+        if (Array.isArray(detail)) {
+            const messages = detail.map((error) => {
+                if (typeof error === "string") return error;
+                const location = Array.isArray(error?.loc)
+                    ? error.loc.filter((part) => !["body", "query", "path"].includes(part))
+                    : [];
+                const field = location
+                    .map((part) => String(part).replaceAll("_", " "))
+                    .join(" > ");
+                const message = error?.msg || "Invalid value";
+                return field ? `${field}: ${message}` : message;
+            }).filter(Boolean);
+            return messages.join("; ") || fallback;
+        }
+        if (detail && typeof detail === "object") {
+            return detail.message || JSON.stringify(detail);
+        }
+        return fallback;
     } catch {
         return fallback;
     }
