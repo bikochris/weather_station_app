@@ -125,11 +125,11 @@ async function requireSession() {
         ]),
         "Observation Officer": new Set([
             "index.html", "maintenance.html", "suspected-data.html",
-            "station-instruments.html", "volunteer-data.html"
+            "station-instruments.html"
         ]),
         "Observation Supervisor": new Set([
             "index.html", "maintenance.html", "suspected-data.html",
-            "station-instruments.html", "volunteer-data.html"
+            "station-instruments.html"
         ]),
         "Observation Supervisor at HQ": new Set([
             "index.html", "maintenance.html", "suspected-data.html",
@@ -196,8 +196,8 @@ function canWriteDataOperations() {
 
 
 function canAccessVolunteerData() {
-    return isITUser() || OBSERVATION_ROLES.has(currentUser?.department) ||
-        DATA_QUALITY_ROLES.has(currentUser?.department) || isReadOnlyAllUser();
+    return isITUser() || DATA_QUALITY_ROLES.has(currentUser?.department) ||
+        isReadOnlyAllUser();
 }
 
 
