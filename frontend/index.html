@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stations | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css?v=20260926e">
+    <title>Home | Weather Station Management</title>
+    <link rel="stylesheet" href="css/app.css?v=20260927q">
 </head>
 <body>
     <header class="app-header">
@@ -14,9 +14,10 @@
                 <h1>Weather Station Management</h1>
             </div>
             <nav aria-label="Primary navigation">
-                <a class="active" href="index.html">Stations</a>
+                <a class="active" href="index.html">Home</a>
+                <a href="stations.html">Stations</a>
                 <a href="sites.html">Sites</a>
-                <a href="maintenance.html">Maintenance</a>
+                <a href="maintenance.html">Maintenance</a><a href="station-inspections.html">Inspections</a><a href="discussions.html">Discussions</a>
                 <a href="suspected-data.html">QC</a>
                 <a href="instruments.html">Instruments</a>
                 <a href="station-instruments.html">Station instruments</a>
@@ -34,232 +35,103 @@
         </div>
     </header>
 
-    <main class="dashboard-layout">
-        <div class="dashboard-content">
-        <section id="stationEditor">
-            <div class="section-heading">
-                <div>
-                    <p class="eyebrow">Station registry</p>
-                    <h2>Add station</h2>
-                </div>
-            </div>
-
-            <form id="stationForm" class="form-grid">
-                <input type="hidden" id="stationEditId">
-                <div class="field">
-                    <label for="stationCode">Station ID</label>
-                    <input type="text" id="stationCode" maxlength="50" required>
-                </div>
-
-                <div class="field">
-                    <label for="stationName">Station name</label>
-                    <input type="text" id="stationName" maxlength="100" required>
-                </div>
-
-                <div class="field">
-                    <label for="latitude">Latitude</label>
-                    <input type="number" step="any" min="-90" max="90" id="latitude" required>
-                </div>
-
-                <div class="field">
-                    <label for="longitude">Longitude</label>
-                    <input type="number" step="any" min="-180" max="180" id="longitude" required>
-                </div>
-
-                <div class="field">
-                    <label for="altitude">Altitude</label>
-                    <input type="number" step="any" id="altitude" required>
-                </div>
-
-                <div class="field">
-                    <label for="province">Province</label>
-                    <input type="text" id="province" maxlength="100" required>
-                </div>
-
-                <div class="field">
-                    <label for="district">District</label>
-                    <input type="text" id="district" maxlength="100" required>
-                </div>
-
-                <div class="field">
-                    <label for="sector">Sector</label>
-                    <input type="text" id="sector" maxlength="100" required>
-                </div>
-
-                <div class="field">
-                    <label for="stationCategory">Station category</label>
-                    <select id="stationCategory" required>
-                        <option value="">Select a category</option>
-                        <option value="Upper air station">Upper air station</option>
-                        <option value="Weather radar">Weather radar</option>
-                        <option value="Automatic Weather stations">Automatic Weather stations</option>
-                        <option value="Automatic Raingauge">Automatic Raingauge</option>
-                        <option value="Principal stations">Principal stations</option>
-                        <option value="Climatic stations">Climatic stations</option>
-                        <option value="Rainfall station">Rainfall station</option>
-                    </select>
-                </div>
-
-                <div class="field">
-                    <label for="status">Operational status</label>
-                    <select id="status" required>
-                        <option value="Operational">Operational</option>
-                        <option value="Non-operational">Non-operational</option>
-                        <option value="Maintenance">Maintenance</option>
-                        <option value="Closed">Closed</option>
-                    </select>
-                </div>
-
-                <label class="checkbox-row span-2" for="stationSuspended">
-                    <input type="checkbox" id="stationSuspended">
-                    <span>Station is suspended</span>
-                </label>
-
-                <div class="field span-2">
-                    <label for="stationComment">Comment</label>
-                    <textarea id="stationComment" maxlength="2000"></textarea>
-                </div>
-
-                <div class="field span-2">
-                    <label for="stationAction">Action</label>
-                    <textarea id="stationAction" maxlength="2000" placeholder="Planned corrective action"></textarea>
-                </div>
-
-                <div class="form-actions span-2">
-                    <button type="submit" id="stationSubmit">Add station</button>
-                    <button class="secondary-button" type="button" id="cancelStationEdit" hidden>Cancel</button>
-                </div>
-                <p id="formMessage" class="message span-2" aria-live="polite"></p>
-            </form>
-
-            <div class="import-tools">
-                <div class="section-heading">
-                    <div>
-                        <p class="eyebrow">Bulk entry</p>
-                        <h2>Import stations</h2>
-                    </div>
-                    <button class="secondary-button" id="downloadStationTemplate" type="button">CSV template</button>
-                </div>
-                <div class="form-grid">
-                    <div class="field span-2">
-                        <label for="stationCsvFile">CSV file</label>
-                        <input type="file" id="stationCsvFile" accept=".csv,text/csv">
-                    </div>
-                    <div class="form-actions span-2">
-                        <button type="button" id="uploadStations">Upload CSV</button>
-                    </div>
-                    <p id="importMessage" class="message span-2" aria-live="polite"></p>
+    <main class="welcome-main">
+        <section class="welcome-hero">
+            <div class="welcome-hero-content">
+                <p class="eyebrow">National observation network</p>
+                <h2>Welcome back, <span id="welcomeName">team member</span></h2>
+                <p>Monitor stations, physical sites, maintenance activity, and data quality from one operational workspace.</p>
+                <div class="welcome-context">
+                    <span id="welcomeRole">Loading account...</span>
+                    <span id="welcomeDate"></span>
                 </div>
             </div>
         </section>
 
-        <section>
-            <div class="section-heading history-heading">
+        <section class="welcome-routes" aria-labelledby="workspaceHeading">
+            <div class="welcome-section-heading">
                 <div>
-                    <p class="eyebrow">Current network</p>
-                    <h2>Stations</h2>
+                    <p class="eyebrow">Your workspace</p>
+                    <h2 id="workspaceHeading">Choose an area</h2>
                 </div>
-                <div class="filter-bar">
-                    <div class="field filter-field">
-                        <label for="stationDateFrom">Registered from</label>
-                        <input type="date" id="stationDateFrom">
-                    </div>
-                    <div class="field filter-field">
-                        <label for="stationDateTo">Registered to</label>
-                        <input type="date" id="stationDateTo">
-                    </div>
-                    <div class="field filter-field">
-                        <label for="stationCategoryFilter">Station category</label>
-                        <select id="stationCategoryFilter">
-                            <option value="">All categories</option>
-                            <option value="Upper air station">Upper air station</option>
-                            <option value="Weather radar">Weather radar</option>
-                            <option value="Automatic Weather stations">Automatic Weather stations</option>
-                            <option value="Automatic Raingauge">Automatic Raingauge</option>
-                            <option value="Principal stations">Principal stations</option>
-                            <option value="Climatic stations">Climatic stations</option>
-                            <option value="Rainfall station">Rainfall station</option>
-                        </select>
-                    </div>
-                    <div class="field filter-field">
-                        <label for="stationSuspendedFilter">Suspension</label>
-                        <select id="stationSuspendedFilter">
-                            <option value="">All stations</option>
-                            <option value="1">Suspended</option>
-                            <option value="0">Not suspended</option>
-                        </select>
-                    </div>
-                    <button class="secondary-button" id="refreshStations" type="button">Refresh</button>
-                </div>
+                <p class="muted">Counts reflect the information available to your account.</p>
             </div>
 
-            <div class="table-tools">
-                <div class="field search-field">
-                    <label for="stationSearch">Search stations</label>
-                    <input type="search" id="stationSearch" placeholder="Station ID, name, location or category">
-                </div>
-                <div class="field">
-                    <label for="stationPageSize">Rows per page</label>
-                    <select id="stationPageSize">
-                        <option value="10">10</option>
-                        <option value="25" selected>25</option>
-                        <option value="50">50</option>
-                        <option value="100">100</option>
-                    </select>
-                </div>
-                <button class="secondary-button" id="stationExportCsv" type="button">Export CSV</button>
-                <button class="secondary-button" id="stationExportPdf" type="button">Export PDF</button>
+            <div class="operation-route-grid all-page-routes">
+                <a class="operation-route route-stations" data-tool-page="stations.html" href="stations.html">
+                    <img class="route-icon" src="assets/icons/radio-tower.svg" alt="">
+                    <span class="route-kicker">Network registry</span>
+                    <h3>Stations</h3>
+                    <p>Locations, classifications, operating condition, and suspension details.</p>
+                    <strong><span id="homeStationMetric">--</span> available</strong>
+                </a>
+                <a class="operation-route route-sites" data-tool-page="sites.html" href="sites.html">
+                    <img class="route-icon" src="assets/icons/map-pinned.svg" alt="">
+                    <span class="route-kicker">Physical footprint</span>
+                    <h3>Sites</h3>
+                    <p>See colocated stations grouped by their geographic coordinates.</p>
+                    <strong><span id="homeSiteMetric">--</span> sites</strong>
+                </a>
+                <a class="operation-route route-maintenance" data-tool-page="maintenance.html" href="maintenance.html">
+                    <img class="route-icon" src="assets/icons/wrench.svg" alt="">
+                    <span class="route-kicker">Field operations</span>
+                    <h3>Maintenance</h3>
+                    <p>Review interventions, reports, instruments, and recent technical work.</p>
+                    <strong><span id="homeMaintenanceMetric">--</span> records</strong>
+                </a>
+                <a class="operation-route route-inspections" data-tool-page="station-inspections.html" href="station-inspections.html">
+                    <img class="route-icon" src="assets/icons/clipboard-check.svg" alt="">
+                    <span class="route-kicker">Field assurance</span>
+                    <h3>Station inspections</h3>
+                    <p>Submit findings, route decisions, follow team responses, and retain evidence.</p>
+                    <strong><span id="homeInspectionMetric">--</span> inspections</strong>
+                </a>
+                <a class="operation-route route-discussions" data-tool-page="discussions.html" href="discussions.html">
+                    <img class="route-icon" src="assets/icons/messages-square.svg" alt="">
+                    <span class="route-kicker">Team collaboration</span><h3>Discussions</h3><p>Invite colleagues, exchange accountable responses, and close decisions formally.</p><strong><span id="homeDiscussionMetric">--</span> open</strong>
+                </a>
+                <a class="operation-route route-quality" data-tool-page="suspected-data.html" href="suspected-data.html">
+                    <img class="route-icon" src="assets/icons/shield-check.svg" alt="">
+                    <span class="route-kicker">Data assurance</span><h3>Quality control</h3><p>Report suspected data, resolve technical causes, and complete final review.</p><strong>Open workspace</strong>
+                </a>
+                <a class="operation-route route-instruments" data-tool-page="instruments.html" href="instruments.html">
+                    <img class="route-icon" src="assets/icons/gauge.svg" alt="">
+                    <span class="route-kicker">Equipment catalog</span><h3>Instruments</h3><p>Define measurement equipment, categories, parameters, and availability.</p><strong>Open workspace</strong>
+                </a>
+                <a class="operation-route route-inventory" data-tool-page="station-instruments.html" href="station-instruments.html">
+                    <img class="route-icon" src="assets/icons/package-search.svg" alt="">
+                    <span class="route-kicker">Asset inventory</span><h3>Station instruments</h3><p>Track installed assets, condition, calibration, and replacement dates.</p><strong>Open workspace</strong>
+                </a>
+                <a class="operation-route route-volunteer" data-tool-page="volunteer-data.html" href="volunteer-data.html">
+                    <img class="route-icon" src="assets/icons/users-round.svg" alt="">
+                    <span class="route-kicker">Monthly submissions</span><h3>Volunteer data</h3><p>Manage monthly QC reports, filtered data, filled data, and comments.</p><strong>Open workspace</strong>
+                </a>
+                <a class="operation-route route-reporting" data-tool-page="reporting-status.html" href="reporting-status.html">
+                    <img class="route-icon" src="assets/icons/chart-no-axes-combined.svg" alt="">
+                    <span class="route-kicker">Network completeness</span><h3>Reporting status</h3><p>Compare expected reporting stations with monthly submissions.</p><strong>Open workspace</strong>
+                </a>
+                <a class="operation-route route-requests" data-tool-page="data-requests.html" href="data-requests.html">
+                    <img class="route-icon" src="assets/icons/inbox.svg" alt="">
+                    <span class="route-kicker">Service demand</span><h3>Data requests</h3><p>Monitor served requests by period and requester category.</p><strong>Open workspace</strong>
+                </a>
+                <a class="operation-route route-kpi" data-tool-page="kpi.html" href="kpi.html">
+                    <img class="route-icon" src="assets/icons/target.svg" alt="">
+                    <span class="route-kicker">Performance</span><h3>KPI</h3><p>Review activity, completed work, and pending responsibilities.</p><strong>Open workspace</strong>
+                </a>
+                <a class="operation-route route-search" data-tool-page="search.html" href="search.html">
+                    <img class="route-icon" src="assets/icons/search.svg" alt="">
+                    <span class="route-kicker">Operational intelligence</span><h3>Database search</h3><p>Ask direct questions about stations, sites, and maintenance records.</p><strong>Open workspace</strong>
+                </a>
+                <a class="operation-route route-users user-directory-access" data-tool-page="users.html" href="users.html" hidden>
+                    <img class="route-icon" src="assets/icons/users.svg" alt="">
+                    <span class="route-kicker">Administration</span><h3>Users</h3><p>Manage accounts, responsibilities, and station assignments.</p><strong>Open workspace</strong>
+                </a>
             </div>
-
-            <div class="table-wrap">
-                <table class="station-table">
-                    <thead>
-                        <tr>
-                            <th data-sort="station_code">Station ID</th>
-                            <th data-sort="station_name">Station</th>
-                            <th>Latitude</th>
-                            <th>Longitude</th>
-                            <th>Altitude</th>
-                            <th>Province</th>
-                            <th>District</th>
-                            <th>Sector</th>
-                            <th data-sort="station_category">Station category</th>
-                            <th data-sort="status">Operational status</th>
-                            <th data-sort="suspended">Suspended</th>
-                            <th>Comment</th>
-                            <th>Action</th>
-                            <th data-sort="created_at">Registered at</th>
-                            <th>Recorded by</th>
-                            <th class="it-only" hidden>Manage</th>
-                        </tr>
-                    </thead>
-                    <tbody id="stationTable"></tbody>
-                </table>
-            </div>
-            <div id="stationPagination" class="pagination-bar"></div>
         </section>
-        </div>
-
-        <aside class="dashboard-sidebar" aria-label="Station statistics">
-            <p class="eyebrow">Network analytics</p>
-            <h2>Station overview</h2>
-            <div class="summary-panel">
-                <div class="metric-grid">
-                    <div class="metric-item"><span>Overall stations</span><strong id="stationTotalMetric">0</strong></div>
-                    <div class="metric-item"><span>Operational</span><strong id="stationOperationalMetric">0</strong></div>
-                    <div class="metric-item"><span>Need attention</span><strong id="stationAttentionMetric">0</strong></div>
-                    <div class="metric-item"><span>Suspended</span><strong id="stationSuspendedMetric">0</strong></div>
-                    <div class="metric-item"><span>Suspended AWS</span><strong id="stationSuspendedAwsMetric">0</strong></div>
-                    <div class="metric-item"><span>Suspended ARG</span><strong id="stationSuspendedArgMetric">0</strong></div>
-                    <div class="metric-item"><span>Station categories</span><strong id="stationCategoryMetric">0</strong></div>
-                </div>
-                <div id="stationCategoryBreakdown" class="breakdown-grid"></div>
-            </div>
-        </aside>
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20260927j"></script>
-    <script src="js/stations.js?v=20260926d"></script>
+    <script src="js/api.js?v=20260928p"></script>
+    <script src="js/home.js?v=20260927b"></script>
 </body>
 </html>

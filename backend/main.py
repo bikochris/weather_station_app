@@ -115,6 +115,9 @@ REPORTING_VIEW_ROLES = {
     *READ_ONLY_ALL_ROLES,
     "Observation Supervisor at HQ",
 }
+INSPECTION_HQ_ROLES = {"Observation Supervisor at HQ", "Admin"}
+INSPECTION_MANAGEMENT_ROLES = {*READ_ONLY_ALL_ROLES, "Admin"}
+INSPECTION_MAINTENANCE_ROLES = {MAINTENANCE_ROLE, "Admin"}
 
 
 class Station(BaseModel):
@@ -238,6 +241,39 @@ class StationInstrument(BaseModel):
         "Inactive",
     ]
     comment: str | None = Field(default=None, max_length=2000)
+
+
+class StationInspectionRecord(BaseModel):
+
+    station_id: int = Field(gt=0)
+    inspection_date: date
+    finding: str = Field(min_length=1, max_length=5000)
+
+
+class StationInspectionAction(BaseModel):
+
+    action: Literal[
+        "comment",
+        "send_management",
+        "send_maintenance",
+        "close",
+        "status",
+    ]
+    comment: str | None = Field(default=None, max_length=5000)
+    status: Literal["Open", "Under Review", "Solved", "Not Solved"] | None = None
+    reason: str | None = Field(default=None, max_length=5000)
+
+
+class DiscussionCreate(BaseModel):
+
+    title: str = Field(min_length=3, max_length=200)
+    opening_message: str = Field(min_length=1, max_length=10000)
+    participant_user_ids: list[int] = Field(min_length=1, max_length=100)
+
+
+class DiscussionMessageCreate(BaseModel):
+
+    message: str = Field(min_length=1, max_length=10000)
 
 
 class LoginRequest(BaseModel):
@@ -820,6 +856,193 @@ def ensure_application_tables(connection):
         )
         cursor.execute(
             """
+            CREATE TABLE IF NOT EXISTS station_inspections (
+                inspection_id INT AUTO_INCREMENT PRIMARY KEY,
+                station_id INT NOT NULL,
+                inspection_date DATE NOT NULL,
+                finding TEXT NOT NULL,
+                workflow_stage VARCHAR(30) NOT NULL DEFAULT 'HQ Review',
+                status VARCHAR(30) NOT NULL DEFAULT 'Open',
+                not_solved_reason TEXT,
+                created_by_user_id INT,
+                created_by_username VARCHAR(50),
+                updated_by_user_id INT,
+                updated_by_username VARCHAR(50),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                CONSTRAINT fk_station_inspection_station
+                    FOREIGN KEY (station_id) REFERENCES stations(station_id)
+                    ON UPDATE CASCADE ON DELETE RESTRICT,
+                CONSTRAINT fk_station_inspection_creator
+                    FOREIGN KEY (created_by_user_id) REFERENCES users(user_id)
+                    ON DELETE SET NULL,
+                CONSTRAINT fk_station_inspection_updater
+                    FOREIGN KEY (updated_by_user_id) REFERENCES users(user_id)
+                    ON DELETE SET NULL,
+                INDEX idx_station_inspection_stage_status
+                    (workflow_stage, status, inspection_date)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS station_inspection_comments (
+                comment_id INT AUTO_INCREMENT PRIMARY KEY,
+                inspection_id INT NOT NULL,
+                action_type VARCHAR(40) NOT NULL DEFAULT 'Comment',
+                comment TEXT,
+                status_after VARCHAR(30),
+                reason TEXT,
+                commented_by_user_id INT,
+                commented_by_username VARCHAR(50),
+                commented_by_department VARCHAR(100),
+                commented_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT fk_station_inspection_comment_inspection
+                    FOREIGN KEY (inspection_id) REFERENCES station_inspections(inspection_id)
+                    ON DELETE CASCADE,
+                CONSTRAINT fk_station_inspection_comment_user
+                    FOREIGN KEY (commented_by_user_id) REFERENCES users(user_id)
+                    ON DELETE SET NULL,
+                INDEX idx_station_inspection_comment_record
+                    (inspection_id, commented_at)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS station_inspection_reports (
+                report_id INT AUTO_INCREMENT PRIMARY KEY,
+                inspection_id INT NULL,
+                period_start DATE,
+                period_end DATE,
+                notes VARCHAR(2000),
+                original_filename VARCHAR(255) NOT NULL,
+                content_type VARCHAR(100) NOT NULL,
+                file_size INT NOT NULL,
+                file_data LONGBLOB NOT NULL,
+                uploaded_by_user_id INT,
+                uploaded_by_username VARCHAR(50),
+                uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT fk_station_inspection_report_inspection
+                    FOREIGN KEY (inspection_id) REFERENCES station_inspections(inspection_id)
+                    ON DELETE CASCADE,
+                CONSTRAINT fk_station_inspection_report_user
+                    FOREIGN KEY (uploaded_by_user_id) REFERENCES users(user_id)
+                    ON DELETE SET NULL,
+                INDEX idx_station_inspection_report_record
+                    (inspection_id, uploaded_at)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS station_inspection_report_stations (
+                report_id INT NOT NULL,
+                station_id INT NOT NULL,
+                PRIMARY KEY (report_id, station_id),
+                CONSTRAINT fk_inspection_report_station_report
+                    FOREIGN KEY (report_id) REFERENCES station_inspection_reports(report_id)
+                    ON DELETE CASCADE,
+                CONSTRAINT fk_inspection_report_station_station
+                    FOREIGN KEY (station_id) REFERENCES stations(station_id)
+                    ON UPDATE CASCADE ON DELETE RESTRICT
+            )
+            """
+        )
+        cursor.execute(
+            """
+            INSERT IGNORE INTO station_inspection_report_stations (report_id, station_id)
+            SELECT reports.report_id, inspections.station_id
+            FROM station_inspection_reports AS reports
+            INNER JOIN station_inspections AS inspections
+                ON inspections.inspection_id = reports.inspection_id
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS station_inspection_photos (
+                inspection_id INT PRIMARY KEY,
+                original_filename VARCHAR(255) NOT NULL,
+                content_type VARCHAR(100) NOT NULL,
+                file_size INT NOT NULL,
+                file_data LONGBLOB NOT NULL,
+                uploaded_by_user_id INT,
+                uploaded_by_username VARCHAR(50),
+                uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    ON UPDATE CURRENT_TIMESTAMP,
+                CONSTRAINT fk_inspection_photo_inspection
+                    FOREIGN KEY (inspection_id) REFERENCES station_inspections(inspection_id)
+                    ON DELETE CASCADE,
+                CONSTRAINT fk_inspection_photo_user
+                    FOREIGN KEY (uploaded_by_user_id) REFERENCES users(user_id)
+                    ON DELETE SET NULL
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS discussions (
+                discussion_id INT AUTO_INCREMENT PRIMARY KEY,
+                title VARCHAR(200) NOT NULL,
+                status ENUM('Open', 'Closed') NOT NULL DEFAULT 'Open',
+                created_by_user_id INT,
+                created_by_username VARCHAR(50),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                closed_by_user_id INT,
+                closed_by_username VARCHAR(50),
+                closed_at DATETIME,
+                CONSTRAINT fk_discussion_creator
+                    FOREIGN KEY (created_by_user_id) REFERENCES users(user_id)
+                    ON DELETE SET NULL,
+                CONSTRAINT fk_discussion_closer
+                    FOREIGN KEY (closed_by_user_id) REFERENCES users(user_id)
+                    ON DELETE SET NULL,
+                INDEX idx_discussion_status_created (status, created_at)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS discussion_participants (
+                discussion_id INT NOT NULL,
+                user_id INT NOT NULL,
+                invited_by_user_id INT,
+                joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (discussion_id, user_id),
+                CONSTRAINT fk_discussion_participant_discussion
+                    FOREIGN KEY (discussion_id) REFERENCES discussions(discussion_id)
+                    ON DELETE CASCADE,
+                CONSTRAINT fk_discussion_participant_user
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                    ON DELETE CASCADE,
+                CONSTRAINT fk_discussion_participant_inviter
+                    FOREIGN KEY (invited_by_user_id) REFERENCES users(user_id)
+                    ON DELETE SET NULL
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS discussion_messages (
+                message_id INT AUTO_INCREMENT PRIMARY KEY,
+                discussion_id INT NOT NULL,
+                message TEXT NOT NULL,
+                posted_by_user_id INT,
+                posted_by_username VARCHAR(50),
+                posted_by_full_name VARCHAR(100),
+                posted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT fk_discussion_message_discussion
+                    FOREIGN KEY (discussion_id) REFERENCES discussions(discussion_id)
+                    ON DELETE CASCADE,
+                CONSTRAINT fk_discussion_message_user
+                    FOREIGN KEY (posted_by_user_id) REFERENCES users(user_id)
+                    ON DELETE SET NULL,
+                INDEX idx_discussion_message_thread (discussion_id, posted_at)
+            )
+            """
+        )
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS user_station_assignments (
                 user_id INT NOT NULL,
                 station_id INT NOT NULL,
@@ -1005,6 +1228,11 @@ def ensure_application_tables(connection):
         ensure_column(cursor, "station_instruments", "calibration_date", "DATE NULL")
         ensure_column(cursor, "station_instruments", "replacement_date", "DATE NULL")
         ensure_column(cursor, "station_instruments", "comment", "TEXT NULL")
+        ensure_column(cursor, "station_inspection_reports", "period_start", "DATE NULL")
+        ensure_column(cursor, "station_inspection_reports", "period_end", "DATE NULL")
+        cursor.execute(
+            "ALTER TABLE station_inspection_reports MODIFY COLUMN inspection_id INT NULL"
+        )
         cursor.execute(
             "ALTER TABLE station_instruments "
             "MODIFY COLUMN calibration_replacement_date DATE NULL"
@@ -2937,6 +3165,1365 @@ def delete_instrument(instrument_id: int, _admin=Depends(require_it)):
             connection.close()
 
 
+def inspection_stage_departments(stage):
+    if stage == "Management":
+        return set(INSPECTION_MANAGEMENT_ROLES)
+    if stage == "Maintenance":
+        return set(INSPECTION_MAINTENANCE_ROLES)
+    return set(INSPECTION_HQ_ROLES)
+
+
+def can_edit_station_inspection(user, inspection):
+    if user["department"] == "Admin":
+        return True
+    if user["user_id"] == inspection["created_by_user_id"]:
+        return True
+    if inspection["workflow_stage"] == "Maintenance":
+        return user["department"] in INSPECTION_MAINTENANCE_ROLES
+    if inspection["workflow_stage"] == "Management":
+        return user["department"] in INSPECTION_MANAGEMENT_ROLES
+    return False
+
+
+def get_inspection_for_user(cursor, inspection_id, user):
+    cursor.execute(
+        """
+        SELECT station_inspections.*, stations.station_code, stations.station_name
+        FROM station_inspections
+        INNER JOIN stations ON stations.station_id = station_inspections.station_id
+        WHERE station_inspections.inspection_id = %s
+        """,
+        (inspection_id,),
+    )
+    inspection = cursor.fetchone()
+    if inspection is None:
+        raise HTTPException(status_code=404, detail="Station inspection not found")
+    ensure_user_can_access_station(cursor, user, inspection["station_id"])
+    return inspection
+
+
+def create_inspection_notifications(
+    cursor, inspection, actor_user_id, departments, title, message,
+):
+    recipients = set()
+    if inspection.get("created_by_user_id"):
+        recipients.add(inspection["created_by_user_id"])
+    if departments:
+        placeholders = ", ".join(["%s"] * len(departments))
+        cursor.execute(
+            f"""
+            SELECT user_id FROM users
+            WHERE is_active = TRUE AND department IN ({placeholders})
+            """,
+            tuple(departments),
+        )
+        recipients.update(
+            row["user_id"] if isinstance(row, dict) else row[0]
+            for row in cursor.fetchall()
+        )
+    recipients.discard(actor_user_id)
+    if recipients:
+        cursor.executemany(
+            """
+            INSERT INTO notifications (
+                user_id, notification_type, title, message,
+                related_record_type, related_record_id
+            ) VALUES (%s, 'station_inspection', %s, %s, 'station_inspection', %s)
+            """,
+            [
+                (user_id, title, message, inspection["inspection_id"])
+                for user_id in recipients
+            ],
+        )
+
+
+def ensure_user_can_access_inspection_report(cursor, user, report_id):
+    if user["department"] not in ASSIGNED_STATION_ROLES:
+        return
+    cursor.execute(
+        """
+        SELECT 1
+        FROM station_inspection_report_stations AS links
+        INNER JOIN user_station_assignments AS assignments
+            ON assignments.station_id = links.station_id
+        WHERE links.report_id = %s AND assignments.user_id = %s
+        LIMIT 1
+        """,
+        (report_id, user["user_id"]),
+    )
+    if cursor.fetchone() is None:
+        raise HTTPException(status_code=403, detail="This report is outside your assigned stations")
+
+
+@app.get("/station-inspections")
+def get_station_inspections(
+    inspection_id: int | None = Query(default=None, gt=0),
+    station_id: int | None = Query(default=None, gt=0),
+    stage: str | None = Query(default=None, max_length=30),
+    status: str | None = Query(default=None, max_length=30),
+    page: int | None = Query(default=None, ge=1),
+    page_size: int = Query(default=25, ge=10, le=100),
+    search: str | None = Query(default=None, max_length=100),
+    sort_by: str = "inspection_date",
+    sort_order: Literal["asc", "desc"] = "desc",
+    date_from: date | None = None,
+    date_to: date | None = None,
+    user=Depends(require_password_change_complete),
+):
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        query = """
+            SELECT station_inspections.inspection_id,
+                station_inspections.station_id,
+                stations.station_code, stations.station_name,
+                stations.district, stations.station_category,
+                station_inspections.inspection_date,
+                station_inspections.finding,
+                station_inspections.workflow_stage,
+                station_inspections.status,
+                station_inspections.not_solved_reason,
+                station_inspections.created_by_user_id,
+                station_inspections.created_by_username,
+                station_inspections.updated_by_username,
+                station_inspections.created_at,
+                station_inspections.updated_at
+            FROM station_inspections
+            INNER JOIN stations ON stations.station_id = station_inspections.station_id
+        """
+        parameters = []
+        if user["department"] in ASSIGNED_STATION_ROLES:
+            query += """
+                INNER JOIN user_station_assignments
+                    ON user_station_assignments.station_id = station_inspections.station_id
+                    AND user_station_assignments.user_id = %s
+            """
+            parameters.append(user["user_id"])
+        query += " ORDER BY station_inspections.inspection_date DESC, station_inspections.inspection_id DESC"
+        cursor.execute(query, tuple(parameters))
+        items = cursor.fetchall()
+        if inspection_id:
+            items = [item for item in items if item["inspection_id"] == inspection_id]
+        if station_id:
+            items = [item for item in items if item["station_id"] == station_id]
+        if stage:
+            items = [item for item in items if item["workflow_stage"] == stage]
+        if status:
+            items = [item for item in items if item["status"] == status]
+        items = filter_sort_collection(
+            items, search,
+            [
+                "station_code", "station_name", "district", "station_category",
+                "finding", "workflow_stage", "status", "created_by_username",
+            ],
+            sort_by, sort_order,
+            {
+                "inspection_date": "inspection_date", "station_name": "station_name",
+                "workflow_stage": "workflow_stage", "status": "status",
+                "updated_at": "updated_at",
+            },
+            date_from, date_to, "inspection_date",
+        )
+        summary = {
+            "total": len(items),
+            "open": sum(item["status"] == "Open" for item in items),
+            "under_review": sum(item["status"] == "Under Review" for item in items),
+            "solved": sum(item["status"] == "Solved" for item in items),
+            "not_solved": sum(item["status"] == "Not Solved" for item in items),
+            "closed": sum(item["workflow_stage"] == "Closed" for item in items),
+        }
+        result = paginate_collection(items, page, page_size, summary)
+        page_items = result["items"] if isinstance(result, dict) else result
+        inspection_ids = [item["inspection_id"] for item in page_items]
+        station_ids = [item["station_id"] for item in page_items]
+        comments_by_inspection = {record_id: [] for record_id in inspection_ids}
+        reports_by_inspection = {record_id: [] for record_id in inspection_ids}
+        photos_by_inspection = {}
+        if inspection_ids:
+            placeholders = ", ".join(["%s"] * len(inspection_ids))
+            cursor.execute(
+                f"""
+                SELECT comment_id, inspection_id, action_type, comment,
+                    status_after, reason, commented_by_username,
+                    commented_by_user_id, commented_by_department, commented_at
+                FROM station_inspection_comments
+                WHERE inspection_id IN ({placeholders})
+                ORDER BY commented_at, comment_id
+                """,
+                tuple(inspection_ids),
+            )
+            for comment in cursor.fetchall():
+                comments_by_inspection[comment["inspection_id"]].append(comment)
+            station_placeholders = ", ".join(["%s"] * len(station_ids))
+            cursor.execute(
+                f"""
+                SELECT DISTINCT reports.report_id, reports.inspection_id,
+                    reports.period_start, reports.period_end, reports.notes,
+                    reports.original_filename, reports.content_type,
+                    reports.file_size, reports.uploaded_by_user_id,
+                    reports.uploaded_by_username, reports.uploaded_at
+                FROM station_inspection_reports AS reports
+                INNER JOIN station_inspection_report_stations AS links
+                    ON links.report_id = reports.report_id
+                WHERE reports.inspection_id IN ({placeholders})
+                    OR links.station_id IN ({station_placeholders})
+                ORDER BY reports.uploaded_at DESC, reports.report_id DESC
+                """,
+                tuple(inspection_ids + station_ids),
+            )
+            reports = cursor.fetchall()
+            report_ids = [report["report_id"] for report in reports]
+            report_station_ids = {report_id: [] for report_id in report_ids}
+            report_stations = {report_id: [] for report_id in report_ids}
+            if report_ids:
+                report_placeholders = ", ".join(["%s"] * len(report_ids))
+                cursor.execute(
+                    f"""
+                    SELECT links.report_id, links.station_id,
+                        stations.station_code, stations.station_name
+                    FROM station_inspection_report_stations AS links
+                    INNER JOIN stations ON stations.station_id = links.station_id
+                    WHERE links.report_id IN ({report_placeholders})
+                    ORDER BY stations.station_name
+                    """,
+                    tuple(report_ids),
+                )
+                for link in cursor.fetchall():
+                    report_station_ids[link["report_id"]].append(link["station_id"])
+                    report_stations[link["report_id"]].append({
+                        "station_id": link["station_id"],
+                        "station_code": link["station_code"],
+                        "station_name": link["station_name"],
+                    })
+            for report in reports:
+                report["stations"] = report_stations[report["report_id"]]
+                covered_ids = report_station_ids[report["report_id"]]
+                for item in page_items:
+                    if (report["inspection_id"] == item["inspection_id"]
+                            or item["station_id"] in covered_ids):
+                        reports_by_inspection[item["inspection_id"]].append(report)
+            cursor.execute(
+                f"""
+                SELECT inspection_id, original_filename, content_type, file_size,
+                    uploaded_by_username, uploaded_at
+                FROM station_inspection_photos
+                WHERE inspection_id IN ({placeholders})
+                """,
+                tuple(inspection_ids),
+            )
+            photos_by_inspection = {
+                photo["inspection_id"]: photo for photo in cursor.fetchall()
+            }
+        for item in page_items:
+            item["comments"] = comments_by_inspection[item["inspection_id"]]
+            item["reports"] = reports_by_inspection[item["inspection_id"]]
+            item["photo"] = photos_by_inspection.get(item["inspection_id"])
+            item["can_edit"] = can_edit_station_inspection(user, item)
+            item["can_delete"] = user["user_id"] == item["created_by_user_id"]
+        return result
+    except HTTPException:
+        raise
+    except MySQLError as exc:
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.post("/station-inspections", status_code=201)
+def create_station_inspection(
+    record: StationInspectionRecord,
+    user=Depends(require_password_change_complete),
+):
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT station_id, station_code, station_name FROM stations WHERE station_id = %s",
+            (record.station_id,),
+        )
+        station = cursor.fetchone()
+        if station is None:
+            raise HTTPException(status_code=404, detail="Station not found")
+        ensure_user_can_access_station(cursor, user, record.station_id)
+        cursor.execute(
+            """
+            INSERT INTO station_inspections (
+                station_id, inspection_date, finding,
+                created_by_user_id, created_by_username,
+                updated_by_user_id, updated_by_username
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                record.station_id, record.inspection_date, record.finding.strip(),
+                user["user_id"], user["username"], user["user_id"], user["username"],
+            ),
+        )
+        inspection_id = cursor.lastrowid
+        cursor.execute(
+            """
+            INSERT INTO station_inspection_comments (
+                inspection_id, action_type, comment, status_after,
+                commented_by_user_id, commented_by_username, commented_by_department
+            ) VALUES (%s, 'Inspection reported', %s, 'Open', %s, %s, %s)
+            """,
+            (
+                inspection_id, record.finding.strip(), user["user_id"],
+                user["username"], user["department"],
+            ),
+        )
+        inspection = {
+            "inspection_id": inspection_id,
+            "created_by_user_id": user["user_id"],
+        }
+        create_inspection_notifications(
+            cursor, inspection, user["user_id"], INSPECTION_HQ_ROLES,
+            "Station inspection requires HQ review",
+            f'{station["station_name"]} inspection was submitted by {user["username"]}.',
+        )
+        connection.commit()
+        return {"message": "Station inspection submitted for HQ review", "inspection_id": inspection_id}
+    except HTTPException:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise
+    except MySQLError as exc:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.put("/station-inspections/{inspection_id}")
+def update_station_inspection(
+    inspection_id: int,
+    record: StationInspectionRecord,
+    user=Depends(require_password_change_complete),
+):
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        inspection = get_inspection_for_user(cursor, inspection_id, user)
+        if not can_edit_station_inspection(user, inspection):
+            raise HTTPException(status_code=403, detail="Only the inspector or assigned team can edit this inspection")
+        cursor.execute("SELECT station_id FROM stations WHERE station_id = %s", (record.station_id,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail="Station not found")
+        ensure_user_can_access_station(cursor, user, record.station_id)
+        cursor.execute(
+            """
+            UPDATE station_inspections
+            SET station_id = %s, inspection_date = %s, finding = %s,
+                updated_by_user_id = %s, updated_by_username = %s
+            WHERE inspection_id = %s
+            """,
+            (
+                record.station_id, record.inspection_date, record.finding.strip(),
+                user["user_id"], user["username"], inspection_id,
+            ),
+        )
+        action_label = (
+            "Inspection updated"
+            if user["user_id"] == inspection["created_by_user_id"]
+            else f'{inspection["workflow_stage"]}: Inspection edited'
+        )
+        cursor.execute(
+            """
+            INSERT INTO station_inspection_comments (
+                inspection_id, action_type, comment, status_after,
+                commented_by_user_id, commented_by_username, commented_by_department
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                inspection_id, action_label, record.finding.strip(), inspection["status"],
+                user["user_id"], user["username"], user["department"],
+            ),
+        )
+        create_inspection_notifications(
+            cursor, inspection, user["user_id"],
+            inspection_stage_departments(inspection["workflow_stage"]) | INSPECTION_HQ_ROLES,
+            "Station inspection updated",
+            f'{inspection["station_name"]} inspection was updated by {user["username"]}.',
+        )
+        connection.commit()
+        return {"message": "Station inspection updated"}
+    except HTTPException:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise
+    except MySQLError as exc:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.post("/station-inspections/{inspection_id}/actions")
+def act_on_station_inspection(
+    inspection_id: int,
+    action: StationInspectionAction,
+    user=Depends(require_password_change_complete),
+):
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        inspection = get_inspection_for_user(cursor, inspection_id, user)
+        role = user["department"]
+        current_stage = inspection["workflow_stage"]
+        cursor.execute(
+            "SELECT 1 FROM station_inspection_photos WHERE inspection_id = %s",
+            (inspection_id,),
+        )
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=409, detail="Upload the required station photo before recording actions")
+        if current_stage == "Closed":
+            raise HTTPException(status_code=409, detail="This inspection is already closed")
+        if action.action in {"send_management", "send_maintenance"}:
+            if role not in INSPECTION_HQ_ROLES:
+                raise HTTPException(status_code=403, detail="HQ review access required")
+            if current_stage != "HQ Review":
+                raise HTTPException(status_code=409, detail="The inspection has already left HQ review")
+        elif action.action == "close":
+            if role not in INSPECTION_HQ_ROLES:
+                raise HTTPException(status_code=403, detail="HQ review access required")
+        elif action.action == "status":
+            if current_stage not in {"Maintenance", "Management"}:
+                raise HTTPException(status_code=409, detail="HQ must route the inspection before a team can update its status")
+            if role not in inspection_stage_departments(current_stage):
+                raise HTTPException(status_code=403, detail="This status belongs to the receiving team")
+        elif role not in inspection_stage_departments(current_stage):
+            if action.action != "comment" or user["user_id"] != inspection["created_by_user_id"]:
+                raise HTTPException(status_code=403, detail="This action belongs to the receiving team")
+
+        comment = action.comment.strip() if action.comment else None
+        reason = action.reason.strip() if action.reason else None
+        if action.action == "comment" and not comment:
+            raise HTTPException(status_code=400, detail="Enter a comment")
+        if action.action in {"send_management", "send_maintenance", "close"} and not comment:
+            raise HTTPException(status_code=400, detail="Enter a decision comment")
+        if action.action == "status" and action.status is None:
+            raise HTTPException(status_code=400, detail="Select a status")
+        if action.action == "status" and action.status == "Not Solved" and not reason:
+            raise HTTPException(status_code=400, detail="Give the reason the issue is not solved")
+        if action.action == "close" and current_stage in {"Maintenance", "Management"}:
+            receiving_roles = (
+                {MAINTENANCE_ROLE}
+                if current_stage == "Maintenance"
+                else set(INSPECTION_MANAGEMENT_ROLES) - {"Admin"}
+            )
+            placeholders = ", ".join(["%s"] * len(receiving_roles))
+            cursor.execute(
+                f"""
+                SELECT 1 FROM station_inspection_comments
+                WHERE inspection_id = %s
+                    AND (
+                        commented_by_department IN ({placeholders})
+                        OR action_type LIKE %s
+                    )
+                LIMIT 1
+                """,
+                (inspection_id, *receiving_roles, f"{current_stage}:%"),
+            )
+            if cursor.fetchone() is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Wait for the {current_stage.lower()} team response before closing",
+                )
+
+        new_stage = current_stage
+        new_status = inspection["status"]
+        action_label = "Comment"
+        if action.action == "send_management":
+            new_stage, new_status, action_label = "Management", "Under Review", "Sent to Management"
+        elif action.action == "send_maintenance":
+            new_stage, new_status, action_label = "Maintenance", "Under Review", "Sent to Maintenance"
+        elif action.action == "close":
+            new_stage, new_status, action_label = "Closed", "Solved", "Closed"
+        elif action.action == "status":
+            new_status = action.status
+            action_label = f"{current_stage}: {action.status}"
+            if current_stage == "Maintenance" and action.status == "Not Solved":
+                new_stage = "Management"
+                new_status = "Under Review"
+                action_label = "Maintenance: Not Solved to Management"
+            elif action.status != "Not Solved":
+                reason = None
+
+        cursor.execute(
+            """
+            UPDATE station_inspections
+            SET workflow_stage = %s, status = %s, not_solved_reason = %s,
+                updated_by_user_id = %s, updated_by_username = %s
+            WHERE inspection_id = %s
+            """,
+            (
+                new_stage, new_status, reason, user["user_id"],
+                user["username"], inspection_id,
+            ),
+        )
+        cursor.execute(
+            """
+            INSERT INTO station_inspection_comments (
+                inspection_id, action_type, comment, status_after, reason,
+                commented_by_user_id, commented_by_username, commented_by_department
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                inspection_id, action_label, comment,
+                action.status if action.action == "status" else new_status,
+                reason,
+                user["user_id"], user["username"], user["department"],
+            ),
+        )
+        inspection["workflow_stage"] = new_stage
+        departments = inspection_stage_departments(new_stage) | INSPECTION_HQ_ROLES
+        create_inspection_notifications(
+            cursor, inspection, user["user_id"], departments,
+            f"Station inspection: {action_label}",
+            f'{inspection["station_name"]}: {action_label} by {user["username"]}.',
+        )
+        connection.commit()
+        return {"message": f"Inspection action recorded: {action_label}"}
+    except HTTPException:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise
+    except MySQLError as exc:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.delete("/station-inspections/{inspection_id}", status_code=204)
+def delete_station_inspection(
+    inspection_id: int,
+    user=Depends(require_password_change_complete),
+):
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        inspection = get_inspection_for_user(cursor, inspection_id, user)
+        if user["user_id"] != inspection["created_by_user_id"]:
+            raise HTTPException(status_code=403, detail="Only the inspector can delete this inspection")
+        create_inspection_notifications(
+            cursor, inspection, user["user_id"], INSPECTION_HQ_ROLES,
+            "Station inspection deleted",
+            f'{inspection["station_name"]} inspection was deleted by {user["username"]}.',
+        )
+        cursor.execute("DELETE FROM station_inspections WHERE inspection_id = %s", (inspection_id,))
+        connection.commit()
+    except HTTPException:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise
+    except MySQLError as exc:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.post("/station-inspections/{inspection_id}/photo", status_code=201)
+async def upload_station_inspection_photo(
+    inspection_id: int,
+    request: Request,
+    filename: str = Query(min_length=1, max_length=255),
+    user=Depends(require_password_change_complete),
+):
+    clean_filename = Path(filename).name
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
+    allowed_types = {"image/jpeg", "image/png", "image/webp"}
+    if content_type not in allowed_types or Path(clean_filename).suffix.lower() not in {
+        ".jpg", ".jpeg", ".png", ".webp",
+    }:
+        raise HTTPException(status_code=415, detail="Upload a JPG, PNG, or WebP station photo")
+    content = await request.body()
+    if not content:
+        raise HTTPException(status_code=400, detail="The station photo is empty")
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="The maximum station photo size is 10 MB")
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        inspection = get_inspection_for_user(cursor, inspection_id, user)
+        if not can_edit_station_inspection(user, inspection):
+            raise HTTPException(status_code=403, detail="Only the inspector or assigned team can replace the station photo")
+        cursor.execute(
+            """
+            INSERT INTO station_inspection_photos (
+                inspection_id, original_filename, content_type, file_size,
+                file_data, uploaded_by_user_id, uploaded_by_username
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                original_filename = VALUES(original_filename),
+                content_type = VALUES(content_type),
+                file_size = VALUES(file_size),
+                file_data = VALUES(file_data),
+                uploaded_by_user_id = VALUES(uploaded_by_user_id),
+                uploaded_by_username = VALUES(uploaded_by_username),
+                uploaded_at = CURRENT_TIMESTAMP
+            """,
+            (
+                inspection_id, clean_filename, content_type, len(content), content,
+                user["user_id"], user["username"],
+            ),
+        )
+        cursor.execute(
+            """
+            INSERT INTO station_inspection_comments (
+                inspection_id, action_type, comment, status_after,
+                commented_by_user_id, commented_by_username, commented_by_department
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                inspection_id,
+                (
+                    "Station photo uploaded"
+                    if user["user_id"] == inspection["created_by_user_id"]
+                    else f'{inspection["workflow_stage"]}: Photo updated'
+                ),
+                clean_filename, inspection["status"], user["user_id"],
+                user["username"], user["department"],
+            ),
+        )
+        create_inspection_notifications(
+            cursor, inspection, user["user_id"],
+            inspection_stage_departments(inspection["workflow_stage"]) | INSPECTION_HQ_ROLES,
+            "Station inspection photo added",
+            f'{inspection["station_name"]} inspection photo was uploaded by {user["username"]}.',
+        )
+        connection.commit()
+        return {"message": "Station photo uploaded"}
+    except HTTPException:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise
+    except MySQLError as exc:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.get("/station-inspections/{inspection_id}/photo")
+def get_station_inspection_photo(
+    inspection_id: int,
+    user=Depends(require_password_change_complete),
+):
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        get_inspection_for_user(cursor, inspection_id, user)
+        cursor.execute(
+            "SELECT * FROM station_inspection_photos WHERE inspection_id = %s",
+            (inspection_id,),
+        )
+        photo = cursor.fetchone()
+        if photo is None:
+            raise HTTPException(status_code=404, detail="Station photo not found")
+        filename = photo["original_filename"].replace('"', "")
+        return Response(
+            content=photo["file_data"], media_type=photo["content_type"],
+            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        )
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.post("/station-inspections/{inspection_id}/reports", status_code=201)
+async def upload_station_inspection_report(
+    inspection_id: int,
+    request: Request,
+    filename: str = Query(min_length=1, max_length=255),
+    notes: str | None = Query(default=None, max_length=2000),
+    station_ids: str | None = Query(default=None, max_length=4000),
+    period_start: date | None = None,
+    period_end: date | None = None,
+    user=Depends(require_password_change_complete),
+):
+    clean_filename = Path(filename).name
+    if Path(clean_filename).suffix.lower() not in {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt"}:
+        raise HTTPException(status_code=415, detail="Upload a PDF, Word, Excel, CSV, or text report")
+    content = await request.body()
+    if not content:
+        raise HTTPException(status_code=400, detail="The uploaded report is empty")
+    if len(content) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="The maximum report size is 20 MB")
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        inspection = get_inspection_for_user(cursor, inspection_id, user)
+        report_start = period_start or inspection["inspection_date"]
+        report_end = period_end or report_start
+        if report_end < report_start:
+            raise HTTPException(status_code=400, detail="Inspection report end date cannot be before its start date")
+        covered_station_ids = {inspection["station_id"]}
+        if station_ids:
+            try:
+                covered_station_ids.update(
+                    int(value) for value in station_ids.split(",") if value.strip()
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail="Invalid report station selection") from exc
+        if len(covered_station_ids) > 300:
+            raise HTTPException(status_code=400, detail="A report can cover at most 300 stations")
+        placeholders = ", ".join(["%s"] * len(covered_station_ids))
+        cursor.execute(
+            f"SELECT station_id FROM stations WHERE station_id IN ({placeholders})",
+            tuple(covered_station_ids),
+        )
+        available_ids = {row["station_id"] for row in cursor.fetchall()}
+        if available_ids != covered_station_ids:
+            raise HTTPException(status_code=404, detail="One or more selected stations do not exist")
+        for station_id in covered_station_ids:
+            ensure_user_can_access_station(cursor, user, station_id)
+        cursor.execute(
+            """
+            INSERT INTO station_inspection_reports (
+                inspection_id, period_start, period_end, notes,
+                original_filename, content_type, file_size, file_data,
+                uploaded_by_user_id, uploaded_by_username
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                inspection_id, report_start, report_end,
+                notes.strip() if notes else None, clean_filename,
+                request.headers.get("content-type", "application/octet-stream").split(";", 1)[0],
+                len(content), content, user["user_id"], user["username"],
+            ),
+        )
+        report_id = cursor.lastrowid
+        cursor.executemany(
+            """
+            INSERT INTO station_inspection_report_stations (report_id, station_id)
+            VALUES (%s, %s)
+            """,
+            [(report_id, station_id) for station_id in sorted(covered_station_ids)],
+        )
+        cursor.execute(
+            """
+            INSERT INTO station_inspection_comments (
+                inspection_id, action_type, comment, status_after,
+                commented_by_user_id, commented_by_username, commented_by_department
+            ) VALUES (%s, 'Report uploaded', %s, %s, %s, %s, %s)
+            """,
+            (
+                inspection_id,
+                f'{clean_filename} ({len(covered_station_ids)} station(s))',
+                inspection["status"],
+                user["user_id"], user["username"], user["department"],
+            ),
+        )
+        create_inspection_notifications(
+            cursor, inspection, user["user_id"],
+            inspection_stage_departments(inspection["workflow_stage"]) | INSPECTION_HQ_ROLES,
+            "Inspection report uploaded",
+            f'{clean_filename} was linked to {len(covered_station_ids)} station(s) by {user["username"]}.',
+        )
+        connection.commit()
+        return {"message": "Inspection report uploaded"}
+    except HTTPException:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise
+    except MySQLError as exc:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.get("/station-inspection-reports")
+def get_station_inspection_reports(user=Depends(require_password_change_complete)):
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        query = """
+            SELECT report_id, inspection_id, period_start, period_end, notes,
+                original_filename, content_type, file_size,
+                uploaded_by_user_id, uploaded_by_username, uploaded_at
+            FROM station_inspection_reports AS reports
+        """
+        parameters = []
+        if user["department"] in ASSIGNED_STATION_ROLES:
+            query += """
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM station_inspection_report_stations AS links
+                    INNER JOIN user_station_assignments AS assignments
+                        ON assignments.station_id = links.station_id
+                    WHERE links.report_id = reports.report_id
+                        AND assignments.user_id = %s
+                )
+            """
+            parameters.append(user["user_id"])
+        query += " ORDER BY period_end DESC, period_start DESC, report_id DESC"
+        cursor.execute(query, tuple(parameters))
+        reports = cursor.fetchall()
+        report_ids = [report["report_id"] for report in reports]
+        stations_by_report = {report_id: [] for report_id in report_ids}
+        if report_ids:
+            placeholders = ", ".join(["%s"] * len(report_ids))
+            cursor.execute(
+                f"""
+                SELECT links.report_id, stations.station_id,
+                    stations.station_code, stations.station_name
+                FROM station_inspection_report_stations AS links
+                INNER JOIN stations ON stations.station_id = links.station_id
+                WHERE links.report_id IN ({placeholders})
+                ORDER BY stations.station_name
+                """,
+                tuple(report_ids),
+            )
+            for station in cursor.fetchall():
+                stations_by_report[station["report_id"]].append({
+                    "station_id": station["station_id"],
+                    "station_code": station["station_code"],
+                    "station_name": station["station_name"],
+                })
+        for report in reports:
+            report["stations"] = stations_by_report[report["report_id"]]
+            report["can_delete"] = (
+                user["department"] == "Admin"
+                or user["user_id"] == report["uploaded_by_user_id"]
+            )
+        return reports
+    except MySQLError as exc:
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.post("/station-inspection-reports", status_code=201)
+async def upload_standalone_station_inspection_report(
+    request: Request,
+    filename: str = Query(min_length=1, max_length=255),
+    station_ids: str = Query(min_length=1, max_length=4000),
+    period_start: date = Query(),
+    period_end: date = Query(),
+    notes: str | None = Query(default=None, max_length=2000),
+    user=Depends(require_password_change_complete),
+):
+    clean_filename = Path(filename).name
+    if Path(clean_filename).suffix.lower() not in {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt"}:
+        raise HTTPException(status_code=415, detail="Upload a PDF, Word, Excel, CSV, or text report")
+    content = await request.body()
+    if not content:
+        raise HTTPException(status_code=400, detail="The uploaded report is empty")
+    if len(content) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="The maximum report size is 20 MB")
+    if period_end < period_start:
+        raise HTTPException(status_code=400, detail="Inspection report end date cannot be before its start date")
+    try:
+        covered_station_ids = {
+            int(value) for value in station_ids.split(",") if value.strip()
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid report station selection") from exc
+    if not covered_station_ids:
+        raise HTTPException(status_code=400, detail="Select at least one station")
+    if len(covered_station_ids) > 300:
+        raise HTTPException(status_code=400, detail="A report can cover at most 300 stations")
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        placeholders = ", ".join(["%s"] * len(covered_station_ids))
+        cursor.execute(
+            f"SELECT station_id FROM stations WHERE station_id IN ({placeholders})",
+            tuple(covered_station_ids),
+        )
+        available_ids = {row["station_id"] for row in cursor.fetchall()}
+        if available_ids != covered_station_ids:
+            raise HTTPException(status_code=404, detail="One or more selected stations do not exist")
+        for station_id in covered_station_ids:
+            ensure_user_can_access_station(cursor, user, station_id)
+        cursor.execute(
+            """
+            INSERT INTO station_inspection_reports (
+                inspection_id, period_start, period_end, notes,
+                original_filename, content_type, file_size, file_data,
+                uploaded_by_user_id, uploaded_by_username
+            ) VALUES (NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                period_start, period_end, notes.strip() if notes else None,
+                clean_filename,
+                request.headers.get("content-type", "application/octet-stream").split(";", 1)[0],
+                len(content), content, user["user_id"], user["username"],
+            ),
+        )
+        report_id = cursor.lastrowid
+        cursor.executemany(
+            """
+            INSERT INTO station_inspection_report_stations (report_id, station_id)
+            VALUES (%s, %s)
+            """,
+            [(report_id, station_id) for station_id in sorted(covered_station_ids)],
+        )
+        hq_roles = tuple(INSPECTION_HQ_ROLES)
+        hq_placeholders = ", ".join(["%s"] * len(hq_roles))
+        cursor.execute(
+            f"""
+            SELECT DISTINCT users.user_id
+            FROM users
+            LEFT JOIN user_station_assignments AS assignments
+                ON assignments.user_id = users.user_id
+            WHERE users.is_active = TRUE
+                AND (
+                    users.department IN ({hq_placeholders})
+                    OR assignments.station_id IN ({placeholders})
+                )
+            """,
+            (*hq_roles, *covered_station_ids),
+        )
+        recipients = {
+            row["user_id"] for row in cursor.fetchall()
+            if row["user_id"] != user["user_id"]
+        }
+        if recipients:
+            cursor.executemany(
+                """
+                INSERT INTO notifications (
+                    user_id, notification_type, title, message,
+                    related_record_type, related_record_id
+                ) VALUES (%s, 'station_inspection_report', %s, %s,
+                    'station_inspection_report', %s)
+                """,
+                [(
+                    recipient, "Inspection report uploaded",
+                    f'{user["username"]} uploaded {clean_filename} for {len(covered_station_ids)} station(s).',
+                    report_id,
+                ) for recipient in recipients],
+            )
+        connection.commit()
+        return {"message": "Inspection report uploaded", "report_id": report_id}
+    except HTTPException:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise
+    except MySQLError as exc:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.get("/station-inspection-reports/{report_id}/file")
+def download_station_inspection_report(
+    report_id: int,
+    user=Depends(require_password_change_complete),
+):
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT station_inspection_reports.*
+            FROM station_inspection_reports
+            WHERE station_inspection_reports.report_id = %s
+            """,
+            (report_id,),
+        )
+        report = cursor.fetchone()
+        if report is None:
+            raise HTTPException(status_code=404, detail="Inspection report not found")
+        ensure_user_can_access_inspection_report(cursor, user, report_id)
+        filename = report["original_filename"].replace('"', "")
+        return Response(
+            content=report["file_data"], media_type=report["content_type"],
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.delete("/station-inspection-reports/{report_id}", status_code=204)
+def delete_station_inspection_report(
+    report_id: int,
+    user=Depends(require_password_change_complete),
+):
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT report_id, inspection_id, original_filename,
+                uploaded_by_user_id
+            FROM station_inspection_reports
+            WHERE report_id = %s
+            """,
+            (report_id,),
+        )
+        report = cursor.fetchone()
+        if report is None:
+            raise HTTPException(status_code=404, detail="Inspection report not found")
+        ensure_user_can_access_inspection_report(cursor, user, report_id)
+        if (user["department"] != "Admin"
+                and user["user_id"] != report["uploaded_by_user_id"]):
+            raise HTTPException(status_code=403, detail="Only the uploader can delete this report")
+        inspection = None
+        if report["inspection_id"]:
+            cursor.execute(
+                """
+                SELECT station_inspections.*, stations.station_name
+                FROM station_inspections
+                INNER JOIN stations ON stations.station_id = station_inspections.station_id
+                WHERE station_inspections.inspection_id = %s
+                """,
+                (report["inspection_id"],),
+            )
+            inspection = cursor.fetchone()
+        cursor.execute("DELETE FROM station_inspection_reports WHERE report_id = %s", (report_id,))
+        if inspection:
+            cursor.execute(
+                """
+                INSERT INTO station_inspection_comments (
+                    inspection_id, action_type, comment, status_after,
+                    commented_by_user_id, commented_by_username, commented_by_department
+                ) VALUES (%s, 'Report deleted', %s, %s, %s, %s, %s)
+                """,
+                (
+                    inspection["inspection_id"], report["original_filename"], inspection["status"],
+                    user["user_id"], user["username"], user["department"],
+                ),
+            )
+            create_inspection_notifications(
+                cursor, inspection, user["user_id"],
+                inspection_stage_departments(inspection["workflow_stage"]) | INSPECTION_HQ_ROLES,
+                "Inspection report deleted",
+                f'{report["original_filename"]} was removed from {inspection["station_name"]}.',
+            )
+        connection.commit()
+    except HTTPException:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise
+    except MySQLError as exc:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+def get_discussion_for_user(cursor, discussion_id, user):
+    cursor.execute(
+        "SELECT * FROM discussions WHERE discussion_id = %s",
+        (discussion_id,),
+    )
+    discussion = cursor.fetchone()
+    if discussion is None:
+        raise HTTPException(status_code=404, detail="Discussion not found")
+    if user["department"] != "Admin":
+        cursor.execute(
+            """
+            SELECT 1 FROM discussion_participants
+            WHERE discussion_id = %s AND user_id = %s
+            """,
+            (discussion_id, user["user_id"]),
+        )
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=403, detail="You are not an attendee of this discussion")
+    return discussion
+
+
+def notify_discussion_participants(cursor, discussion_id, actor_user_id, title, message):
+    cursor.execute(
+        "SELECT user_id FROM discussion_participants WHERE discussion_id = %s",
+        (discussion_id,),
+    )
+    recipients = {
+        row["user_id"] if isinstance(row, dict) else row[0]
+        for row in cursor.fetchall()
+    }
+    recipients.discard(actor_user_id)
+    if recipients:
+        cursor.executemany(
+            """
+            INSERT INTO notifications (
+                user_id, notification_type, title, message,
+                related_record_type, related_record_id
+            ) VALUES (%s, 'discussion', %s, %s, 'discussion', %s)
+            """,
+            [(user_id, title, message, discussion_id) for user_id in recipients],
+        )
+
+
+@app.get("/discussion-users")
+def get_discussion_users(user=Depends(require_password_change_complete)):
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT user_id, full_name, username, department
+            FROM users
+            WHERE is_active = TRUE AND user_id <> %s
+            ORDER BY full_name, username
+            """,
+            (user["user_id"],),
+        )
+        return cursor.fetchall()
+    except MySQLError as exc:
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.get("/discussions")
+def get_discussions(
+    discussion_id: int | None = Query(default=None, gt=0),
+    status: Literal["Open", "Closed"] | None = None,
+    search: str | None = Query(default=None, max_length=100),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=10, le=100),
+    user=Depends(require_password_change_complete),
+):
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        parameters = []
+        query = """
+            SELECT DISTINCT discussions.*
+            FROM discussions
+            LEFT JOIN discussion_participants
+                ON discussion_participants.discussion_id = discussions.discussion_id
+            WHERE 1 = 1
+        """
+        if user["department"] != "Admin":
+            query += " AND discussion_participants.user_id = %s"
+            parameters.append(user["user_id"])
+        if discussion_id:
+            query += " AND discussions.discussion_id = %s"
+            parameters.append(discussion_id)
+        if status:
+            query += " AND discussions.status = %s"
+            parameters.append(status)
+        if search:
+            query += " AND (discussions.title LIKE %s OR discussions.created_by_username LIKE %s)"
+            term = f"%{search.strip()}%"
+            parameters.extend([term, term])
+        query += " ORDER BY discussions.created_at DESC, discussions.discussion_id DESC"
+        cursor.execute(query, tuple(parameters))
+        items = cursor.fetchall()
+        summary = {
+            "total": len(items),
+            "open": sum(item["status"] == "Open" for item in items),
+            "closed": sum(item["status"] == "Closed" for item in items),
+        }
+        result = paginate_collection(items, page, page_size, summary)
+        page_items = result["items"]
+        discussion_ids = [item["discussion_id"] for item in page_items]
+        participants = {record_id: [] for record_id in discussion_ids}
+        messages = {record_id: [] for record_id in discussion_ids}
+        if discussion_ids:
+            placeholders = ", ".join(["%s"] * len(discussion_ids))
+            cursor.execute(
+                f"""
+                SELECT participants.discussion_id, users.user_id, users.full_name,
+                    users.username, users.department
+                FROM discussion_participants AS participants
+                INNER JOIN users ON users.user_id = participants.user_id
+                WHERE participants.discussion_id IN ({placeholders})
+                ORDER BY users.full_name
+                """,
+                tuple(discussion_ids),
+            )
+            for participant in cursor.fetchall():
+                participants[participant["discussion_id"]].append(participant)
+            cursor.execute(
+                f"""
+                SELECT message_id, discussion_id, message, posted_by_user_id,
+                    posted_by_username, posted_by_full_name, posted_at
+                FROM discussion_messages
+                WHERE discussion_id IN ({placeholders})
+                ORDER BY posted_at, message_id
+                """,
+                tuple(discussion_ids),
+            )
+            for message in cursor.fetchall():
+                messages[message["discussion_id"]].append(message)
+        for item in page_items:
+            item["participants"] = participants[item["discussion_id"]]
+            item["messages"] = messages[item["discussion_id"]]
+            item["can_close"] = (
+                item["status"] == "Open"
+                and (user["department"] == "Admin" or item["created_by_user_id"] == user["user_id"])
+            )
+        return result
+    except MySQLError as exc:
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.post("/discussions", status_code=201)
+def create_discussion(
+    record: DiscussionCreate,
+    user=Depends(require_password_change_complete),
+):
+    participant_ids = set(record.participant_user_ids)
+    participant_ids.discard(user["user_id"])
+    if not participant_ids:
+        raise HTTPException(status_code=400, detail="Select at least one other attendee")
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        placeholders = ", ".join(["%s"] * len(participant_ids))
+        cursor.execute(
+            f"SELECT user_id FROM users WHERE is_active = TRUE AND user_id IN ({placeholders})",
+            tuple(participant_ids),
+        )
+        active_ids = {row["user_id"] for row in cursor.fetchall()}
+        if active_ids != participant_ids:
+            raise HTTPException(status_code=400, detail="One or more selected attendees are unavailable")
+        cursor.execute(
+            """
+            INSERT INTO discussions (title, created_by_user_id, created_by_username)
+            VALUES (%s, %s, %s)
+            """,
+            (record.title.strip(), user["user_id"], user["username"]),
+        )
+        discussion_id = cursor.lastrowid
+        all_participants = participant_ids | {user["user_id"]}
+        cursor.executemany(
+            """
+            INSERT INTO discussion_participants (discussion_id, user_id, invited_by_user_id)
+            VALUES (%s, %s, %s)
+            """,
+            [(discussion_id, participant_id, user["user_id"]) for participant_id in all_participants],
+        )
+        cursor.execute(
+            """
+            INSERT INTO discussion_messages (
+                discussion_id, message, posted_by_user_id,
+                posted_by_username, posted_by_full_name
+            ) VALUES (%s, %s, %s, %s, %s)
+            """,
+            (
+                discussion_id, record.opening_message.strip(), user["user_id"],
+                user["username"], user["full_name"],
+            ),
+        )
+        notify_discussion_participants(
+            cursor, discussion_id, user["user_id"], "Discussion invitation",
+            f'{user["full_name"]} invited you to "{record.title.strip()}".',
+        )
+        connection.commit()
+        return {"message": "Discussion opened and attendees notified", "discussion_id": discussion_id}
+    except HTTPException:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise
+    except MySQLError as exc:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.post("/discussions/{discussion_id}/messages", status_code=201)
+def post_discussion_message(
+    discussion_id: int,
+    record: DiscussionMessageCreate,
+    user=Depends(require_password_change_complete),
+):
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        discussion = get_discussion_for_user(cursor, discussion_id, user)
+        if discussion["status"] == "Closed":
+            raise HTTPException(status_code=409, detail="This discussion is closed")
+        cursor.execute(
+            """
+            INSERT INTO discussion_messages (
+                discussion_id, message, posted_by_user_id,
+                posted_by_username, posted_by_full_name
+            ) VALUES (%s, %s, %s, %s, %s)
+            """,
+            (
+                discussion_id, record.message.strip(), user["user_id"],
+                user["username"], user["full_name"],
+            ),
+        )
+        notify_discussion_participants(
+            cursor, discussion_id, user["user_id"], "New discussion response",
+            f'{user["full_name"]} responded in "{discussion["title"]}".',
+        )
+        connection.commit()
+        return {"message": "Response posted"}
+    except HTTPException:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise
+    except MySQLError as exc:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.post("/discussions/{discussion_id}/close")
+def close_discussion(
+    discussion_id: int,
+    user=Depends(require_password_change_complete),
+):
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        discussion = get_discussion_for_user(cursor, discussion_id, user)
+        if user["department"] != "Admin" and discussion["created_by_user_id"] != user["user_id"]:
+            raise HTTPException(status_code=403, detail="Only the discussion creator can close it")
+        if discussion["status"] == "Closed":
+            raise HTTPException(status_code=409, detail="This discussion is already closed")
+        cursor.execute(
+            """
+            UPDATE discussions
+            SET status = 'Closed', closed_by_user_id = %s,
+                closed_by_username = %s, closed_at = NOW()
+            WHERE discussion_id = %s
+            """,
+            (user["user_id"], user["username"], discussion_id),
+        )
+        notify_discussion_participants(
+            cursor, discussion_id, user["user_id"], "Discussion closed",
+            f'{user["full_name"]} closed "{discussion["title"]}".',
+        )
+        connection.commit()
+        return {"message": "Discussion closed and attendees notified"}
+    except HTTPException:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise
+    except MySQLError as exc:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
 @app.get("/maintenance-reports")
 def get_maintenance_reports(user=Depends(require_password_change_complete)):
     try:
@@ -4692,7 +6279,8 @@ def search_database(
                 CAST(latitude AS DOUBLE) AS latitude,
                 CAST(longitude AS DOUBLE) AS longitude,
                 CAST(altitude AS DOUBLE) AS altitude,
-                province, district, sector, station_category, status, suspended
+                province, district, sector, station_category, status, suspended,
+                comment, action
             FROM stations WHERE 1=1
             """ + station_scope,
             tuple(scope_parameters),
@@ -4700,11 +6288,16 @@ def search_database(
         accessible_stations = cursor.fetchall()
         normalized_question = term.casefold().replace("_", " ")
         station_candidate = None
+        station_suffixes = (" aws", " arg", " wr", " uas")
         for station in sorted(accessible_stations, key=lambda item: len(item["station_name"]), reverse=True):
             aliases = {
                 station["station_name"].casefold().replace("_", " "),
                 station["station_code"].casefold().replace("_", " "),
             }
+            for alias in tuple(aliases):
+                for suffix in station_suffixes:
+                    if alias.endswith(suffix):
+                        aliases.add(alias[:-len(suffix)].strip())
             if any(alias and alias in normalized_question for alias in aliases):
                 station_candidate = station
                 break
@@ -4732,10 +6325,90 @@ def search_database(
         )
         latest_reporting = cursor.fetchone()
         lower = term.casefold()
-        if station_candidate and ("altitude" in lower or "elevation" in lower or "height" in lower):
+        asks_for_count = any(phrase in lower for phrase in ("how many", "number of", "count"))
+        asks_about_site = "site" in lower
+        asks_for_latest = any(word in lower for word in ("latest", "last", "recent", "newest"))
+        asks_for_suspension_cause = (
+            "suspend" in lower
+            and any(word in lower for word in ("why", "cause", "reason", "issue", "problem"))
+        )
+        latest_maintenance = None
+        if "maintenance" in lower and (asks_for_latest or station_candidate):
+            maintenance_query = """
+                SELECT m.maintenance_id, m.maintenance_date, m.issue,
+                    m.activity_done, m.recommendations, m.technicians,
+                    m.created_at, s.station_id, s.station_code, s.station_name
+                FROM maintenance_records m
+                INNER JOIN stations s ON s.station_id = m.station_id
+                WHERE 1=1
+            """
+            maintenance_parameters = []
+            if station_candidate:
+                maintenance_query += " AND m.station_id = %s"
+                maintenance_parameters.append(station_candidate["station_id"])
+            maintenance_query += (
+                " ORDER BY m.maintenance_date DESC, m.created_at DESC, "
+                "m.maintenance_id DESC LIMIT 1"
+            )
+            cursor.execute(maintenance_query, tuple(maintenance_parameters))
+            latest_maintenance = cursor.fetchone()
+
+        if station_candidate and asks_about_site and asks_for_count:
+            site_stations = [
+                station for station in accessible_stations
+                if station["latitude"] == station_candidate["latitude"]
+                and station["longitude"] == station_candidate["longitude"]
+                and station["altitude"] == station_candidate["altitude"]
+            ]
+            station_names = ", ".join(
+                sorted(station["station_name"] for station in site_stations)
+            )
+            site_name = station_candidate["station_name"].replace("_", " ")
+            for suffix in (" AWS", " ARG", " WR", " UAS"):
+                if site_name.upper().endswith(suffix):
+                    site_name = site_name[:-len(suffix)]
+                    break
+            answer = (
+                f"The {site_name} site has "
+                f"{len(site_stations)} station{'s' if len(site_stations) != 1 else ''}: "
+                f"{station_names}. They share latitude {station_candidate['latitude']:g}, "
+                f"longitude {station_candidate['longitude']:g}, and elevation "
+                f"{station_candidate['altitude']:g} metres."
+            )
+        elif station_candidate and asks_for_suspension_cause:
+            if station_candidate["suspended"]:
+                cause = station_candidate["comment"] or "No suspension cause has been recorded"
+                next_action = station_candidate["action"]
+                answer = f"{station_candidate['station_name']} is suspended. The recorded cause is: {cause}."
+                if next_action:
+                    answer += f" The planned action is: {next_action}."
+            else:
+                answer = (
+                    f"{station_candidate['station_name']} is not currently suspended. "
+                    f"Its recorded status is {station_candidate['status']}."
+                )
+        elif "maintenance" in lower and (asks_for_latest or station_candidate):
+            if latest_maintenance:
+                maintenance_date = latest_maintenance["maintenance_date"].strftime("%d %B %Y")
+                answer = (
+                    f"The latest maintenance update"
+                    f"{' for ' + station_candidate['station_name'] if station_candidate else ''} "
+                    f"was recorded for {latest_maintenance['station_name']} on {maintenance_date}. "
+                    f"Issue: {latest_maintenance['issue']}. "
+                    f"Activity completed: {latest_maintenance['activity_done']}."
+                )
+                if latest_maintenance["recommendations"]:
+                    answer += f" Recommendation: {latest_maintenance['recommendations']}."
+                if latest_maintenance["technicians"]:
+                    answer += f" Technician(s): {latest_maintenance['technicians']}."
+            elif station_candidate:
+                answer = f"No maintenance record has been entered for {station_candidate['station_name']}."
+            else:
+                answer = "No maintenance record has been entered yet."
+        elif station_candidate and ("altitude" in lower or "elevation" in lower or "height" in lower):
             answer = (
                 f"{station_candidate['station_name']} ({station_candidate['station_code']}) "
-                f"has an altitude of {station_candidate['altitude']:g} metres above sea level."
+                f"has an elevation of {station_candidate['altitude']:g} metres above sea level."
             )
         elif station_candidate and ("latitude" in lower or "longitude" in lower or "coordinate" in lower or "location" in lower):
             answer = (
@@ -4770,7 +6443,11 @@ def search_database(
         elif "station" in lower:
             answer = f"The network contains {station_summary['total']} stations."
         else:
-            answer = "I searched station, instrument, maintenance, QC, reporting, and data-request records for matching information."
+            answer = (
+                "I could not identify one precise question. You can ask about a station's site, "
+                "elevation, coordinates, location, category, operational or suspension status, "
+                "suspension cause, or latest maintenance update."
+            )
         cursor.execute(
             "SELECT station_id AS id, 'Station' AS type, station_name AS title, CONCAT(station_code, ' | ', station_category, ' | ', status) AS detail FROM stations WHERE (station_name LIKE %s OR station_code LIKE %s OR district LIKE %s OR station_category LIKE %s)" + station_scope + " LIMIT 12",
             (like, like, like, like, *scope_parameters),
@@ -4787,6 +6464,15 @@ def search_database(
                 "detail": (
                     f"{station_candidate['station_code']} | {station_candidate['station_category']} | "
                     f"Altitude {station_candidate['altitude']:g} m | {station_candidate['status']}"
+                ),
+            })
+        if latest_maintenance:
+            results.insert(0, {
+                "id": latest_maintenance["maintenance_id"],
+                "type": "Maintenance",
+                "title": f"{latest_maintenance['station_name']} - {latest_maintenance['maintenance_date']}",
+                "detail": (
+                    f"{latest_maintenance['issue']} | {latest_maintenance['activity_done']}"
                 ),
             })
         cursor.execute("SELECT instrument_id AS id, 'Instrument' AS type, instrument_name AS title, CONCAT(category, ' | ', parameters_taken) AS detail FROM instruments WHERE instrument_name LIKE %s OR category LIKE %s OR parameters_taken LIKE %s LIMIT 12", (like, like, like))

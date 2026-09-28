@@ -244,6 +244,144 @@ CREATE TABLE IF NOT EXISTS maintenance_report_stations (
         REFERENCES stations(station_id) ON UPDATE CASCADE ON DELETE RESTRICT
 );
 
+CREATE TABLE IF NOT EXISTS station_inspections (
+    inspection_id INT AUTO_INCREMENT PRIMARY KEY,
+    station_id INT NOT NULL,
+    inspection_date DATE NOT NULL,
+    finding TEXT NOT NULL,
+    workflow_stage VARCHAR(30) NOT NULL DEFAULT 'HQ Review',
+    status VARCHAR(30) NOT NULL DEFAULT 'Open',
+    not_solved_reason TEXT,
+    created_by_user_id INT,
+    created_by_username VARCHAR(50),
+    updated_by_user_id INT,
+    updated_by_username VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_station_inspection_station FOREIGN KEY (station_id)
+        REFERENCES stations(station_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+    CONSTRAINT fk_station_inspection_creator FOREIGN KEY (created_by_user_id)
+        REFERENCES users(user_id) ON DELETE SET NULL,
+    CONSTRAINT fk_station_inspection_updater FOREIGN KEY (updated_by_user_id)
+        REFERENCES users(user_id) ON DELETE SET NULL,
+    INDEX idx_station_inspection_stage_status (workflow_stage, status, inspection_date)
+);
+
+CREATE TABLE IF NOT EXISTS station_inspection_comments (
+    comment_id INT AUTO_INCREMENT PRIMARY KEY,
+    inspection_id INT NOT NULL,
+    action_type VARCHAR(40) NOT NULL DEFAULT 'Comment',
+    comment TEXT,
+    status_after VARCHAR(30),
+    reason TEXT,
+    commented_by_user_id INT,
+    commented_by_username VARCHAR(50),
+    commented_by_department VARCHAR(100),
+    commented_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_station_inspection_comment_inspection FOREIGN KEY (inspection_id)
+        REFERENCES station_inspections(inspection_id) ON DELETE CASCADE,
+    CONSTRAINT fk_station_inspection_comment_user FOREIGN KEY (commented_by_user_id)
+        REFERENCES users(user_id) ON DELETE SET NULL,
+    INDEX idx_station_inspection_comment_record (inspection_id, commented_at)
+);
+
+CREATE TABLE IF NOT EXISTS station_inspection_reports (
+    report_id INT AUTO_INCREMENT PRIMARY KEY,
+    inspection_id INT NULL,
+    period_start DATE,
+    period_end DATE,
+    notes VARCHAR(2000),
+    original_filename VARCHAR(255) NOT NULL,
+    content_type VARCHAR(100) NOT NULL,
+    file_size INT NOT NULL,
+    file_data LONGBLOB NOT NULL,
+    uploaded_by_user_id INT,
+    uploaded_by_username VARCHAR(50),
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_station_inspection_report_inspection FOREIGN KEY (inspection_id)
+        REFERENCES station_inspections(inspection_id) ON DELETE CASCADE,
+    CONSTRAINT fk_station_inspection_report_user FOREIGN KEY (uploaded_by_user_id)
+        REFERENCES users(user_id) ON DELETE SET NULL,
+    INDEX idx_station_inspection_report_record (inspection_id, uploaded_at)
+);
+
+CREATE TABLE IF NOT EXISTS station_inspection_report_stations (
+    report_id INT NOT NULL,
+    station_id INT NOT NULL,
+    PRIMARY KEY (report_id, station_id),
+    CONSTRAINT fk_inspection_report_station_report FOREIGN KEY (report_id)
+        REFERENCES station_inspection_reports(report_id) ON DELETE CASCADE,
+    CONSTRAINT fk_inspection_report_station_station FOREIGN KEY (station_id)
+        REFERENCES stations(station_id) ON UPDATE CASCADE ON DELETE RESTRICT
+);
+
+INSERT IGNORE INTO station_inspection_report_stations (report_id, station_id)
+SELECT reports.report_id, inspections.station_id
+FROM station_inspection_reports AS reports
+INNER JOIN station_inspections AS inspections
+    ON inspections.inspection_id = reports.inspection_id;
+
+CREATE TABLE IF NOT EXISTS station_inspection_photos (
+    inspection_id INT PRIMARY KEY,
+    original_filename VARCHAR(255) NOT NULL,
+    content_type VARCHAR(100) NOT NULL,
+    file_size INT NOT NULL,
+    file_data LONGBLOB NOT NULL,
+    uploaded_by_user_id INT,
+    uploaded_by_username VARCHAR(50),
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_inspection_photo_inspection FOREIGN KEY (inspection_id)
+        REFERENCES station_inspections(inspection_id) ON DELETE CASCADE,
+    CONSTRAINT fk_inspection_photo_user FOREIGN KEY (uploaded_by_user_id)
+        REFERENCES users(user_id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS discussions (
+    discussion_id INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(200) NOT NULL,
+    status ENUM('Open', 'Closed') NOT NULL DEFAULT 'Open',
+    created_by_user_id INT,
+    created_by_username VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    closed_by_user_id INT,
+    closed_by_username VARCHAR(50),
+    closed_at DATETIME,
+    CONSTRAINT fk_discussion_creator FOREIGN KEY (created_by_user_id)
+        REFERENCES users(user_id) ON DELETE SET NULL,
+    CONSTRAINT fk_discussion_closer FOREIGN KEY (closed_by_user_id)
+        REFERENCES users(user_id) ON DELETE SET NULL,
+    INDEX idx_discussion_status_created (status, created_at)
+);
+
+CREATE TABLE IF NOT EXISTS discussion_participants (
+    discussion_id INT NOT NULL,
+    user_id INT NOT NULL,
+    invited_by_user_id INT,
+    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (discussion_id, user_id),
+    CONSTRAINT fk_discussion_participant_discussion FOREIGN KEY (discussion_id)
+        REFERENCES discussions(discussion_id) ON DELETE CASCADE,
+    CONSTRAINT fk_discussion_participant_user FOREIGN KEY (user_id)
+        REFERENCES users(user_id) ON DELETE CASCADE,
+    CONSTRAINT fk_discussion_participant_inviter FOREIGN KEY (invited_by_user_id)
+        REFERENCES users(user_id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS discussion_messages (
+    message_id INT AUTO_INCREMENT PRIMARY KEY,
+    discussion_id INT NOT NULL,
+    message TEXT NOT NULL,
+    posted_by_user_id INT,
+    posted_by_username VARCHAR(50),
+    posted_by_full_name VARCHAR(100),
+    posted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_discussion_message_discussion FOREIGN KEY (discussion_id)
+        REFERENCES discussions(discussion_id) ON DELETE CASCADE,
+    CONSTRAINT fk_discussion_message_user FOREIGN KEY (posted_by_user_id)
+        REFERENCES users(user_id) ON DELETE SET NULL,
+    INDEX idx_discussion_message_thread (discussion_id, posted_at)
+);
+
 
 CREATE TABLE IF NOT EXISTS user_station_assignments (
 

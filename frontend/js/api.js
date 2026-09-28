@@ -110,29 +110,29 @@ async function requireSession() {
     const allowedPages = {
         "Admin": null,
         [MAINTENANCE_ROLE]: new Set([
-            "index.html", "maintenance.html", "suspected-data.html",
+            "index.html", "stations.html", "sites.html", "maintenance.html", "station-inspections.html", "discussions.html", "suspected-data.html",
             "station-instruments.html"
         ]),
         "Data Quality Control Officer": new Set([
-            "index.html", "maintenance.html", "suspected-data.html",
+            "index.html", "stations.html", "sites.html", "maintenance.html", "station-inspections.html", "discussions.html", "suspected-data.html",
             "station-instruments.html", "volunteer-data.html", "reporting-status.html",
             "data-requests.html"
         ]),
         "Observation Processing Officer": new Set([
-            "index.html", "maintenance.html", "suspected-data.html",
+            "index.html", "stations.html", "sites.html", "maintenance.html", "station-inspections.html", "discussions.html", "suspected-data.html",
             "station-instruments.html", "volunteer-data.html", "reporting-status.html",
             "data-requests.html"
         ]),
         "Observation Officer": new Set([
-            "index.html", "maintenance.html", "suspected-data.html",
+            "index.html", "stations.html", "sites.html", "maintenance.html", "station-inspections.html", "discussions.html", "suspected-data.html",
             "station-instruments.html"
         ]),
         "Observation Supervisor": new Set([
-            "index.html", "maintenance.html", "suspected-data.html",
+            "index.html", "stations.html", "sites.html", "maintenance.html", "station-inspections.html", "discussions.html", "suspected-data.html",
             "station-instruments.html"
         ]),
         "Observation Supervisor at HQ": new Set([
-            "index.html", "maintenance.html", "suspected-data.html",
+            "index.html", "stations.html", "sites.html", "maintenance.html", "station-inspections.html", "discussions.html", "suspected-data.html",
             "station-instruments.html", "volunteer-data.html", "reporting-status.html"
         ]),
         "Big Data Specialist": null,
@@ -237,6 +237,15 @@ function initializeShell() {
 function notificationTarget(notification) {
     if (notification.related_record_type === "suspected_data") {
         return `suspected-data.html?record=${notification.related_record_id}`;
+    }
+    if (notification.related_record_type === "station_inspection") {
+        return `station-inspections.html?record=${notification.related_record_id}`;
+    }
+    if (notification.related_record_type === "station_inspection_report") {
+        return "station-inspections.html#inspectionReports";
+    }
+    if (notification.related_record_type === "discussion") {
+        return `discussions.html?record=${notification.related_record_id}`;
     }
     return null;
 }

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discussions | Weather Station Management</title>
+    <link rel="stylesheet" href="css/app.css?v=20260927q">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div><p class="eyebrow">Operations</p><h1>Weather Station Management</h1></div>
+            <nav aria-label="Primary navigation">
+                <a href="index.html">Home</a><a href="stations.html">Stations</a><a href="sites.html">Sites</a>
+                <a href="maintenance.html">Maintenance</a><a href="station-inspections.html">Inspections</a>
+                <a class="active" href="discussions.html">Discussions</a><a href="suspected-data.html">QC</a>
+                <a href="instruments.html">Instruments</a><a href="station-instruments.html">Station instruments</a>
+                <a href="volunteer-data.html">Volunteer data</a><a href="reporting-status.html">Reporting</a>
+                <a href="data-requests.html">Requests</a><a href="kpi.html">KPI</a><a href="search.html">Search</a>
+                <a class="user-directory-access" href="users.html" hidden>Users</a>
+            </nav>
+            <div class="user-menu"><span><strong data-user-name></strong><small data-user-department></small></span><button class="header-button" type="button" data-logout>Sign out</button></div>
+        </div>
+    </header>
+
+    <main class="dashboard-layout discussion-layout">
+        <div class="dashboard-content">
+            <section>
+                <div class="section-heading"><div><p class="eyebrow">Team collaboration</p><h2>Open a discussion</h2></div></div>
+                <form id="discussionForm" class="form-grid">
+                    <div class="field span-2"><label for="discussionTitle">Discussion title</label><input id="discussionTitle" type="text" maxlength="200" placeholder="Enter a clear subject for the invited team" required></div>
+                    <div class="field span-2"><label for="discussionOpeningMessage">Opening message</label><textarea id="discussionOpeningMessage" maxlength="10000" placeholder="Explain the matter, decision needed, and relevant context for attendees." required></textarea></div>
+                    <div class="field span-2"><label for="discussionAttendeeSearch">Find attendees</label><input id="discussionAttendeeSearch" type="search" placeholder="Search by name, username, or role"></div>
+                    <fieldset class="span-2"><legend>People invited to attend</legend><div id="discussionAttendees" class="discussion-attendee-grid"></div><p class="field-help"><strong id="discussionAttendeeCount">0</strong> attendees selected</p></fieldset>
+                    <div class="form-actions span-2"><button type="submit">Open discussion and notify attendees</button></div>
+                    <p id="discussionFormMessage" class="message span-2" aria-live="polite"></p>
+                </form>
+            </section>
+
+            <section id="discussionWorkspace" class="discussion-workspace" hidden>
+                <div class="section-heading">
+                    <div><p class="eyebrow">Private discussion</p><h2 id="discussionWorkspaceTitle">Discussion</h2></div>
+                    <div class="action-group"><span id="discussionWorkspaceStatus" class="status">Open</span><button id="closeDiscussion" class="danger-button" type="button" hidden>Close discussion</button><button id="hideDiscussion" class="secondary-button" type="button">Close panel</button></div>
+                </div>
+                <div class="discussion-meta"><div><span>Opened by</span><strong id="discussionCreator">-</strong></div><div><span>Opened</span><strong id="discussionCreatedAt">-</strong></div><div><span>Attendees</span><strong id="discussionParticipantCount">0</strong></div></div>
+                <div id="discussionParticipantList" class="discussion-participant-list"></div>
+                <div id="discussionMessages" class="discussion-messages"></div>
+                <form id="discussionMessageForm" class="discussion-message-form">
+                    <div class="field"><label for="discussionMessage">Your response</label><textarea id="discussionMessage" maxlength="10000" placeholder="Add information, a decision, or a question for the invited attendees." required></textarea></div>
+                    <button type="submit">Post response</button><p id="discussionMessageStatus" class="message" aria-live="polite"></p>
+                </form>
+                <p id="discussionClosedNotice" class="closed-discussion-notice" hidden>This discussion is closed. Its conversation remains available as a permanent record.</p>
+            </section>
+
+            <section>
+                <div class="section-heading history-heading"><div><p class="eyebrow">Collaboration register</p><h2>Your discussions</h2></div><div class="filter-bar"><div class="field filter-field"><label for="discussionStatusFilter">Status</label><select id="discussionStatusFilter"><option value="">All statuses</option><option>Open</option><option>Closed</option></select></div><button id="refreshDiscussions" class="secondary-button" type="button">Refresh</button></div></div>
+                <div class="table-tools"><div class="field search-field"><label for="discussionSearch">Search discussions</label><input id="discussionSearch" type="search" placeholder="Title or creator"></div><div class="field"><label for="discussionPageSize">Rows per page</label><select id="discussionPageSize"><option>10</option><option selected>20</option><option>50</option></select></div></div>
+                <div id="discussionList" class="discussion-list"></div><div id="discussionPagination" class="pagination-bar"></div>
+            </section>
+        </div>
+        <aside class="dashboard-sidebar" aria-label="Discussion statistics">
+            <p class="eyebrow">Collaboration overview</p><h2>Discussion activity</h2>
+            <div class="summary-panel"><div class="metric-grid"><div class="metric-item"><span>Your discussions</span><strong id="discussionTotalMetric">0</strong></div><div class="metric-item"><span>Open</span><strong id="discussionOpenMetric">0</strong></div><div class="metric-item"><span>Closed</span><strong id="discussionClosedMetric">0</strong></div></div></div>
+            <div class="workflow-guide"><strong>Participation rules</strong><span>Only selected attendees can enter</span><span>Every response is attributed and timed</span><span>The creator controls closure</span><span>Closed discussions remain readable</span></div>
+        </aside>
+    </main>
+    <script src="js/config.js"></script><script src="js/api.js?v=20260928p"></script><script src="js/discussions.js?v=20260927b"></script>
+</body>
+</html>
