@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Maintenance | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css?v=20260927n">
+    <title>Maintenance | Station Operations</title>
+    <link rel="stylesheet" href="css/app.css?v=20261001activity">
 </head>
 <body>
     <header class="app-header">
         <div class="header-inner">
             <div>
                 <p class="eyebrow">Operations</p>
-                <h1>Weather Station Management</h1>
+                <h1>Station Operations</h1>
             </div>
             <nav aria-label="Primary navigation">
                 <a href="index.html">Home</a>
@@ -39,6 +39,19 @@
 
     <main class="dashboard-layout">
         <div class="dashboard-content">
+        <section id="categoryFrequencyPanel" hidden>
+            <div class="section-heading"><div><p class="eyebrow">Admin settings</p><h2>Maintenance frequency</h2></div></div>
+            <form id="categoryFrequencyForm" class="form-grid">
+                <div class="field"><label for="frequencyFiscalYear">Fiscal year</label><select id="frequencyFiscalYear"></select></div>
+                <div class="field"><label for="frequencyCategory">Station category</label><select id="frequencyCategory" required></select></div>
+                <div class="field"><label for="frequencyCadence">Frequency</label><select id="frequencyCadence"><option value="quarterly">Every quarter</option><option value="yearly">Every fiscal year</option></select></div>
+                <div class="field"><label for="frequencyTarget">Required maintenance visits per quarter or year</label><input id="frequencyTarget" type="number" min="1" max="100" value="1" required></div>
+                <div class="form-actions span-2"><button type="submit">Save frequency</button></div>
+                <p id="frequencyMessage" class="message span-2" aria-live="polite"></p>
+            </form>
+            <p class="muted">Q1 Jul-Sep · Q2 Oct-Dec · Q3 Jan-Mar · Q4 Apr-Jun. Quarterly target applies to each quarter; yearly target applies to the whole fiscal year.</p>
+            <div class="table-wrap"><table><thead><tr><th>Station category</th><th>Fiscal year</th><th>Frequency</th><th>Required visits</th><th>Actions</th></tr></thead><tbody id="frequencyRows"></tbody></table></div>
+        </section>
         <section id="maintenanceEditor">
             <div class="section-heading">
                 <div>
@@ -68,21 +81,7 @@
                     </div>
                     <p class="field-help">Select every instrument included in this maintenance activity.</p>
                 </fieldset>
-
-                <div class="field span-2">
-                    <label for="issue">Issue</label>
-                    <textarea id="issue" maxlength="2000" required></textarea>
-                </div>
-
-                <div class="field span-2">
-                    <label for="activityDone">Activity done</label>
-                    <textarea id="activityDone" maxlength="2000" required></textarea>
-                </div>
-
-                <div class="field span-2">
-                    <label for="recommendations">Recommendations</label>
-                    <textarea id="recommendations" maxlength="2000"></textarea>
-                </div>
+                <div class="span-2" id="maintenanceInstrumentDetails" aria-live="polite"></div>
 
                 <div class="field span-2">
                     <label for="technicians">Technicians</label>
@@ -193,7 +192,7 @@
                     <input type="search" id="maintenanceSearch" placeholder="Station, issue, activity, technician or instrument">
                 </div>
                 <div class="field">
-                    <label for="maintenancePageSize">Rows per page</label>
+                    <label for="maintenancePageSize">Visits per page</label>
                     <select id="maintenancePageSize">
                         <option value="10">10</option>
                         <option value="25" selected>25</option>
@@ -206,18 +205,18 @@
             </div>
 
             <div class="table-wrap">
-                <table class="maintenance-table">
+                <table class="maintenance-table" data-server-sorted="true">
                     <thead>
                         <tr>
-                            <th>ID</th>
+                            <th data-sort="maintenance_id">Visit ID</th>
                             <th data-sort="station">Station</th>
                             <th data-sort="maintenance_date">Date</th>
-                            <th>Instruments</th>
+                            <th data-sort="instruments">Instrument</th>
                             <th data-sort="issue">Issue</th>
-                            <th>Activity done</th>
-                            <th>Recommendations</th>
+                            <th data-sort="activity_done">Action done</th>
+                            <th data-sort="recommendations">Recommendations</th>
                             <th data-sort="technicians">Technicians</th>
-                            <th>Recorded by</th>
+                            <th data-sort="recorded_by">Recorded by</th>
                             <th id="maintenanceActionsHeading" hidden>Actions</th>
                         </tr>
                     </thead>
@@ -244,7 +243,8 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20260928p"></script>
-    <script src="js/maintenance.js?v=20260927c"></script>
+    <script src="js/api.js?v=20261001activity"></script>
+    <script src="js/maintenance.js?v=20260930instrumentrows1"></script>
+    <script src="js/maintenance-frequency.js?v=20260930audit2"></script>
 </body>
 </html>

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Maintenance Summary | Station Operations</title>
+    <link rel="stylesheet" href="css/app.css?v=20261001activity">
+</head>
+<body>
+    <header class="app-header"><div class="header-inner">
+        <div><p class="eyebrow">Operations</p><h1>Station Operations</h1></div>
+        <nav aria-label="Primary navigation"><a href="index.html">Home</a><a href="maintenance.html">Maintenance</a><a href="maintenance-summary.html" class="active">Maintenance summary</a></nav>
+        <div class="user-menu"><span><strong data-user-name></strong><small data-user-department></small></span><button class="header-button" type="button" data-logout>Sign out</button></div>
+    </div></header>
+    <main class="dashboard-layout">
+        <div class="dashboard-content"><section>
+            <div class="section-heading"><div><p class="eyebrow">Field work</p><h2>Maintenance summary</h2></div>
+                <div class="action-group"><button class="secondary-button" id="exportMaintenanceCsv" type="button">Export CSV</button><button class="secondary-button" id="exportMaintenancePdf" type="button">Export PDF</button></div>
+            </div>
+            <div class="filter-bar analytics-filter">
+                <div class="field"><label for="filterDistrict">District</label><select id="filterDistrict"></select></div>
+                <div class="field"><label for="filterStation">Station</label><select id="filterStation"></select></div>
+                <div class="field"><label for="filterCategory">Category</label><select id="filterCategory"></select></div>
+                <div class="field"><label for="fiscalYear">Fiscal year</label><select id="fiscalYear"></select></div>
+                <div class="field"><label for="quarter">Quarter</label><select id="quarter"><option value="">Full fiscal year</option><option value="1">Q1 Jul-Sep</option><option value="2">Q2 Oct-Dec</option><option value="3">Q3 Jan-Mar</option><option value="4">Q4 Apr-Jun</option></select></div>
+                <div class="field"><label for="filterScheduleStatus">Schedule status</label><select id="filterScheduleStatus"><option value="">All statuses</option><option value="Maintained">Maintained</option><option value="Pending">Pending</option><option value="Not maintained">Not maintained</option><option value="Not configured">Not configured</option></select></div>
+                <button class="secondary-button" id="applyFilters" type="button">Apply</button>
+            </div>
+            <p class="muted">Q1 Jul-Sep, Q2 Oct-Dec, Q3 Jan-Mar, Q4 Apr-Jun. Green: target met; red: missed quarterly deadline; yellow: still due. Status progress counts visits toward the target; extra visits in one quarter do not replace missed visits in another.</p>
+            <div class="table-wrap"><table class="wide-data-table"><thead><tr><th>District</th><th>Station</th><th>Category</th><th>Schedule status</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>Entries</th><th>Target</th><th>Frequency</th><th>Latest maintenance</th><th>Maintenance dates in period</th></tr></thead><tbody id="maintenanceSummaryRows"><tr><td colspan="13">Loading...</td></tr></tbody></table></div>
+        </section></div>
+        <aside class="dashboard-sidebar" aria-label="Maintenance schedule statistics"><p class="eyebrow">Selected fiscal period</p><h2>Maintenance status</h2><div class="metric-grid">
+            <div class="metric-item"><span>Stations</span><strong id="metricTotal">0</strong></div>
+            <div class="metric-item"><span>Maintained</span><strong id="metricMaintained">0</strong><small class="metric-detail" id="metricMaintainedRate">0.0% of matching stations</small></div>
+            <div class="metric-item"><span>Not maintained</span><strong id="metricNotMaintained">0</strong></div>
+            <div class="metric-item"><span>Pending</span><strong id="metricPending">0</strong></div>
+            <div class="metric-item"><span>Not configured</span><strong id="metricUnconfigured">0</strong></div>
+        </div></aside>
+    </main>
+    <script src="js/config.js"></script><script src="js/api.js?v=20261001activity"></script><script src="js/analytics-pages.js?v=20260930maintainedrate1"></script>
+</body>
+</html>

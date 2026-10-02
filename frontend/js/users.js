@@ -156,6 +156,7 @@ async function loadUsers() {
             if (isITUser()) appendUserActions(row, user);
             table.appendChild(row);
         });
+        attachRecordHistoryRows(table, "users", userRecords, user => user.user_id);
     } catch (error) {
         showTableMessage(table, columnCount, error.message);
     }

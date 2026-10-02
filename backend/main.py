@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import math
 import os
 from datetime import date, datetime, timedelta
@@ -16,6 +17,7 @@ from pydantic import BaseModel, Field, ValidationError
 from typing import Literal
 
 try:
+    from .activity import ACTIVITY_SCHEMA, ActivityMiddleware, set_activity_actor, suspend_activity
     from .database import get_connection
     from .security import (
         create_session_token,
@@ -24,6 +26,7 @@ try:
         verify_password,
     )
 except ImportError:
+    from activity import ACTIVITY_SCHEMA, ActivityMiddleware, set_activity_actor, suspend_activity
     from database import get_connection
     from security import (
         create_session_token,
@@ -33,7 +36,8 @@ except ImportError:
     )
 
 
-app = FastAPI()
+app = FastAPI(title="Station Operations", version="1.0.0")
+app.add_middleware(ActivityMiddleware)
 bearer_scheme = HTTPBearer(auto_error=False)
 cors_origins = [
     origin.strip()
@@ -67,6 +71,13 @@ StationCategory = Literal[
     "Principal stations",
     "Climatic stations",
     "Rainfall station",
+]
+
+StationStatus = Literal[
+    "Operational",
+    "Under maintenance",
+    "Suspended",
+    "Closed",
 ]
 
 UserRole = Literal[
@@ -131,21 +142,59 @@ class Station(BaseModel):
     district: str = Field(min_length=1, max_length=100)
     sector: str = Field(min_length=1, max_length=100)
     station_category: StationCategory
-    status: str = Field(min_length=1, max_length=30)
-    suspended: bool = False
+    status: StationStatus
     comment: str | None = Field(default=None, max_length=2000)
     action: str | None = Field(default=None, max_length=2000)
+
+
+class MaintenanceInstrumentDetail(BaseModel):
+    instrument_id: int = Field(gt=0)
+    issue: str = Field(min_length=1, max_length=2000)
+    action_done: str = Field(min_length=1, max_length=2000)
+    recommendation: str | None = Field(default=None, max_length=2000)
 
 
 class MaintenanceRecord(BaseModel):
 
     station_id: int = Field(gt=0)
     maintenance_date: date
-    issue: str = Field(min_length=1, max_length=2000)
-    activity_done: str = Field(min_length=1, max_length=2000)
+    issue: str | None = Field(default=None, max_length=2000)
+    activity_done: str | None = Field(default=None, max_length=2000)
     recommendations: str | None = Field(default=None, max_length=2000)
     technicians: str = Field(min_length=1, max_length=255)
-    instrument_ids: list[int] = Field(min_length=1)
+    instrument_ids: list[int] = Field(default_factory=list)
+    instrument_details: list[MaintenanceInstrumentDetail] = Field(default_factory=list)
+
+
+def maintenance_instrument_payload(record):
+    selected_ids = list(dict.fromkeys(record.instrument_ids))
+    if record.instrument_details:
+        details = record.instrument_details
+        detail_ids = [item.instrument_id for item in details]
+        if len(detail_ids) != len(set(detail_ids)):
+            raise HTTPException(status_code=400, detail="Each instrument can appear only once")
+        if selected_ids and set(selected_ids) != set(detail_ids):
+            raise HTTPException(status_code=400, detail="Instrument details must match selected instruments")
+        selected_ids = detail_ids
+    else:
+        if not record.issue or not record.issue.strip() or not record.activity_done or not record.activity_done.strip():
+            raise HTTPException(status_code=400, detail="Enter an issue and action for each selected instrument")
+        details = [MaintenanceInstrumentDetail(
+            instrument_id=instrument_id, issue=record.issue,
+            action_done=record.activity_done, recommendation=record.recommendations)
+            for instrument_id in selected_ids]
+    if not selected_ids:
+        raise HTTPException(status_code=400, detail="Select at least one instrument")
+    rows = []
+    for item in details:
+        issue, action = item.issue.strip(), item.action_done.strip()
+        if not issue or not action:
+            raise HTTPException(status_code=400, detail="Each instrument needs an issue and action")
+        rows.append((item.instrument_id, issue, action,
+                     item.recommendation.strip() if item.recommendation else None))
+    def summary(index):
+        return "; ".join(value[index] for value in rows if value[index])[:2000] or None
+    return selected_ids, rows, summary(1), summary(2), summary(3)
 
 
 class Instrument(BaseModel):
@@ -233,6 +282,8 @@ class StationInstrument(BaseModel):
     installation_date: date
     calibration_date: date | None = None
     replacement_date: date | None = None
+    recommended_calibration_date: date | None = None
+    recommended_replacement_date: date | None = None
     status: Literal[
         "Operational",
         "Needs Calibration",
@@ -241,6 +292,216 @@ class StationInstrument(BaseModel):
         "Inactive",
     ]
     comment: str | None = Field(default=None, max_length=2000)
+
+
+class MonthlyDataCount(BaseModel):
+    station_category: StationCategory
+    record_month: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+    record_count: int = Field(ge=0)
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class CombinedDataCount(BaseModel):
+    record_month: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+    station_categories: list[StationCategory] = Field(min_length=2, max_length=7)
+    record_count: int = Field(ge=0)
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class MaintenanceFrequency(BaseModel):
+    station_category: StationCategory
+    fiscal_start_year: int = Field(ge=2020, le=2100)
+    cadence: Literal["quarterly", "yearly"]
+    target_visits: int = Field(ge=1, le=100)
+
+
+class VisitorCategory(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class StationVisitor(BaseModel):
+    station_id: int = Field(gt=0)
+    visit_date: date
+    institution: str = Field(min_length=1, max_length=200)
+    mission: str = Field(min_length=1, max_length=1000)
+    category_id: int = Field(gt=0)
+    visitor_count: int = Field(ge=1)
+
+
+class StationVolunteer(BaseModel):
+    station_id: int = Field(gt=0)
+    volunteer_name: str = Field(min_length=1, max_length=150)
+    volunteer_identifier: str = Field(min_length=1, max_length=50)
+    account_type: str = Field(min_length=1, max_length=100)
+    account_name: str = Field(min_length=1, max_length=150)
+    account_number: str = Field(min_length=1, max_length=100)
+    mobile_phone: str = Field(min_length=1, max_length=50)
+
+
+def fiscal_period(start_year, quarter=None):
+    if quarter not in (None, 1, 2, 3, 4):
+        raise ValueError("Quarter must be Q1, Q2, Q3 or Q4")
+    starts = [(start_year, 7), (start_year, 10), (start_year + 1, 1), (start_year + 1, 4)]
+    ends = [(start_year, 9, 30), (start_year, 12, 31), (start_year + 1, 3, 31), (start_year + 1, 6, 30)]
+    if quarter is None:
+        return date(start_year, 7, 1), date(start_year + 1, 6, 30)
+    year, month = starts[quarter - 1]
+    return date(year, month, 1), date(*ends[quarter - 1])
+
+
+def fiscal_totals_by_month(monthly_totals):
+    by_fiscal_year, by_fiscal_quarter = {}, {}
+    for month, count in monthly_totals.items():
+        year, month_number = map(int, month.split("-"))
+        fiscal_start = year if month_number >= 7 else year - 1
+        fiscal_year = f"{fiscal_start}/{fiscal_start + 1}"
+        quarter = ((month_number - 7) % 12) // 3 + 1
+        by_fiscal_year[fiscal_year] = by_fiscal_year.get(fiscal_year, 0) + count
+        quarter_key = f"{fiscal_year} Q{quarter}"
+        by_fiscal_quarter[quarter_key] = by_fiscal_quarter.get(quarter_key, 0) + count
+    return dict(sorted(by_fiscal_year.items())), dict(sorted(by_fiscal_quarter.items()))
+
+
+def reporting_percentage(operational, expected):
+    if operational is None or expected is None:
+        return None
+    return round(operational * 100 / expected, 1) if expected else 0
+
+
+def instrument_due_alert(due_date, today):
+    if not due_date:
+        return {"level": "none", "label": "Not scheduled", "months_remaining": None}
+    if due_date < today:
+        return {"level": "overdue", "label": f"Overdue by {(today - due_date).days} days", "months_remaining": -1}
+    months = (due_date.year - today.year) * 12 + due_date.month - today.month
+    if months > 6 or (months == 6 and due_date.day > today.day):
+        return {"level": "none", "label": "Scheduled", "months_remaining": months}
+    if months == 0:
+        label = f"Due in {(due_date - today).days} days" if due_date > today else "Due today"
+    else:
+        label = f"Due in {months} month{'s' if months != 1 else ''}"
+    return {"level": "warning", "label": label, "months_remaining": months}
+
+
+def fiscal_maintenance_coverage(history, fiscal_start_year, quarter, cadence, target, today):
+    period_start, period_end = fiscal_period(fiscal_start_year, quarter)
+    report_ids = {row["report_id"] for row in history
+                  if period_start <= row["period_end"] <= period_end}
+    last_date = max((row["period_end"] for row in history), default=None)
+    if not target:
+        return {"coverage": "Not configured", "reports_in_period": len(report_ids),
+                "target_for_period": None, "last_maintenance_date": last_date}
+    if cadence == "yearly":
+        fy_start, fy_end = fiscal_period(fiscal_start_year)
+        progress_end = period_end if quarter else fy_end
+        completed = len({row["report_id"] for row in history
+                         if fy_start <= row["period_end"] <= progress_end})
+        status = "Maintained" if completed >= target else (
+            "Not maintained" if quarter is None and today > fy_end else "Pending")
+        return {"coverage": status, "reports_in_period": len(report_ids),
+                "target_for_period": target, "last_maintenance_date": last_date}
+    quarters = [quarter] if quarter else [1, 2, 3, 4]
+    overdue = False
+    all_met = True
+    for number in quarters:
+        start, end = fiscal_period(fiscal_start_year, number)
+        visits = len({row["report_id"] for row in history if start <= row["period_end"] <= end})
+        if visits < target:
+            all_met = False
+            if today > end:
+                overdue = True
+    status = "Maintained" if all_met else ("Not maintained" if overdue else "Pending")
+    return {"coverage": status, "reports_in_period": len(report_ids),
+            "target_for_period": target * len(quarters), "last_maintenance_date": last_date}
+
+
+def maintenance_schedule_status(history, fiscal_start_year, quarter, cadence, target, today):
+    period_start, period_end = fiscal_period(fiscal_start_year, quarter)
+    completed_dates = sorted({row["maintenance_date"] for row in history
+                              if row["maintenance_date"] <= today})
+    period_records = [row for row in history
+                      if period_start <= row["maintenance_date"] <= min(period_end, today)]
+    quarter_progress = []
+    for number in (1, 2, 3, 4):
+        start, end = fiscal_period(fiscal_start_year, number)
+        count = sum(start <= row["maintenance_date"] <= min(end, today) for row in history)
+        if not target or cadence not in {"quarterly", "yearly"}:
+            state = "unconfigured"
+        elif cadence == "yearly":
+            state = "good" if count else ("pending" if today <= end else "neutral")
+        else:
+            state = "good" if count >= target else ("missed" if today > end else "pending")
+        quarter_progress.append({"quarter": number, "count": count if today >= start else None,
+                                 "state": state, "target": target if cadence == "quarterly" else None})
+    result = {
+        "status": "Not configured", "status_detail": "Set a maintenance frequency for this category",
+        "visits_in_period": len(period_records), "target_for_period": None,
+        "visits_toward_target": None, "progress_percent": None,
+        "last_maintenance_date": completed_dates[-1] if completed_dates else None,
+        "maintenance_dates": [row["maintenance_date"] for row in period_records],
+        "quarter_progress": quarter_progress,
+    }
+    if not target or cadence not in {"quarterly", "yearly"}:
+        return result
+    if cadence == "yearly":
+        year_start, year_end = fiscal_period(fiscal_start_year)
+        completed = sum(year_start <= row["maintenance_date"] <= min(year_end, today)
+                        for row in history)
+        result["target_for_period"] = target
+        result["visits_toward_target"] = min(completed, target)
+        result["progress_percent"] = round(100 * min(completed, target) / target)
+        if completed >= target:
+            result.update(status="Maintained", status_detail=f"Annual target met ({completed}/{target})")
+        elif today > year_end:
+            result.update(status="Not maintained", status_detail=f"Annual target missed ({completed}/{target})")
+        else:
+            result.update(status="Pending", status_detail=f"Annual target in progress ({completed}/{target})")
+        return result
+
+    quarters = [quarter] if quarter else [1, 2, 3, 4]
+    result["target_for_period"] = target * len(quarters)
+    fulfilled = sum(min(quarter_progress[number - 1]["count"] or 0, target)
+                    for number in quarters)
+    result["visits_toward_target"] = fulfilled
+    result["progress_percent"] = round(100 * fulfilled / result["target_for_period"])
+    missed, awaiting = [], []
+    for number in quarters:
+        start, end = fiscal_period(fiscal_start_year, number)
+        completed = sum(start <= row["maintenance_date"] <= min(end, today) for row in history)
+        if completed < target:
+            (missed if today > end else awaiting).append(f"Q{number} ({completed}/{target})")
+    if missed:
+        result.update(status="Not maintained", status_detail="Quarterly deadline missed")
+    elif awaiting:
+        result.update(status="Pending", status_detail="Quarterly target still due")
+    else:
+        result.update(status="Maintained", status_detail="Quarterly target met")
+    return result
+
+
+def effective_instrument_status(status, calibration_due, replacement_due, today):
+    if status != "Operational":
+        return status
+    if replacement_due and replacement_due <= today:
+        return "Needs Replacement"
+    if calibration_due and calibration_due <= today:
+        return "Needs Calibration"
+    return status
+
+
+def maintenance_coverage(history, period_start, period_end, frequency_days):
+    overlapping = [report for report in history if report["period_start"] <= period_end
+                   and report["period_end"] >= period_start]
+    prior = [report["period_end"] for report in history if report["period_end"] < period_start]
+    last_prior = max(prior) if prior else None
+    next_due = last_prior + timedelta(days=frequency_days) if last_prior else None
+    return {
+        "reports_in_period": len(overlapping),
+        "last_maintenance_date": max((report["period_end"] for report in history), default=None),
+        "next_due_date": next_due,
+        "coverage": "Maintained" if overlapping else "Not maintained",
+        "pending": not overlapping and (next_due is None or next_due <= period_end),
+    }
 
 
 class StationInspectionRecord(BaseModel):
@@ -345,6 +606,32 @@ def ensure_column(cursor, table_name, column_name, definition):
         )
 
 
+def ensure_station_status_enum(cursor):
+    desired_type = "enum('Operational','Under maintenance','Suspended','Closed')"
+    cursor.execute(
+        """SELECT COLUMN_TYPE, IS_NULLABLE FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'stations'
+            AND COLUMN_NAME = 'status'"""
+    )
+    column_type, nullable = cursor.fetchone()
+    if column_type == desired_type and nullable == "NO":
+        return
+    cursor.execute(
+        """SELECT DISTINCT status FROM stations
+        WHERE status IS NULL OR status NOT IN
+            ('Operational', 'Under maintenance', 'Suspended', 'Closed')"""
+    )
+    invalid = [row[0] for row in cursor.fetchall()]
+    if invalid:
+        raise RuntimeError(
+            f"Cannot constrain stations.status; classify legacy values first: {invalid}"
+        )
+    cursor.execute(
+        """ALTER TABLE stations MODIFY COLUMN status
+            ENUM('Operational', 'Under maintenance', 'Suspended', 'Closed') NOT NULL"""
+    )
+
+
 def ensure_foreign_key(cursor, table_name, constraint_name, definition):
     cursor.execute(
         """
@@ -412,11 +699,13 @@ def filter_sort_collection(
             )
         filtered = [item for item in filtered if in_range(item)]
     column = sort_fields.get(sort_by) or next(iter(sort_fields.values()))
-    filtered.sort(
-        key=lambda item: (item.get(column) is None, item.get(column)),
+    present = [item for item in filtered if item.get(column) is not None]
+    missing = [item for item in filtered if item.get(column) is None]
+    present.sort(
+        key=lambda item: item[column].casefold() if isinstance(item[column], str) else item[column],
         reverse=sort_order.lower() == "desc",
     )
-    return filtered
+    return present + missing
 
 
 def paginate_collection(items, page, page_size, summary=None):
@@ -613,11 +902,13 @@ def ensure_department_options(cursor):
         )
 
 
+@suspend_activity
 def ensure_application_tables(connection):
 
     cursor = connection.cursor()
 
     try:
+        cursor.execute(ACTIVITY_SCHEMA)
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
@@ -640,6 +931,16 @@ def ensure_application_tables(connection):
             )
             """
         )
+        cursor.execute("""CREATE TABLE IF NOT EXISTS record_edit_history (
+            history_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            entity_type VARCHAR(50) NOT NULL,
+            entity_id VARCHAR(100) NOT NULL,
+            before_data JSON NOT NULL,
+            after_data JSON NOT NULL,
+            changed_by_username VARCHAR(50) NOT NULL,
+            changed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_record_edit_history (entity_type, entity_id, changed_at)
+        )""")
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS user_sessions (
@@ -715,6 +1016,9 @@ def ensure_application_tables(connection):
                 reporting_status_id INT AUTO_INCREMENT PRIMARY KEY,
                 report_month DATE NOT NULL UNIQUE,
                 expected_stations INT NOT NULL,
+                operational_stations INT NULL,
+                under_maintenance_stations INT NULL,
+                suspended_stations INT NULL,
                 reported_stations INT NOT NULL,
                 validated_reports INT NOT NULL,
                 notes TEXT,
@@ -727,6 +1031,20 @@ def ensure_application_tables(connection):
             )
             """
         )
+        cursor.execute("""CREATE TABLE IF NOT EXISTS monthly_reporting_changes (
+            change_id INT AUTO_INCREMENT PRIMARY KEY,
+            reporting_status_id INT NULL,
+            report_month DATE NOT NULL,
+            action ENUM('Created', 'Updated', 'Deleted', 'File uploaded') NOT NULL,
+            before_data JSON NULL,
+            after_data JSON NULL,
+            changed_by_user_id INT NULL,
+            changed_by_username VARCHAR(50) NOT NULL,
+            changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_reporting_change_time (changed_at, change_id),
+            INDEX idx_reporting_change_month (report_month, change_id),
+            FOREIGN KEY (changed_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL
+        )""")
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS monthly_data_requests (
@@ -776,8 +1094,7 @@ def ensure_application_tables(connection):
                 district VARCHAR(100) NOT NULL,
                 sector VARCHAR(100) NOT NULL,
                 station_category VARCHAR(60) NOT NULL,
-                status VARCHAR(30) NOT NULL,
-                suspended BOOLEAN NOT NULL DEFAULT FALSE,
+                status ENUM('Operational', 'Under maintenance', 'Suspended', 'Closed') NOT NULL,
                 comment TEXT,
                 action TEXT,
                 created_by_user_id INT,
@@ -854,6 +1171,172 @@ def ensure_application_tables(connection):
             )
             """
         )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pre_maintenance_reports (
+                report_id INT AUTO_INCREMENT PRIMARY KEY,
+                period_start DATE NOT NULL,
+                period_end DATE NOT NULL,
+                notes VARCHAR(2000),
+                original_filename VARCHAR(255) NOT NULL,
+                content_type VARCHAR(100) NOT NULL,
+                file_size INT NOT NULL,
+                file_data LONGBLOB NOT NULL,
+                uploaded_by_user_id INT,
+                uploaded_by_username VARCHAR(50),
+                uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT fk_pre_maintenance_report_user
+                    FOREIGN KEY (uploaded_by_user_id)
+                    REFERENCES users(user_id)
+                    ON DELETE SET NULL
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pre_maintenance_report_stations (
+                report_id INT NOT NULL,
+                station_id INT NOT NULL,
+                PRIMARY KEY (report_id, station_id),
+                CONSTRAINT fk_pre_maintenance_report_station_report
+                    FOREIGN KEY (report_id)
+                    REFERENCES pre_maintenance_reports(report_id)
+                    ON DELETE CASCADE,
+                CONSTRAINT fk_pre_maintenance_report_station_station
+                    FOREIGN KEY (station_id)
+                    REFERENCES stations(station_id)
+                    ON UPDATE CASCADE
+                    ON DELETE RESTRICT
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS station_maintenance_frequencies (
+                station_id INT PRIMARY KEY,
+                frequency_days INT NOT NULL DEFAULT 90,
+                updated_by_user_id INT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (station_id) REFERENCES stations(station_id) ON DELETE CASCADE,
+                FOREIGN KEY (updated_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS monthly_data_counts (
+                data_count_id INT AUTO_INCREMENT PRIMARY KEY,
+                station_id INT NOT NULL,
+                record_month DATE NOT NULL,
+                record_count INT NOT NULL,
+                notes VARCHAR(1000) NULL,
+                recorded_by_user_id INT NULL,
+                recorded_by_username VARCHAR(50) NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_monthly_data_station_month (station_id, record_month),
+                FOREIGN KEY (station_id) REFERENCES stations(station_id) ON DELETE RESTRICT,
+                FOREIGN KEY (recorded_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL
+            )
+            """
+        )
+        cursor.execute("""CREATE TABLE IF NOT EXISTS monthly_category_data_counts (
+            data_count_id INT AUTO_INCREMENT PRIMARY KEY,
+            station_category VARCHAR(60) NOT NULL,
+            record_month DATE NOT NULL,
+            record_count INT NOT NULL,
+            notes VARCHAR(1000),
+            recorded_by_user_id INT NULL,
+            recorded_by_username VARCHAR(50),
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_category_month (station_category, record_month),
+            FOREIGN KEY (recorded_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL
+        )""")
+        cursor.execute("""CREATE TABLE IF NOT EXISTS monthly_combined_data_counts (
+            data_count_id INT AUTO_INCREMENT PRIMARY KEY,
+            category_key VARCHAR(500) NOT NULL,
+            record_month DATE NOT NULL,
+            record_count INT NOT NULL,
+            notes VARCHAR(1000),
+            recorded_by_user_id INT NULL,
+            recorded_by_username VARCHAR(50),
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_combined_month (record_month, category_key),
+            FOREIGN KEY (recorded_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL
+        )""")
+        cursor.execute("""CREATE TABLE IF NOT EXISTS app_migration_markers (
+            migration_key VARCHAR(100) PRIMARY KEY,
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""")
+        cursor.execute("SELECT 1 FROM app_migration_markers WHERE migration_key = 'category_data_counts_v1'")
+        if not cursor.fetchone():
+            cursor.execute("""INSERT INTO monthly_category_data_counts
+                (station_category, record_month, record_count, notes)
+                SELECT s.station_category, m.record_month, SUM(m.record_count),
+                    'Aggregated from legacy station counts'
+                FROM monthly_data_counts m JOIN stations s ON s.station_id = m.station_id
+                GROUP BY s.station_category, m.record_month
+                ON DUPLICATE KEY UPDATE record_count = monthly_category_data_counts.record_count""")
+            cursor.execute("INSERT INTO app_migration_markers (migration_key) VALUES ('category_data_counts_v1')")
+        cursor.execute("""CREATE TABLE IF NOT EXISTS category_maintenance_targets (
+            station_category VARCHAR(60) NOT NULL,
+            fiscal_start_year SMALLINT NOT NULL,
+            cadence ENUM('quarterly', 'yearly') NOT NULL,
+            target_visits INT NOT NULL,
+            updated_by_user_id INT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (station_category, fiscal_start_year),
+            FOREIGN KEY (updated_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL
+        )""")
+        cursor.execute("""CREATE TABLE IF NOT EXISTS instrument_alert_deliveries (
+            station_instrument_id INT NOT NULL,
+            user_id INT NOT NULL,
+            alert_kind VARCHAR(20) NOT NULL,
+            alert_month DATE NOT NULL,
+            PRIMARY KEY (station_instrument_id, user_id, alert_kind, alert_month),
+            FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+        )""")
+        cursor.execute("""CREATE TABLE IF NOT EXISTS visitor_categories (
+            category_id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(100) NOT NULL UNIQUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""")
+        cursor.execute("""CREATE TABLE IF NOT EXISTS station_visitors (
+            visitor_id INT AUTO_INCREMENT PRIMARY KEY,
+            station_id INT NOT NULL,
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+            institution VARCHAR(200) NOT NULL DEFAULT '',
+            mission VARCHAR(1000) NOT NULL,
+            category_id INT NOT NULL,
+            visitor_count INT NOT NULL,
+            recorded_by_user_id INT NULL,
+            recorded_by_username VARCHAR(50),
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (station_id) REFERENCES stations(station_id) ON DELETE RESTRICT,
+            FOREIGN KEY (category_id) REFERENCES visitor_categories(category_id) ON DELETE RESTRICT,
+            FOREIGN KEY (recorded_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL,
+            INDEX idx_station_visitors_period (period_start, station_id)
+        )""")
+        cursor.execute("""CREATE TABLE IF NOT EXISTS station_volunteers (
+            volunteer_id INT AUTO_INCREMENT PRIMARY KEY,
+            station_id INT NOT NULL,
+            volunteer_name VARCHAR(150) NOT NULL,
+            volunteer_identifier VARCHAR(50) NOT NULL,
+            account_type VARCHAR(100) NOT NULL,
+            account_name VARCHAR(150) NOT NULL,
+            account_number VARCHAR(100) NOT NULL,
+            mobile_phone VARCHAR(50) NOT NULL,
+            recorded_by_user_id INT NULL,
+            recorded_by_username VARCHAR(50),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            CONSTRAINT fk_station_volunteer_station FOREIGN KEY (station_id)
+                REFERENCES stations(station_id) ON DELETE RESTRICT,
+            CONSTRAINT fk_station_volunteer_user FOREIGN KEY (recorded_by_user_id)
+                REFERENCES users(user_id) ON DELETE SET NULL,
+            UNIQUE KEY uq_station_volunteer_identifier (station_id, volunteer_identifier),
+            INDEX idx_station_volunteer_name (volunteer_name)
+        )""")
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS station_inspections (
@@ -1098,6 +1581,9 @@ def ensure_application_tables(connection):
             CREATE TABLE IF NOT EXISTS maintenance_record_instruments (
                 maintenance_id INT NOT NULL,
                 instrument_id INT NOT NULL,
+                issue TEXT,
+                action_done TEXT,
+                recommendation TEXT,
                 PRIMARY KEY (maintenance_id, instrument_id),
                 CONSTRAINT fk_record_instrument_maintenance
                     FOREIGN KEY (maintenance_id)
@@ -1112,6 +1598,14 @@ def ensure_application_tables(connection):
             )
             """
         )
+        for field in ("issue", "action_done", "recommendation"):
+            ensure_column(cursor, "maintenance_record_instruments", field, "TEXT NULL")
+        cursor.execute("""UPDATE maintenance_record_instruments AS link
+            JOIN maintenance_records AS record ON record.maintenance_id = link.maintenance_id
+            SET link.issue = COALESCE(link.issue, record.issue),
+                link.action_done = COALESCE(link.action_done, record.activity_done),
+                link.recommendation = COALESCE(link.recommendation, record.recommendations)
+            WHERE link.issue IS NULL OR link.action_done IS NULL""")
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS suspected_data_records (
@@ -1170,6 +1664,8 @@ def ensure_application_tables(connection):
                 calibration_replacement_date DATE NULL,
                 calibration_date DATE NULL,
                 replacement_date DATE NULL,
+                recommended_calibration_date DATE NULL,
+                recommended_replacement_date DATE NULL,
                 status VARCHAR(30) NOT NULL,
                 comment TEXT,
                 created_by_user_id INT,
@@ -1221,12 +1717,31 @@ def ensure_application_tables(connection):
         ensure_column(cursor, "stations", "district", "VARCHAR(100) NULL")
         ensure_column(cursor, "stations", "sector", "VARCHAR(100) NULL")
         ensure_column(cursor, "stations", "station_category", "VARCHAR(60) NULL")
-        ensure_column(cursor, "stations", "suspended", "BOOLEAN NOT NULL DEFAULT FALSE")
+        cursor.execute(
+            "UPDATE stations SET status = 'Under maintenance' WHERE status = 'Maintenance'"
+        )
+        cursor.execute(
+            """SELECT COUNT(*) FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'stations'
+                AND COLUMN_NAME = 'suspended'"""
+        )
+        if cursor.fetchone()[0]:
+            cursor.execute(
+                "UPDATE stations SET status = 'Suspended' WHERE suspended = TRUE"
+            )
+            cursor.execute("ALTER TABLE stations DROP COLUMN suspended")
+        ensure_station_status_enum(cursor)
+        ensure_column(cursor, "monthly_reporting_status", "operational_stations", "INT NULL")
+        ensure_column(cursor, "monthly_reporting_status", "under_maintenance_stations", "INT NULL")
+        ensure_column(cursor, "monthly_reporting_status", "suspended_stations", "INT NULL")
         ensure_column(cursor, "stations", "comment", "TEXT NULL")
         ensure_column(cursor, "stations", "action", "TEXT NULL")
+        ensure_column(cursor, "station_visitors", "institution", "VARCHAR(200) NOT NULL DEFAULT ''")
         ensure_column(cursor, "instruments", "parameters_taken", "VARCHAR(1000) NULL")
         ensure_column(cursor, "station_instruments", "calibration_date", "DATE NULL")
         ensure_column(cursor, "station_instruments", "replacement_date", "DATE NULL")
+        ensure_column(cursor, "station_instruments", "recommended_calibration_date", "DATE NULL")
+        ensure_column(cursor, "station_instruments", "recommended_replacement_date", "DATE NULL")
         ensure_column(cursor, "station_instruments", "comment", "TEXT NULL")
         ensure_column(cursor, "station_inspection_reports", "period_start", "DATE NULL")
         ensure_column(cursor, "station_inspection_reports", "period_end", "DATE NULL")
@@ -1352,6 +1867,7 @@ def get_current_user(
         if user is None:
             raise HTTPException(status_code=401, detail="Session expired or invalid")
 
+        set_activity_actor(user)
         return user
 
     except HTTPException:
@@ -1447,6 +1963,147 @@ def require_reporting_view(user=Depends(require_password_change_complete)):
     return user
 
 
+AUDITED_RECORDS = {
+    "stations": ("stations", "station_id"),
+    "users": ("users", "user_id"),
+    "instruments": ("instruments", "instrument_id"),
+    "maintenance": ("maintenance_records", "maintenance_id"),
+    "station_instruments": ("station_instruments", "station_instrument_id"),
+    "suspected_data": ("suspected_data_records", "suspected_data_id"),
+    "station_inspections": ("station_inspections", "inspection_id"),
+    "data_requests": ("monthly_data_requests", "data_request_id"),
+    "category_data_counts": ("monthly_category_data_counts", "data_count_id"),
+    "combined_data_counts": ("monthly_combined_data_counts", "data_count_id"),
+    "station_visitors": ("station_visitors", "visitor_id"),
+    "station_volunteers": ("station_volunteers", "volunteer_id"),
+    "visitor_categories": ("visitor_categories", "category_id"),
+    "maintenance_frequencies": ("category_maintenance_targets", "station_category"),
+    "volunteer_data": (None, None),
+}
+
+
+def audit_snapshot(connection, entity_type, entity_id):
+    table, key = AUDITED_RECORDS[entity_type]
+    cursor = connection.cursor(dictionary=True)
+    try:
+        if entity_type == "volunteer_data":
+            target_month = entity_id if isinstance(entity_id, date) else month_start(str(entity_id))
+            cursor.execute("""SELECT file_id, file_kind, original_filename, content_type,
+                file_size, uploaded_by_username, uploaded_at FROM volunteer_data_files
+                WHERE report_month = %s ORDER BY file_kind""", (target_month,))
+            files = cursor.fetchall()
+            cursor.execute("""SELECT comment_id, comment, commented_by_username, commented_at
+                FROM volunteer_report_comments WHERE report_month = %s ORDER BY comment_id""",
+                (target_month,))
+            comments = cursor.fetchall()
+            return json.loads(json.dumps({"report_month": str(target_month),
+                                          "files": files, "comments": comments}, default=str))
+        if entity_type == "maintenance_frequencies":
+            fiscal_year, category = str(entity_id).split("|", 1)
+            cursor.execute("""SELECT * FROM category_maintenance_targets
+                WHERE fiscal_start_year = %s AND station_category = %s""",
+                (int(fiscal_year), category))
+        else:
+            cursor.execute(f"SELECT * FROM `{table}` WHERE `{key}` = %s", (entity_id,))
+        snapshot = cursor.fetchone()
+        if snapshot is None:
+            return None
+        if entity_type == "users":
+            allowed = {"user_id", "full_name", "username", "email", "department",
+                       "must_change_password", "is_active", "created_at"}
+            snapshot = {key: value for key, value in snapshot.items() if key in allowed}
+            cursor.execute("SELECT station_id FROM user_station_assignments WHERE user_id = %s ORDER BY station_id", (entity_id,))
+            snapshot["assigned_station_ids"] = [row["station_id"] for row in cursor.fetchall()]
+        elif entity_type == "instruments":
+            cursor.execute("SELECT station_category FROM instrument_station_categories WHERE instrument_id = %s ORDER BY station_category", (entity_id,))
+            snapshot["station_categories"] = [row["station_category"] for row in cursor.fetchall()]
+        elif entity_type == "maintenance":
+            cursor.execute("""SELECT instrument_id, issue, action_done, recommendation
+                FROM maintenance_record_instruments WHERE maintenance_id = %s ORDER BY instrument_id""",
+                (entity_id,))
+            snapshot["instrument_details"] = cursor.fetchall()
+        elif entity_type == "station_inspections":
+            cursor.execute("""SELECT comment_id, action_type, comment, status_after,
+                reason, commented_by_username, commented_at
+                FROM station_inspection_comments WHERE inspection_id = %s
+                ORDER BY comment_id""", (entity_id,))
+            snapshot["actions"] = cursor.fetchall()
+        return json.loads(json.dumps(snapshot, default=str))
+    finally:
+        cursor.close()
+
+
+def record_entity_edit(connection, entity_type, entity_id, before, after, user):
+    cursor = connection.cursor()
+    try:
+        cursor.execute("""INSERT INTO record_edit_history
+            (entity_type, entity_id, before_data, after_data, changed_by_username)
+            VALUES (%s, %s, %s, %s, %s)""",
+            (entity_type, str(entity_id), json.dumps(before, default=str),
+             json.dumps(after, default=str), user["username"]))
+    finally:
+        cursor.close()
+
+
+@app.get("/record-history/{entity_type}/{entity_id}")
+def get_record_history(entity_type: str, entity_id: str,
+                       page: int = Query(default=1, ge=1),
+                       page_size: int = Query(default=25, ge=1, le=100),
+                       user=Depends(require_password_change_complete)):
+    if entity_type not in AUDITED_RECORDS:
+        raise HTTPException(status_code=404, detail="Record history is unavailable")
+    if entity_type == "volunteer_data":
+        try:
+            entity_id = str(month_start(entity_id))[:7]
+        except (ValueError, TypeError, HTTPException) as exc:
+            raise HTTPException(status_code=400, detail="Invalid report month") from exc
+    elif entity_type != "maintenance_frequencies":
+        try:
+            entity_id = str(int(entity_id))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid record ID") from exc
+    elif "|" not in entity_id:
+        raise HTTPException(status_code=400, detail="Invalid frequency ID")
+    role = user["department"]
+    if entity_type in {"users", "visitor_categories", "maintenance_frequencies"} and role != "Admin":
+        raise HTTPException(status_code=403, detail="Administrator access required")
+    if entity_type == "instruments" and role not in {"Admin", MAINTENANCE_ROLE, *READ_ONLY_ALL_ROLES}:
+        raise HTTPException(status_code=403, detail="Instrument catalog access is not allowed")
+    if entity_type in {"data_requests", "category_data_counts", "combined_data_counts"} and role not in {"Admin", *REPORTING_VIEW_ROLES}:
+        raise HTTPException(status_code=403, detail="Data operations access is not allowed")
+    if entity_type in {"volunteer_data", "station_volunteers"} and role not in {"Admin", *VOLUNTEER_DATA_ROLES}:
+        raise HTTPException(status_code=403, detail="Volunteer data access is not allowed")
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("""SELECT history_id, before_data, after_data,
+            changed_by_username, changed_at FROM record_edit_history
+            WHERE entity_type = %s AND entity_id = %s
+            ORDER BY changed_at DESC, history_id DESC""", (entity_type, str(entity_id)))
+        items = cursor.fetchall()
+        for item in items:
+            for field in ("before_data", "after_data"):
+                if isinstance(item[field], (str, bytes)):
+                    item[field] = json.loads(item[field])
+        if role in ASSIGNED_STATION_ROLES:
+            cursor.execute("SELECT station_id FROM user_station_assignments WHERE user_id = %s", (user["user_id"],))
+            allowed = {row["station_id"] for row in cursor.fetchall()}
+            current = audit_snapshot(connection, entity_type, entity_id)
+            current_station = int(entity_id) if entity_type == "stations" else (current or {}).get("station_id")
+            if current_station not in allowed:
+                raise HTTPException(status_code=403, detail="Station is not assigned to this account")
+            items = [item for item in items if all(
+                (snapshot.get("station_id", int(entity_id) if entity_type == "stations" else None) in allowed)
+                for snapshot in (item["before_data"], item["after_data"]) if snapshot)]
+        total = len(items)
+        return {"items": items[(page - 1) * page_size:page * page_size],
+                "total": total, "page": page, "page_size": page_size}
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if connection.is_connected(): connection.close()
+
+
 def replace_user_station_assignments(cursor, user_id, station_ids):
     station_ids = list(dict.fromkeys(station_ids))
     cursor.execute(
@@ -1530,6 +2187,7 @@ def update_maintenance_record(
         connection = get_connection()
         ensure_application_tables(connection)
         cursor = connection.cursor()
+        before = audit_snapshot(connection, "maintenance", maintenance_id)
 
         cursor.execute(
             "SELECT maintenance_id FROM maintenance_records WHERE maintenance_id = %s",
@@ -1546,7 +2204,7 @@ def update_maintenance_record(
         if station is None:
             raise HTTPException(status_code=404, detail="Station not found")
 
-        instrument_ids = list(dict.fromkeys(record.instrument_ids))
+        instrument_ids, details, issue, activity_done, recommendations = maintenance_instrument_payload(record)
         placeholders = ", ".join(["%s"] * len(instrument_ids))
         cursor.execute(
             f"""
@@ -1586,9 +2244,9 @@ def update_maintenance_record(
             (
                 record.station_id,
                 record.maintenance_date,
-                record.issue.strip(),
-                record.activity_done.strip(),
-                record.recommendations.strip() if record.recommendations else None,
+                issue,
+                activity_done,
+                recommendations,
                 record.technicians.strip(),
                 maintenance_id,
             ),
@@ -1599,11 +2257,14 @@ def update_maintenance_record(
         )
         cursor.executemany(
             """
-            INSERT INTO maintenance_record_instruments (maintenance_id, instrument_id)
-            VALUES (%s, %s)
+            INSERT INTO maintenance_record_instruments
+                (maintenance_id, instrument_id, issue, action_done, recommendation)
+            VALUES (%s, %s, %s, %s, %s)
             """,
-            [(maintenance_id, instrument_id) for instrument_id in instrument_ids],
+            [(maintenance_id, *detail) for detail in details],
         )
+        record_entity_edit(connection, "maintenance", maintenance_id, before,
+                           audit_snapshot(connection, "maintenance", maintenance_id), _user)
         connection.commit()
         return {"message": "Maintenance record updated"}
     except HTTPException:
@@ -1751,6 +2412,7 @@ def login(login_request: LoginRequest):
         ):
             raise HTTPException(status_code=401, detail="Invalid username or password")
 
+        set_activity_actor(user)
         token = create_session_token()
         cursor.execute(
             """
@@ -1842,16 +2504,47 @@ def logout(
             connection.close()
 
 
+def issue_instrument_alerts(cursor, user):
+    today = date.today()
+    month_start = today.replace(day=1)
+    cursor.execute("""SELECT si.station_instrument_id, si.recommended_calibration_date,
+        si.recommended_replacement_date, s.station_name, i.instrument_name
+        FROM station_instruments si JOIN stations s ON s.station_id = si.station_id
+        JOIN instruments i ON i.instrument_id = si.instrument_id
+        WHERE si.recommended_calibration_date IS NOT NULL OR si.recommended_replacement_date IS NOT NULL""")
+    for item in cursor.fetchall():
+        for kind, due in (("calibration", item["recommended_calibration_date"]),
+                          ("replacement", item["recommended_replacement_date"])):
+            alert = instrument_due_alert(due, today)
+            if alert["level"] == "none":
+                continue
+            cursor.execute("""INSERT IGNORE INTO instrument_alert_deliveries
+                (station_instrument_id, user_id, alert_kind, alert_month)
+                VALUES (%s, %s, %s, %s)""",
+                (item["station_instrument_id"], user["user_id"], kind, month_start))
+            if cursor.rowcount:
+                cursor.execute("""INSERT INTO notifications
+                    (user_id, notification_type, title, message, related_record_type, related_record_id)
+                    VALUES (%s, %s, %s, %s, %s, %s)""",
+                    (user["user_id"], "instrument_due", f"Instrument {kind} {alert['label'].lower()}",
+                     f"{item['instrument_name']} at {item['station_name']}: {kind} {alert['label'].lower()} ({due}).",
+                     "station_instrument", item["station_instrument_id"]))
+
+
 @app.get("/notifications")
 def get_notifications(
     unread_only: bool = False,
     limit: int = Query(default=20, ge=1, le=100),
+    page: int = Query(default=1, ge=1),
     user=Depends(require_password_change_complete),
 ):
     try:
         connection = get_connection()
         ensure_application_tables(connection)
         cursor = connection.cursor(dictionary=True)
+        if user["department"] == MAINTENANCE_ROLE:
+            issue_instrument_alerts(cursor, user)
+            connection.commit()
         query = """
             SELECT notification_id, notification_type, title, message,
                 related_record_type, related_record_id, is_read, created_at
@@ -1860,17 +2553,855 @@ def get_notifications(
         parameters = [user["user_id"]]
         if unread_only:
             query += " AND is_read = FALSE"
-        query += " ORDER BY created_at DESC, notification_id DESC LIMIT %s"
-        parameters.append(limit)
+        query += " ORDER BY created_at DESC, notification_id DESC LIMIT %s OFFSET %s"
+        parameters.extend([limit, (page - 1) * limit])
         cursor.execute(query, tuple(parameters))
         items = cursor.fetchall()
         cursor.execute("SELECT COUNT(*) AS total FROM notifications WHERE user_id = %s AND is_read = FALSE", (user["user_id"],))
-        return {"items": items, "unread_count": cursor.fetchone()["total"]}
+        unread_count = cursor.fetchone()["total"]
+        cursor.execute("SELECT COUNT(*) AS total FROM notifications WHERE user_id = %s" +
+                       (" AND is_read = FALSE" if unread_only else ""), (user["user_id"],))
+        total = cursor.fetchone()["total"]
+        return {"items": items, "unread_count": unread_count, "total": total, "page": page,
+                "total_pages": max(1, math.ceil(total / limit))}
     except MySQLError as exc:
         raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
     finally:
         if "cursor" in locals(): cursor.close()
         if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.get("/data-counts")
+def get_data_counts(
+    month_from: str | None = None, month_to: str | None = None,
+    station_category: str | None = None, station_categories: str | None = None,
+    user=Depends(require_password_change_complete),
+):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        query = """SELECT data_count_id, station_category,
+            DATE_FORMAT(record_month, '%Y-%m') AS record_month,
+            record_count, notes, recorded_by_username, updated_at
+            FROM monthly_category_data_counts"""
+        conditions, params = [], []
+        selected_categories = [value.strip() for value in station_categories.split("|") if value.strip()] if station_categories else []
+        if selected_categories:
+            if any(value not in StationCategory.__args__ for value in selected_categories):
+                raise HTTPException(status_code=400, detail="Invalid station category filter")
+            conditions.append(f"station_category IN ({', '.join(['%s'] * len(selected_categories))})")
+            params.extend(selected_categories)
+        elif station_category:
+            conditions.append("station_category = %s")
+            params.append(station_category)
+        if month_from:
+            conditions.append("record_month >= %s")
+            params.append(month_from + "-01")
+        if month_to:
+            conditions.append("record_month <= %s")
+            params.append(month_to + "-01")
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY record_month DESC, station_category"
+        cursor.execute(query, tuple(params))
+        items = cursor.fetchall()
+        for row in items:
+            row["station_categories"] = [row["station_category"]]
+            row["entry_type"] = "single"
+        combined_query = """SELECT data_count_id, category_key,
+            DATE_FORMAT(record_month, '%Y-%m') AS record_month,
+            record_count, notes, recorded_by_username, updated_at
+            FROM monthly_combined_data_counts"""
+        combined_conditions, combined_params = [], []
+        if month_from:
+            combined_conditions.append("record_month >= %s")
+            combined_params.append(month_from + "-01")
+        if month_to:
+            combined_conditions.append("record_month <= %s")
+            combined_params.append(month_to + "-01")
+        if combined_conditions:
+            combined_query += " WHERE " + " AND ".join(combined_conditions)
+        cursor.execute(combined_query, tuple(combined_params))
+        for row in cursor.fetchall():
+            categories = row.pop("category_key").split("|")
+            if selected_categories and not set(categories).intersection(selected_categories):
+                continue
+            if not selected_categories and station_category and station_category not in categories:
+                continue
+            row["station_categories"] = categories
+            row["station_category"] = " + ".join(categories)
+            row["entry_type"] = "combined"
+            items.append(row)
+        items.sort(key=lambda row: (row["record_month"], row["station_category"]), reverse=True)
+        by_month = {}
+        for row in items:
+            by_month[row["record_month"]] = by_month.get(row["record_month"], 0) + row["record_count"]
+        by_fiscal_year, by_fiscal_quarter = fiscal_totals_by_month(by_month)
+        return {"items": items, "summary": {
+            "entries": len(items), "records": sum(row["record_count"] for row in items),
+            "categories": len({category for row in items for category in row["station_categories"]}),
+            "by_category": {category: sum(row["record_count"] for row in items if row["station_category"] == category)
+                            for category in sorted({row["station_category"] for row in items})},
+            "by_month": dict(sorted(by_month.items())),
+            "by_fiscal_year": dict(sorted(by_fiscal_year.items())),
+            "by_fiscal_quarter": dict(sorted(by_fiscal_quarter.items())),
+        }}
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.post("/data-counts", status_code=201)
+def save_data_count(item: MonthlyDataCount, user=Depends(require_data_operations_writer)):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor()
+        cursor.execute("SELECT data_count_id FROM monthly_category_data_counts WHERE station_category = %s AND record_month = %s",
+                       (item.station_category, item.record_month + "-01"))
+        existing = cursor.fetchone()
+        before = audit_snapshot(connection, "category_data_counts", existing[0]) if existing else {}
+        cursor.execute("SELECT category_key FROM monthly_combined_data_counts WHERE record_month = %s",
+                       (item.record_month + "-01",))
+        if any(item.station_category in key.split("|") for (key,) in cursor.fetchall()):
+            raise HTTPException(status_code=409, detail="This category is already included in a combined count for this month")
+        cursor.execute("""INSERT INTO monthly_category_data_counts
+            (station_category, record_month, record_count, notes, recorded_by_user_id, recorded_by_username)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE record_count = VALUES(record_count), notes = VALUES(notes),
+                recorded_by_user_id = VALUES(recorded_by_user_id),
+                recorded_by_username = VALUES(recorded_by_username)""",
+            (item.station_category, item.record_month + "-01", item.record_count,
+             item.notes, user["user_id"], user["username"]))
+        cursor.execute("SELECT data_count_id FROM monthly_category_data_counts WHERE station_category = %s AND record_month = %s",
+                       (item.station_category, item.record_month + "-01"))
+        data_count_id = cursor.fetchone()[0]
+        record_entity_edit(connection, "category_data_counts", data_count_id, before,
+                           audit_snapshot(connection, "category_data_counts", data_count_id), user)
+        connection.commit()
+        return {"message": "Monthly data count saved"}
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.post("/data-counts/combined", status_code=201)
+def save_combined_data_count(item: CombinedDataCount, user=Depends(require_data_operations_writer)):
+    categories = sorted(item.station_categories)
+    if len(categories) != len(set(categories)):
+        raise HTTPException(status_code=400, detail="Choose each station category only once")
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor()
+        month = item.record_month + "-01"
+        cursor.execute("SELECT station_category FROM monthly_category_data_counts WHERE record_month = %s", (month,))
+        existing = {category for (category,) in cursor.fetchall()}
+        cursor.execute("SELECT category_key FROM monthly_combined_data_counts WHERE record_month = %s", (month,))
+        existing.update(category for (key,) in cursor.fetchall() for category in key.split("|"))
+        overlap = existing.intersection(categories)
+        if overlap:
+            raise HTTPException(status_code=409, detail=f"Already counted this month: {', '.join(sorted(overlap))}. Edit or delete the existing entry first.")
+        cursor.execute("""INSERT INTO monthly_combined_data_counts
+            (category_key, record_month, record_count, notes, recorded_by_user_id, recorded_by_username)
+            VALUES (%s, %s, %s, %s, %s, %s)""",
+            ("|".join(categories), month, item.record_count, item.notes, user["user_id"], user["username"]))
+        data_count_id = cursor.lastrowid
+        record_entity_edit(connection, "combined_data_counts", data_count_id, {},
+                           audit_snapshot(connection, "combined_data_counts", data_count_id), user)
+        connection.commit()
+        return {"saved": 1, "total": item.record_count}
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.put("/data-counts/combined/{data_count_id}")
+def update_combined_data_count(data_count_id: int, item: CombinedDataCount,
+                               user=Depends(require_data_operations_writer)):
+    categories = sorted(item.station_categories)
+    if len(categories) != len(set(categories)):
+        raise HTTPException(status_code=400, detail="Choose each station category only once")
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor()
+        before = audit_snapshot(connection, "combined_data_counts", data_count_id)
+        month = item.record_month + "-01"
+        cursor.execute("SELECT data_count_id FROM monthly_combined_data_counts WHERE data_count_id = %s", (data_count_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Data count not found")
+        cursor.execute("SELECT station_category FROM monthly_category_data_counts WHERE record_month = %s", (month,))
+        existing = {category for (category,) in cursor.fetchall()}
+        cursor.execute("SELECT category_key FROM monthly_combined_data_counts WHERE record_month = %s AND data_count_id <> %s",
+                       (month, data_count_id))
+        existing.update(category for (key,) in cursor.fetchall() for category in key.split("|"))
+        overlap = existing.intersection(categories)
+        if overlap:
+            raise HTTPException(status_code=409, detail=f"Already counted this month: {', '.join(sorted(overlap))}")
+        cursor.execute("""UPDATE monthly_combined_data_counts SET category_key = %s, record_month = %s,
+            record_count = %s, notes = %s, recorded_by_user_id = %s, recorded_by_username = %s
+            WHERE data_count_id = %s""",
+            ("|".join(categories), month, item.record_count, item.notes,
+             user["user_id"], user["username"], data_count_id))
+        record_entity_edit(connection, "combined_data_counts", data_count_id, before,
+                           audit_snapshot(connection, "combined_data_counts", data_count_id), user)
+        connection.commit()
+        return {"saved": 1, "total": item.record_count}
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.delete("/data-counts/combined/{data_count_id}", status_code=204)
+def delete_combined_data_count(data_count_id: int, user=Depends(require_data_operations_writer)):
+    connection = get_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("DELETE FROM monthly_combined_data_counts WHERE data_count_id = %s", (data_count_id,))
+        if not cursor.rowcount:
+            raise HTTPException(status_code=404, detail="Data count not found")
+        connection.commit()
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.delete("/data-counts/{data_count_id}", status_code=204)
+def delete_data_count(data_count_id: int, user=Depends(require_data_operations_writer)):
+    connection = get_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("DELETE FROM monthly_category_data_counts WHERE data_count_id = %s", (data_count_id,))
+        if not cursor.rowcount:
+            raise HTTPException(status_code=404, detail="Data count not found")
+        connection.commit()
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.get("/instrument-status-summary")
+def get_instrument_status_summary(
+    station_id: int | None = None, district: str | None = None,
+    instrument_id: int | None = None, search: str | None = None,
+    user=Depends(require_password_change_complete),
+):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        query = """SELECT si.station_instrument_id, si.station_id, s.station_code,
+            s.station_name, s.district, i.instrument_id, i.instrument_name,
+            si.status, si.installation_date, si.calibration_date, si.replacement_date,
+            si.recommended_calibration_date, si.recommended_replacement_date
+            FROM station_instruments si JOIN stations s ON s.station_id = si.station_id
+            JOIN instruments i ON i.instrument_id = si.instrument_id"""
+        conditions, params = [], []
+        if user["department"] in ASSIGNED_STATION_ROLES:
+            conditions.append("EXISTS (SELECT 1 FROM user_station_assignments a WHERE a.station_id = si.station_id AND a.user_id = %s)")
+            params.append(user["user_id"])
+        if station_id:
+            conditions.append("si.station_id = %s")
+            params.append(station_id)
+        if district:
+            conditions.append("s.district = %s")
+            params.append(district)
+        if instrument_id:
+            conditions.append("si.instrument_id = %s")
+            params.append(instrument_id)
+        if search:
+            conditions.append("(s.station_code LIKE %s OR s.station_name LIKE %s OR s.district LIKE %s OR i.instrument_name LIKE %s)")
+            params.extend([f"%{search}%"] * 4)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY s.station_name, i.instrument_name"
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+        today = date.today()
+        counts = {name: 0 for name in ("Operational", "Needs Calibration", "Needs Replacement", "Under Maintenance", "Inactive")}
+        for row in rows:
+            status = effective_instrument_status(
+                row["status"], row["recommended_calibration_date"],
+                row["recommended_replacement_date"], today
+            )
+            row["effective_status"] = status
+            row["calibration_alert"] = instrument_due_alert(row["recommended_calibration_date"], today)
+            row["replacement_alert"] = instrument_due_alert(row["recommended_replacement_date"], today)
+            counts[status] = counts.get(status, 0) + 1
+        return {"items": rows, "summary": {"total": len(rows), "stations": len({row["station_id"] for row in rows}), "statuses": counts,
+            "calibration_alerts": sum(row["calibration_alert"]["level"] != "none" for row in rows),
+            "replacement_alerts": sum(row["replacement_alert"]["level"] != "none" for row in rows)}}
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.put("/maintenance-frequencies")
+def set_maintenance_frequencies(item: MaintenanceFrequency, user=Depends(require_it)):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor()
+        audit_id = f"{item.fiscal_start_year}|{item.station_category}"
+        before = audit_snapshot(connection, "maintenance_frequencies", audit_id) or {}
+        cursor.execute("""INSERT INTO category_maintenance_targets
+            (station_category, fiscal_start_year, cadence, target_visits, updated_by_user_id)
+            VALUES (%s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE cadence = VALUES(cadence), target_visits = VALUES(target_visits),
+                updated_by_user_id = VALUES(updated_by_user_id)""",
+            (item.station_category, item.fiscal_start_year, item.cadence,
+             item.target_visits, user["user_id"]))
+        record_entity_edit(connection, "maintenance_frequencies", audit_id, before,
+                           audit_snapshot(connection, "maintenance_frequencies", audit_id), user)
+        connection.commit()
+        return {"message": "Category maintenance target saved"}
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.get("/maintenance-frequencies")
+def list_maintenance_frequencies(fiscal_start_year: int = Query(ge=2020, le=2100),
+                                 user=Depends(require_password_change_complete)):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("""SELECT station_category, fiscal_start_year, cadence, target_visits, updated_at
+            FROM category_maintenance_targets WHERE fiscal_start_year = %s ORDER BY station_category""",
+            (fiscal_start_year,))
+        return cursor.fetchall()
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.delete("/maintenance-frequencies/{station_category}", status_code=204)
+def delete_maintenance_frequency(station_category: str, fiscal_start_year: int,
+                                 user=Depends(require_it)):
+    connection = get_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("DELETE FROM category_maintenance_targets WHERE station_category = %s AND fiscal_start_year = %s",
+                       (station_category, fiscal_start_year))
+        if not cursor.rowcount:
+            raise HTTPException(status_code=404, detail="Target not found")
+        connection.commit()
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.get("/maintenance-summary")
+def get_maintenance_summary(
+    fiscal_start_year: int = Query(ge=2020, le=2100), quarter: int | None = Query(default=None, ge=1, le=4),
+    station_id: int | None = None, district: str | None = None,
+    station_category: str | None = None, status: str | None = None,
+    user=Depends(require_password_change_complete),
+):
+    date_from, date_to = fiscal_period(fiscal_start_year, quarter)
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        query = """SELECT s.station_id, s.station_code, s.station_name, s.district,
+            s.station_category, t.cadence, t.target_visits
+            FROM stations s LEFT JOIN category_maintenance_targets t
+            ON t.station_category = s.station_category AND t.fiscal_start_year = %s"""
+        conditions, params = [], [fiscal_start_year]
+        if user["department"] in ASSIGNED_STATION_ROLES:
+            conditions.append("EXISTS (SELECT 1 FROM user_station_assignments a WHERE a.station_id = s.station_id AND a.user_id = %s)")
+            params.append(user["user_id"])
+        if station_id:
+            conditions.append("s.station_id = %s")
+            params.append(station_id)
+        if district:
+            conditions.append("s.district = %s")
+            params.append(district)
+        if station_category:
+            conditions.append("s.station_category = %s")
+            params.append(station_category)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY s.district, s.station_name"
+        cursor.execute(query, tuple(params))
+        stations = cursor.fetchall()
+        cursor.execute("""SELECT maintenance_id, station_id, maintenance_date
+            FROM maintenance_records WHERE maintenance_date <= %s
+            ORDER BY maintenance_date, maintenance_id""", (date.today(),))
+        history_by_station = {}
+        for record in cursor.fetchall():
+            history_by_station.setdefault(record["station_id"], []).append(record)
+        counts = {"maintained": 0, "not_maintained": 0, "pending": 0, "unconfigured": 0}
+        visible = []
+        for station in stations:
+            station.update(maintenance_schedule_status(
+                history_by_station.get(station["station_id"], []), fiscal_start_year,
+                quarter, station["cadence"],
+                station["target_visits"], date.today()))
+            if status and station["status"] != status:
+                continue
+            key = "unconfigured" if station["status"] == "Not configured" else station["status"].lower().replace(" ", "_")
+            counts[key] += 1
+            visible.append(station)
+        return {"items": visible, "summary": {"total": len(visible), **counts},
+                "period": {"from": date_from, "to": date_to, "fiscal_year": f"{fiscal_start_year}/{fiscal_start_year+1}", "quarter": quarter}}
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.get("/maintenance-summary/export")
+def export_maintenance_summary(
+    format: Literal["csv", "pdf"], fiscal_start_year: int = Query(ge=2020, le=2100),
+    quarter: int | None = Query(default=None, ge=1, le=4),
+    station_id: int | None = None, district: str | None = None,
+    station_category: str | None = None, status: str | None = None,
+    user=Depends(require_password_change_complete),
+):
+    result = get_maintenance_summary(fiscal_start_year, quarter, station_id, district,
+                                     station_category, status, user)
+    headers = ["District", "Station ID", "Station", "Category", "Schedule status",
+               "Schedule progress (%)", "Completed toward target",
+               "Q1", "Q2", "Q3", "Q4", "Schedule detail", "Maintenance entries", "Target", "Frequency",
+               "Latest maintenance date", "Maintenance dates in selected period"]
+    rows = [[item["district"], item["station_code"], item["station_name"],
+             item["station_category"], item["status"], item["progress_percent"],
+             item["visits_toward_target"],
+             *[f'{quarter["count"] if quarter["count"] is not None else ""} ({quarter["state"]})'
+               for quarter in item["quarter_progress"]], item["status_detail"],
+             item["visits_in_period"], item["target_for_period"], item["cadence"],
+             item["last_maintenance_date"], ", ".join(map(str, item["maintenance_dates"]))]
+            for item in result["items"]]
+    filename = f"maintenance-summary-{fiscal_start_year}-{fiscal_start_year + 1}"
+    if quarter:
+        filename += f"-Q{quarter}"
+    if format == "csv":
+        return csv_download(f"{filename}.csv", headers, rows)
+    return maintenance_summary_pdf_download(f"{filename}.pdf", result, user["username"])
+
+
+def maintenance_summary_pdf_download(filename, result, username):
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+        from xml.sax.saxutils import escape
+    except ImportError as exc:
+        raise HTTPException(status_code=500, detail="PDF support is not installed") from exc
+    output = BytesIO()
+    document = SimpleDocTemplate(output, pagesize=landscape(A4), leftMargin=22,
+                                 rightMargin=22, topMargin=22, bottomMargin=22)
+    styles = getSampleStyleSheet()
+    body = ParagraphStyle("MaintenanceCell", parent=styles["Normal"], fontSize=6.5, leading=8)
+    header = ParagraphStyle("MaintenanceHeader", parent=body, textColor=colors.white,
+                            fontName="Helvetica-Bold")
+    period = result["period"]
+    heading = f"Maintenance summary | FY {period['fiscal_year']}"
+    if period["quarter"]:
+        heading += f" Q{period['quarter']}"
+    story = [Paragraph(heading, styles["Title"]),
+             Paragraph(f"Period: {period['from']} to {period['to']} | Generated by {escape(username)} on {date.today()}", styles["Normal"]),
+             Spacer(1, 10)]
+    names = ["District", "Station", "Category", "Status", "Q1", "Q2", "Q3", "Q4",
+             "Visits / target", "Frequency", "Latest date", "Dates in period"]
+    table_data = [[Paragraph(name, header) for name in names]]
+    for item in result["items"]:
+        progress = (f'{item["status"]} | {item["progress_percent"]}% '
+                    f'({item["visits_toward_target"]}/{item["target_for_period"]})'
+                    if item["progress_percent"] is not None else item["status"])
+        values = [item["district"], item["station_name"], item["station_category"],
+                  progress,
+                  *[quarter["count"] if quarter["count"] is not None else ""
+                    for quarter in item["quarter_progress"]],
+                  f"{item['visits_in_period']} / {item['target_for_period'] or '-'}",
+                  item["cadence"] or "-", item["last_maintenance_date"] or "-",
+                  ", ".join(map(str, item["maintenance_dates"])) or "-"]
+        table_data.append([Paragraph(escape(str(value)), body) for value in values])
+    table = Table(table_data, colWidths=[54, 82, 86, 84, 27, 27, 27, 27, 56, 57, 65, 143], repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#173f63")),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#c4d1d7")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f3f7f8")]),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    quarter_colors = {"good": "#c3efd1", "missed": "#ffc9c4", "pending": "#fff2a7",
+                      "neutral": "#eef2f3", "unconfigured": "#e9eff2"}
+    for row_number, item in enumerate(result["items"], start=1):
+        for index, quarter in enumerate(item["quarter_progress"], start=4):
+            table.setStyle(TableStyle([("BACKGROUND", (index, row_number), (index, row_number),
+                                        colors.HexColor(quarter_colors[quarter["state"]]))]))
+    story.append(table)
+    document.build(story)
+    output.seek(0)
+    return StreamingResponse(output, media_type="application/pdf",
+                             headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/visitor-categories")
+def list_visitor_categories(user=Depends(require_password_change_complete)):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT category_id, name FROM visitor_categories ORDER BY name")
+        return cursor.fetchall()
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.post("/visitor-categories", status_code=201)
+def add_visitor_category(item: VisitorCategory, user=Depends(require_it)):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor()
+        cursor.execute("INSERT INTO visitor_categories (name) VALUES (%s)", (item.name.strip(),))
+        connection.commit()
+        return {"category_id": cursor.lastrowid}
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.put("/visitor-categories/{category_id}")
+def update_visitor_category(category_id: int, item: VisitorCategory, user=Depends(require_it)):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        before = audit_snapshot(connection, "visitor_categories", category_id)
+        cursor = connection.cursor()
+        cursor.execute("UPDATE visitor_categories SET name = %s WHERE category_id = %s", (item.name.strip(), category_id))
+        if not cursor.rowcount: raise HTTPException(status_code=404, detail="Category not found")
+        record_entity_edit(connection, "visitor_categories", category_id, before,
+                           audit_snapshot(connection, "visitor_categories", category_id), user)
+        connection.commit()
+        return {"message": "Category updated"}
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.delete("/visitor-categories/{category_id}", status_code=204)
+def delete_visitor_category(category_id: int, user=Depends(require_it)):
+    connection = get_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT 1 FROM station_visitors WHERE category_id = %s LIMIT 1", (category_id,))
+        if cursor.fetchone(): raise HTTPException(status_code=409, detail="Category is used by visitor records")
+        cursor.execute("DELETE FROM visitor_categories WHERE category_id = %s", (category_id,))
+        if not cursor.rowcount: raise HTTPException(status_code=404, detail="Category not found")
+        connection.commit()
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.get("/station-visitors")
+def list_station_visitors(month_from: str | None = None, month_to: str | None = None,
+                          station_id: int | None = None, district: str | None = None,
+                          category_id: int | None = None, institution: str | None = None,
+                          user=Depends(require_password_change_complete)):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        query = """SELECT v.visitor_id, v.station_id, s.station_code, s.station_name, s.district,
+            v.period_start AS visit_date, v.period_end AS legacy_period_end,
+            v.institution, v.mission, v.category_id, c.name AS category,
+            v.visitor_count, v.recorded_by_user_id, v.recorded_by_username, v.updated_at
+            FROM station_visitors v JOIN stations s ON s.station_id = v.station_id
+            JOIN visitor_categories c ON c.category_id = v.category_id"""
+        conditions, params = [], []
+        if user["department"] in ASSIGNED_STATION_ROLES:
+            conditions.append("EXISTS (SELECT 1 FROM user_station_assignments a WHERE a.station_id = v.station_id AND a.user_id = %s)")
+            params.append(user["user_id"])
+        if station_id: conditions.append("v.station_id = %s"); params.append(station_id)
+        if district: conditions.append("s.district = %s"); params.append(district)
+        if category_id: conditions.append("v.category_id = %s"); params.append(category_id)
+        if institution: conditions.append("v.institution LIKE %s"); params.append(f"%{institution}%")
+        if month_from: conditions.append("v.period_start >= %s"); params.append(month_from + "-01")
+        if month_to:
+            year, month = map(int, month_to.split("-"))
+            end = date(year + (month == 12), month % 12 + 1, 1)
+            conditions.append("v.period_start < %s"); params.append(end)
+        if conditions: query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY v.period_start DESC, v.visitor_id DESC"
+        cursor.execute(query, tuple(params))
+        items = cursor.fetchall()
+        return {"items": items, "summary": {"visitors": sum(row["visitor_count"] for row in items),
+                "visits": len(items), "stations": len({row["station_id"] for row in items})}}
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+def save_visitor_record(item, user, visitor_id=None):
+    institution = item.institution.strip()
+    if not institution:
+        raise HTTPException(status_code=400, detail="Enter the institution or school")
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor()
+        ensure_user_can_access_station(cursor, user, item.station_id)
+        cursor.execute("SELECT 1 FROM stations WHERE station_id = %s", (item.station_id,))
+        if not cursor.fetchone(): raise HTTPException(status_code=404, detail="Station not found")
+        cursor.execute("SELECT 1 FROM visitor_categories WHERE category_id = %s", (item.category_id,))
+        if not cursor.fetchone(): raise HTTPException(status_code=404, detail="Category not found")
+        if visitor_id:
+            before = audit_snapshot(connection, "station_visitors", visitor_id)
+            cursor.execute("SELECT recorded_by_user_id FROM station_visitors WHERE visitor_id = %s", (visitor_id,))
+            owner = cursor.fetchone()
+            if not owner: raise HTTPException(status_code=404, detail="Visitor record not found")
+            if user["department"] != "Admin" and owner[0] != user["user_id"]:
+                raise HTTPException(status_code=403, detail="Only the recorder can edit this entry")
+            cursor.execute("""UPDATE station_visitors SET station_id=%s, period_start=%s, period_end=%s,
+                institution=%s, mission=%s, category_id=%s, visitor_count=%s WHERE visitor_id=%s""",
+                (item.station_id, item.visit_date, item.visit_date, institution,
+                 item.mission.strip(), item.category_id, item.visitor_count, visitor_id))
+        else:
+            cursor.execute("""INSERT INTO station_visitors (station_id, period_start, period_end,
+                institution, mission, category_id, visitor_count, recorded_by_user_id, recorded_by_username)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (item.station_id, item.visit_date, item.visit_date, institution,
+                 item.mission.strip(), item.category_id, item.visitor_count, user["user_id"], user["username"]))
+            visitor_id = cursor.lastrowid
+            before = {}
+        record_entity_edit(connection, "station_visitors", visitor_id, before,
+                           audit_snapshot(connection, "station_visitors", visitor_id), user)
+        connection.commit()
+        return {"message": "Visitor record saved"}
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.post("/station-visitors", status_code=201)
+def add_station_visitor(item: StationVisitor, user=Depends(require_password_change_complete)):
+    if user["department"] in READ_ONLY_ALL_ROLES:
+        raise HTTPException(status_code=403, detail="Visitor entry access is not allowed")
+    return save_visitor_record(item, user)
+
+
+@app.put("/station-visitors/{visitor_id}")
+def edit_station_visitor(visitor_id: int, item: StationVisitor, user=Depends(require_password_change_complete)):
+    if user["department"] in READ_ONLY_ALL_ROLES:
+        raise HTTPException(status_code=403, detail="Visitor entry access is not allowed")
+    return save_visitor_record(item, user, visitor_id)
+
+
+@app.delete("/station-visitors/{visitor_id}", status_code=204)
+def delete_station_visitor(visitor_id: int, user=Depends(require_password_change_complete)):
+    if user["department"] in READ_ONLY_ALL_ROLES:
+        raise HTTPException(status_code=403, detail="Visitor entry access is not allowed")
+    connection = get_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT station_id, recorded_by_user_id FROM station_visitors WHERE visitor_id = %s", (visitor_id,))
+        row = cursor.fetchone()
+        if not row: raise HTTPException(status_code=404, detail="Visitor record not found")
+        ensure_user_can_access_station(cursor, user, row[0])
+        if user["department"] != "Admin" and row[1] != user["user_id"]:
+            raise HTTPException(status_code=403, detail="Only the recorder can delete this entry")
+        cursor.execute("DELETE FROM station_visitors WHERE visitor_id = %s", (visitor_id,))
+        connection.commit()
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+def station_volunteer_rows(user, province=None, district=None, sector=None,
+                           station_id=None, account_type=None, search=None,
+                           sort_by="station_name", sort_order="asc"):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        query = """SELECT v.volunteer_id, v.station_id, s.station_code, s.station_name,
+            s.province, s.district, s.sector, v.volunteer_name, v.volunteer_identifier,
+            v.account_type, v.account_name, v.account_number, v.mobile_phone,
+            v.recorded_by_user_id, v.recorded_by_username, v.created_at, v.updated_at
+            FROM station_volunteers v JOIN stations s ON s.station_id = v.station_id"""
+        conditions, params = [], []
+        for column, value in (("s.province", province), ("s.district", district),
+                              ("s.sector", sector), ("v.station_id", station_id)):
+            if value:
+                conditions.append(f"{column} = %s")
+                params.append(value)
+        if account_type:
+            conditions.append("v.account_type LIKE %s")
+            params.append(f"%{account_type}%")
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+        return filter_sort_collection(rows, search,
+            ["station_code", "station_name", "province", "district", "sector",
+             "volunteer_name", "volunteer_identifier", "account_type", "account_name",
+             "account_number", "mobile_phone"], sort_by, sort_order,
+            {name: name for name in ("station_code", "station_name", "province", "district",
+             "sector", "volunteer_name", "volunteer_identifier", "account_type",
+             "account_name", "account_number", "mobile_phone", "updated_at")})
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.get("/station-volunteers")
+def list_station_volunteers(
+    province: str | None = None, district: str | None = None,
+    sector: str | None = None, station_id: int | None = None,
+    account_type: str | None = None, search: str | None = Query(default=None, max_length=100),
+    sort_by: str = "station_name", sort_order: Literal["asc", "desc"] = "asc",
+    page: int = Query(default=1, ge=1), page_size: int = Query(default=25, ge=10, le=100),
+    user=Depends(require_volunteer_data_access),
+):
+    rows = station_volunteer_rows(user, province, district, sector, station_id,
+                                  account_type, search, sort_by, sort_order)
+    return paginate_collection(rows, page, page_size,
+        {"volunteers": len(rows), "stations": len({row["station_id"] for row in rows})})
+
+
+@app.get("/station-volunteers/export")
+def export_station_volunteers(
+    format: Literal["csv", "pdf"], province: str | None = None,
+    district: str | None = None, sector: str | None = None,
+    station_id: int | None = None, account_type: str | None = None,
+    search: str | None = Query(default=None, max_length=100),
+    sort_by: str = "station_name", sort_order: Literal["asc", "desc"] = "asc",
+    user=Depends(require_volunteer_data_access),
+):
+    rows = station_volunteer_rows(user, province, district, sector, station_id,
+                                  account_type, search, sort_by, sort_order)
+    headers = ["Station ID", "Station name", "Province", "District", "Sector",
+               "Volunteer name", "ID", "Account type", "Account name", "Account number", "Mobile phone"]
+    values = [[row[key] for key in ("station_code", "station_name", "province", "district",
+        "sector", "volunteer_name", "volunteer_identifier", "account_type",
+        "account_name", "account_number", "mobile_phone")] for row in rows]
+    if format == "csv":
+        return csv_download("station-volunteers.csv", headers, values)
+    return pdf_download("station-volunteers.pdf", "Volunteers at stations", headers,
+                        values, user["username"])
+
+
+def save_station_volunteer(item, user, volunteer_id=None):
+    if user["department"] in READ_ONLY_ALL_ROLES:
+        raise HTTPException(status_code=403, detail="Volunteer entry access is not allowed")
+    fields = [item.volunteer_name.strip(), item.volunteer_identifier.strip(),
+              item.account_type.strip(), item.account_name.strip(),
+              item.account_number.strip(), item.mobile_phone.strip()]
+    if not all(fields):
+        raise HTTPException(status_code=400, detail="Complete every volunteer field")
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor()
+        cursor.execute("SELECT 1 FROM stations WHERE station_id = %s", (item.station_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Station not found")
+        if volunteer_id is not None:
+            cursor.execute("SELECT recorded_by_user_id FROM station_volunteers WHERE volunteer_id = %s", (volunteer_id,))
+            owner = cursor.fetchone()
+            if not owner:
+                raise HTTPException(status_code=404, detail="Volunteer record not found")
+            if user["department"] != "Admin" and owner[0] != user["user_id"]:
+                raise HTTPException(status_code=403, detail="Only the recorder can edit this entry")
+            before = audit_snapshot(connection, "station_volunteers", volunteer_id)
+            statement = """UPDATE station_volunteers SET station_id=%s, volunteer_name=%s,
+                volunteer_identifier=%s, account_type=%s, account_name=%s,
+                account_number=%s, mobile_phone=%s WHERE volunteer_id=%s"""
+            params = (item.station_id, *fields, volunteer_id)
+        else:
+            before = {}
+            statement = """INSERT INTO station_volunteers (station_id, volunteer_name,
+                volunteer_identifier, account_type, account_name, account_number,
+                mobile_phone, recorded_by_user_id, recorded_by_username)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)"""
+            params = (item.station_id, *fields, user["user_id"], user["username"])
+        try:
+            cursor.execute(statement, params)
+        except IntegrityError as exc:
+            raise HTTPException(status_code=409,
+                detail="This volunteer ID is already registered at the selected station") from exc
+        if volunteer_id is None:
+            volunteer_id = cursor.lastrowid
+        record_entity_edit(connection, "station_volunteers", volunteer_id, before,
+                           audit_snapshot(connection, "station_volunteers", volunteer_id), user)
+        connection.commit()
+        return {"volunteer_id": volunteer_id, "message": "Volunteer record saved"}
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.post("/station-volunteers", status_code=201)
+def add_station_volunteer(item: StationVolunteer, user=Depends(require_volunteer_data_access)):
+    return save_station_volunteer(item, user)
+
+
+@app.put("/station-volunteers/{volunteer_id}")
+def edit_station_volunteer(volunteer_id: int, item: StationVolunteer,
+                           user=Depends(require_volunteer_data_access)):
+    return save_station_volunteer(item, user, volunteer_id)
+
+
+@app.delete("/station-volunteers/{volunteer_id}", status_code=204)
+def delete_station_volunteer(volunteer_id: int, user=Depends(require_volunteer_data_access)):
+    if user["department"] in READ_ONLY_ALL_ROLES:
+        raise HTTPException(status_code=403, detail="Volunteer entry access is not allowed")
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor()
+        cursor.execute("SELECT recorded_by_user_id FROM station_volunteers WHERE volunteer_id = %s", (volunteer_id,))
+        owner = cursor.fetchone()
+        if not owner:
+            raise HTTPException(status_code=404, detail="Volunteer record not found")
+        if user["department"] != "Admin" and owner[0] != user["user_id"]:
+            raise HTTPException(status_code=403, detail="Only the recorder can delete this entry")
+        cursor.execute("DELETE FROM station_volunteers WHERE volunteer_id = %s", (volunteer_id,))
+        connection.commit()
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.get("/activity")
+def get_operation_activity(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    user=Depends(require_it),
+):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        try:
+            cursor.execute("SELECT COUNT(*) AS total FROM operation_activity")
+            total = cursor.fetchone()["total"]
+            cursor.execute("""SELECT activity_id, actor_name, action, resource, record_id,
+                request_path, affected_records, created_at FROM operation_activity
+                ORDER BY created_at DESC, activity_id DESC LIMIT %s OFFSET %s""",
+                (page_size, (page - 1) * page_size))
+            return {"items": cursor.fetchall(), "page": page, "total": total,
+                    "total_pages": max(1, math.ceil(total / page_size))}
+        finally:
+            cursor.close()
+    finally:
+        connection.close()
 
 
 @app.put("/notifications/read-all")
@@ -1956,7 +3487,7 @@ def get_users(
             users, search,
             ["full_name", "username", "email", "department", "assigned_station_search"],
             sort_by, sort_order,
-            {"full_name": "full_name", "username": "username", "department": "department", "status": "is_active"},
+            {"full_name": "full_name", "username": "username", "email": "email", "department": "department", "assigned_stations": "assigned_station_search", "status": "is_active"},
         )
         return paginate_collection(users, page, page_size)
     except MySQLError as exc:
@@ -2026,6 +3557,8 @@ def update_user(
         )
     try:
         connection = get_connection()
+        ensure_application_tables(connection)
+        before = audit_snapshot(connection, "users", user_id)
         cursor = connection.cursor(dictionary=True)
         cursor.execute(
             "SELECT user_id, department, is_active FROM users WHERE user_id = %s",
@@ -2090,6 +3623,10 @@ def update_user(
             user_id,
             user.station_ids if user.department in ASSIGNED_STATION_ROLES else [],
         )
+        after = audit_snapshot(connection, "users", user_id)
+        if user.password:
+            after["password_updated"] = True
+        record_entity_edit(connection, "users", user_id, before, after, admin)
         connection.commit()
         return {"message": "User updated"}
     except HTTPException:
@@ -2173,8 +3710,9 @@ def get_stations(
     date_from: date | None = None,
     date_to: date | None = None,
     station_category: StationCategory | None = None,
-    suspended: bool | None = None,
     user=Depends(require_password_change_complete),
+    district: str | None = None,
+    status: StationStatus | None = None,
 ):
 
     try:
@@ -2196,7 +3734,6 @@ def get_stations(
                 sector,
                 station_category,
                 status,
-                suspended,
                 comment,
                 action,
                 stations.created_at,
@@ -2217,9 +3754,12 @@ def get_stations(
         if station_category is not None:
             conditions.append("stations.station_category = %s")
             parameters.append(station_category)
-        if suspended is not None:
-            conditions.append("stations.suspended = %s")
-            parameters.append(suspended)
+        if status is not None:
+            conditions.append("stations.status = %s")
+            parameters.append(status)
+        if district:
+            conditions.append("stations.district = %s")
+            parameters.append(district)
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY stations.station_id"
@@ -2238,9 +3778,11 @@ def get_stations(
             {
                 "station_code": "station_code",
                 "station_name": "station_name",
+                "latitude": "latitude", "longitude": "longitude", "altitude": "altitude",
+                "province": "province", "district": "district", "sector": "sector",
                 "station_category": "station_category",
                 "status": "status",
-                "suspended": "suspended",
+                "comment": "comment", "action": "action", "recorded_by": "recorded_by",
                 "created_at": "created_at",
             },
             date_from,
@@ -2259,14 +3801,16 @@ def get_stations(
             "total": len(stations),
             "operational": operational,
             "attention": len(stations) - operational,
-            "suspended": sum(bool(station["suspended"]) for station in stations),
+            "under_maintenance": sum(station["status"] == "Under maintenance" for station in stations),
+            "closed": sum(station["status"] == "Closed" for station in stations),
+            "suspended": sum(station["status"] == "Suspended" for station in stations),
             "suspended_aws": sum(
-                bool(station["suspended"])
+                station["status"] == "Suspended"
                 and station["station_category"] == "Automatic Weather stations"
                 for station in stations
             ),
             "suspended_arg": sum(
-                bool(station["suspended"])
+                station["status"] == "Suspended"
                 and station["station_category"] == "Automatic Raingauge"
                 for station in stations
             ),
@@ -2296,8 +3840,9 @@ def export_stations(
     date_from: date | None = None,
     date_to: date | None = None,
     station_category: StationCategory | None = None,
-    suspended: bool | None = None,
     user=Depends(require_password_change_complete),
+    district: str | None = None,
+    status: StationStatus | None = None,
 ):
     items = get_stations(
         page=None,
@@ -2308,20 +3853,21 @@ def export_stations(
         date_from=date_from,
         date_to=date_to,
         station_category=station_category,
-        suspended=suspended,
         user=user,
+        district=district,
+        status=status,
     )
     headers = [
         "Station ID", "Station", "Latitude", "Longitude", "Altitude",
-        "Province", "District", "Sector", "Category", "Operational status",
-        "Suspended", "Comment", "Action", "Registered at", "Recorded by",
+        "Province", "District", "Sector", "Category", "Station status",
+        "Comment", "Action", "Registered at", "Recorded by",
     ]
     rows = [
         [
             item["station_code"], item["station_name"], item["latitude"],
             item["longitude"], item["altitude"], item["province"],
             item["district"], item["sector"], item["station_category"],
-            item["status"], 1 if item["suspended"] else 0, item["comment"], item["action"],
+            item["status"], item["comment"], item["action"],
             item["created_at"], item["recorded_by"],
         ]
         for item in items
@@ -2339,6 +3885,7 @@ def get_sites(
     sort_by: str = "site_name",
     sort_order: Literal["asc", "desc"] = "asc",
     user=Depends(require_password_change_complete),
+    district: str | None = None,
 ):
     try:
         connection = get_connection()
@@ -2349,7 +3896,7 @@ def get_sites(
                 CAST(latitude AS DOUBLE) AS latitude,
                 CAST(longitude AS DOUBLE) AS longitude,
                 CAST(altitude AS DOUBLE) AS altitude,
-                province, district, sector, station_category, status, suspended
+                province, district, sector, station_category, status
             FROM stations
         """
         parameters = []
@@ -2364,6 +3911,8 @@ def get_sites(
         cursor.execute(query, tuple(parameters))
         grouped = {}
         for station in cursor.fetchall():
+            if district and station["district"] != district:
+                continue
             coordinate_key = (
                 station["latitude"], station["longitude"], station["altitude"]
             )
@@ -2406,8 +3955,10 @@ def get_sites(
             sort_by, sort_order,
             {
                 "site_code": "site_code", "site_name": "site_name",
+                "latitude": "latitude", "longitude": "longitude",
                 "station_count": "station_count", "altitude": "altitude",
-                "province": "province", "district": "district",
+                "province": "province", "district": "district", "sector": "sector",
+                "stations": "station_search",
             },
         )
         summary = {
@@ -2446,13 +3997,12 @@ def add_station(station: Station, user=Depends(require_it)):
                 sector,
                 station_category,
                 status,
-                suspended,
                 comment,
                 action,
                 created_by_user_id,
                 recorded_by_username
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
 
         cursor.execute(
@@ -2468,7 +4018,6 @@ def add_station(station: Station, user=Depends(require_it)):
                 station.sector.strip(),
                 station.station_category,
                 station.status.strip(),
-                station.suspended,
                 station.comment.strip() if station.comment else None,
                 station.action.strip() if station.action else None,
                 user["user_id"],
@@ -2503,6 +4052,7 @@ def add_station(station: Station, user=Depends(require_it)):
 @app.post("/stations/import", status_code=201)
 async def import_stations(
     request: Request,
+    mode: Literal["create", "upsert", "preview"] = "create",
     user=Depends(require_it),
 ):
     try:
@@ -2513,6 +4063,20 @@ async def import_stations(
     reader = csv.DictReader(io.StringIO(content))
     if not reader.fieldnames:
         raise HTTPException(status_code=400, detail="CSV file has no header row")
+
+    headers = {(name or "").strip().lower().replace(" ", "_") for name in reader.fieldnames}
+    required = {
+        "station_id": {"station_id", "station_code"},
+        "station_name": {"station", "station_name"},
+        "category": {"category", "station_category"},
+        "status": {"station_status", "operational_status", "status"},
+        "latitude": {"latitude"}, "longitude": {"longitude"},
+        "altitude": {"altitude"}, "province": {"province"},
+        "district": {"district"}, "sector": {"sector"},
+    }
+    missing = [label for label, aliases in required.items() if not headers.intersection(aliases)]
+    if missing:
+        raise HTTPException(status_code=400, detail="CSV is missing columns: " + ", ".join(missing))
 
     stations = []
     station_codes = set()
@@ -2526,24 +4090,30 @@ async def import_stations(
             (key or "").strip().lower().replace(" ", "_"): (value or "").strip()
             for key, value in source_row.items()
         }
+        imported_status = row.get("station_status") or row.get("operational_status") or row.get("status") or ""
+        if imported_status == "Maintenance":
+            imported_status = "Under maintenance"
+        if (row.get("suspended") or "").lower() in {"1", "true", "yes"}:
+            imported_status = "Suspended"
         try:
             station = Station(
                 station_code=row.get("station_id") or row.get("station_code") or "",
-                station_name=row.get("station_name") or "",
+                station_name=row.get("station_name") or row.get("station") or "",
                 latitude=row.get("latitude") or "",
                 longitude=row.get("longitude") or "",
                 altitude=row.get("altitude") or "",
                 province=row.get("province") or "",
                 district=row.get("district") or "",
                 sector=row.get("sector") or "",
-                station_category=row.get("station_category") or "",
-                status=row.get("operational_status") or row.get("status") or "",
-                suspended=row.get("suspended") or "0",
+                station_category=row.get("station_category") or row.get("category") or "",
+                status=imported_status,
                 comment=row.get("comment") or None,
                 action=row.get("action") or row.get("actions") or None,
             )
         except ValidationError as exc:
-            message = exc.errors()[0]["msg"]
+            first_error = exc.errors()[0]
+            field = ".".join(map(str, first_error.get("loc", ())))
+            message = f"{field}: {first_error['msg']}" if field else first_error["msg"]
             raise HTTPException(
                 status_code=400,
                 detail=f"CSV row {row_number}: {message}",
@@ -2569,17 +4139,65 @@ async def import_stations(
         cursor = connection.cursor()
         placeholders = ", ".join(["%s"] * len(stations))
         cursor.execute(
-            f"SELECT station_code FROM stations WHERE LOWER(station_code) IN ({placeholders})",
+            f"SELECT station_id, station_code, station_category FROM stations WHERE LOWER(station_code) IN ({placeholders})",
             tuple(station_codes),
         )
-        existing_codes = [row[0] for row in cursor.fetchall()]
-        if existing_codes:
+        existing = {row[1].lower(): (row[0], row[1], row[2]) for row in cursor.fetchall()}
+        to_update = [station for station in stations if station.station_code.strip().lower() in existing]
+        to_insert = [station for station in stations if station.station_code.strip().lower() not in existing]
+        if mode == "preview":
+            return {"total": len(stations), "new": len(to_insert), "existing": len(to_update)}
+        if mode == "create" and to_update:
             raise HTTPException(
                 status_code=409,
-                detail="Station ID already exists: " + ", ".join(existing_codes),
+                detail="Station ID already exists: " + ", ".join(
+                    station.station_code for station in to_update[:10]
+                ) + ("..." if len(to_update) > 10 else ""),
             )
 
-        cursor.executemany(
+        for station in to_update:
+            station_id, _, old_category = existing[station.station_code.strip().lower()]
+            if old_category == station.station_category:
+                continue
+            cursor.execute(
+                """SELECT COUNT(*) FROM station_instruments si
+                LEFT JOIN instrument_station_categories isc
+                    ON isc.instrument_id = si.instrument_id AND isc.station_category = %s
+                WHERE si.station_id = %s AND isc.instrument_id IS NULL""",
+                (station.station_category, station_id),
+            )
+            if cursor.fetchone()[0]:
+                raise HTTPException(status_code=409, detail=(
+                    f"Station {station.station_code}: installed instruments are not assigned "
+                    "to the new station category"
+                ))
+
+        if to_update:
+            before_updates = {
+                existing[station.station_code.strip().lower()][0]:
+                    audit_snapshot(connection, "stations", existing[station.station_code.strip().lower()][0])
+                for station in to_update
+            }
+            cursor.executemany(
+            """UPDATE stations SET station_name = %s, latitude = %s, longitude = %s,
+                altitude = %s, province = %s, district = %s, sector = %s,
+                station_category = %s, status = %s, comment = %s, action = %s
+                WHERE station_id = %s""",
+            [(
+                station.station_name.strip(), station.latitude, station.longitude,
+                station.altitude, station.province.strip(), station.district.strip(),
+                station.sector.strip(), station.station_category, station.status,
+                station.comment.strip() if station.comment else None,
+                station.action.strip() if station.action else None,
+                existing[station.station_code.strip().lower()][0],
+            ) for station in to_update],
+            )
+            for station_id, before in before_updates.items():
+                record_entity_edit(connection, "stations", station_id, before,
+                                   audit_snapshot(connection, "stations", station_id), user)
+
+        if to_insert:
+            cursor.executemany(
             """
             INSERT INTO stations (
                 station_code,
@@ -2592,13 +4210,12 @@ async def import_stations(
                 sector,
                 station_category,
                 status,
-                suspended,
                 comment,
                 action,
                 created_by_user_id,
                 recorded_by_username
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             [
                 (
@@ -2612,17 +4229,17 @@ async def import_stations(
                     station.sector.strip(),
                     station.station_category,
                     station.status.strip(),
-                    station.suspended,
                     station.comment.strip() if station.comment else None,
                     station.action.strip() if station.action else None,
                     user["user_id"],
                     user["username"],
                 )
-                for station in stations
+                for station in to_insert
             ],
-        )
+            )
         connection.commit()
-        return {"message": "Stations imported successfully", "imported": len(stations)}
+        return {"message": "Stations imported successfully", "imported": len(to_insert),
+                "updated": len(to_update)}
     except HTTPException:
         if connection is not None and connection.is_connected():
             connection.rollback()
@@ -2655,6 +4272,7 @@ def update_station(
         connection = get_connection()
         ensure_application_tables(connection)
         cursor = connection.cursor()
+        before = audit_snapshot(connection, "stations", station_id)
         cursor.execute(
             """
             SELECT COUNT(*)
@@ -2689,7 +4307,6 @@ def update_station(
                 sector = %s,
                 station_category = %s,
                 status = %s,
-                suspended = %s,
                 comment = %s,
                 action = %s
             WHERE station_id = %s
@@ -2705,7 +4322,6 @@ def update_station(
                 station.sector.strip(),
                 station.station_category,
                 station.status.strip(),
-                station.suspended,
                 station.comment.strip() if station.comment else None,
                 station.action.strip() if station.action else None,
                 station_id,
@@ -2718,6 +4334,8 @@ def update_station(
             )
             if cursor.fetchone() is None:
                 raise HTTPException(status_code=404, detail="Station not found")
+        record_entity_edit(connection, "stations", station_id, before,
+                           audit_snapshot(connection, "stations", station_id), _admin)
         connection.commit()
         return {"message": "Station updated"}
     except HTTPException:
@@ -2819,11 +4437,12 @@ def get_instruments(
                     instrument["instrument_id"],
                     [],
                 )
+                instrument["station_category_sort"] = ", ".join(instrument["station_categories"])
         instruments = filter_sort_collection(
             instruments, search,
             ["instrument_name", "parameters_taken", "category", "description"],
             sort_by, sort_order,
-            {"instrument_name": "instrument_name", "category": "category", "status": "is_active"},
+            {"instrument_id": "instrument_id", "instrument_name": "instrument_name", "parameters_taken": "parameters_taken", "category": "category", "station_categories": "station_category_sort", "description": "description", "status": "is_active", "recorded_by": "recorded_by"},
         )
         return paginate_collection(instruments, page, page_size)
 
@@ -2915,9 +4534,91 @@ def add_instrument(instrument: Instrument, user=Depends(require_it)):
             connection.close()
 
 
+def parse_instrument_import(content):
+    reader = csv.DictReader(io.StringIO(content))
+    if not reader.fieldnames:
+        raise HTTPException(status_code=400, detail="CSV file has no header row")
+    headers = {(name or "").strip().lower().replace(" ", "_") for name in reader.fieldnames}
+    required = {
+        "instrument": {"instrument", "instrument_name"},
+        "parameters": {"parameters", "parameters_it_takes", "parameters_taken"},
+        "category": {"category"},
+        "station categories": {"station_categories", "station_category"},
+    }
+    missing = [label for label, aliases in required.items() if not headers.intersection(aliases)]
+    if missing:
+        raise HTTPException(status_code=400, detail="CSV is missing columns: " + ", ".join(missing))
+
+    canonical = {" ".join(value.split()).casefold(): value for value in StationCategory.__args__}
+    canonical.update({
+        "automatic weather station": "Automatic Weather stations",
+        "automatic rain gauge": "Automatic Raingauge",
+        "automatic rain gauges": "Automatic Raingauge",
+        "principal station": "Principal stations",
+        "climatic station": "Climatic stations",
+        "rainfall stations": "Rainfall station",
+        "upper air stations": "Upper air station",
+        "weather radars": "Weather radar",
+    })
+    by_name = {}
+    merged_rows = 0
+    for row_number, source_row in enumerate(reader, start=2):
+        if None in source_row:
+            raise HTTPException(status_code=400, detail=f"CSV row {row_number}: too many columns")
+        row = {(key or "").strip().lower().replace(" ", "_"): (value or "").strip()
+               for key, value in source_row.items()}
+        categories = []
+        raw_categories = row.get("station_categories") or row.get("station_category") or ""
+        for raw in raw_categories.replace(";", "|").replace(",", "|").split("|"):
+            if raw.strip():
+                categories.append(canonical.get(" ".join(raw.split()).casefold(), raw.strip()))
+        raw_status = (row.get("status") or row.get("is_active") or "Active").casefold()
+        if raw_status not in {"active", "inactive", "true", "false", "yes", "no", "1", "0"}:
+            raise HTTPException(status_code=400, detail=f"CSV row {row_number}: invalid status")
+        try:
+            instrument = Instrument(
+                instrument_name=row.get("instrument_name") or row.get("instrument") or "",
+                parameters_taken=row.get("parameters_it_takes") or row.get("parameters_taken") or row.get("parameters") or "",
+                category=row.get("category") or "",
+                station_categories=list(dict.fromkeys(categories)),
+                description=row.get("description") or None,
+                is_active=raw_status in {"active", "true", "yes", "1"},
+            )
+        except ValidationError as exc:
+            first_error = exc.errors()[0]
+            field = ".".join(map(str, first_error.get("loc", ())))
+            raise HTTPException(status_code=400, detail=f"CSV row {row_number}: {field}: {first_error['msg']}") from exc
+        key = instrument.instrument_name.strip().casefold()
+        previous = by_name.get(key)
+        if previous:
+            if previous.category.casefold() != instrument.category.casefold() or previous.is_active != instrument.is_active:
+                raise HTTPException(status_code=400, detail=(
+                    f"CSV row {row_number}: conflicting category or status for {instrument.instrument_name}"
+                ))
+            parameters = list(dict.fromkeys([previous.parameters_taken, instrument.parameters_taken]))
+            descriptions = list(dict.fromkeys(filter(None, [previous.description, instrument.description])))
+            try:
+                instrument = Instrument(
+                    instrument_name=previous.instrument_name,
+                    parameters_taken="; ".join(parameters),
+                    category=previous.category,
+                    station_categories=list(dict.fromkeys(previous.station_categories + instrument.station_categories)),
+                    description="; ".join(descriptions) or None,
+                    is_active=previous.is_active,
+                )
+            except ValidationError as exc:
+                raise HTTPException(status_code=400, detail=f"CSV row {row_number}: merged instrument exceeds field limits") from exc
+            merged_rows += 1
+        by_name[key] = instrument
+    if not by_name:
+        raise HTTPException(status_code=400, detail="CSV file has no instrument rows")
+    return list(by_name.values()), merged_rows
+
+
 @app.post("/instruments/import", status_code=201)
 async def import_instruments(
     request: Request,
+    mode: Literal["create", "upsert", "preview"] = "create",
     user=Depends(require_it),
 ):
     try:
@@ -2925,64 +4626,11 @@ async def import_instruments(
     except UnicodeDecodeError as exc:
         raise HTTPException(status_code=400, detail="CSV file must use UTF-8 encoding") from exc
 
-    reader = csv.DictReader(io.StringIO(content))
-    if not reader.fieldnames:
-        raise HTTPException(status_code=400, detail="CSV file has no header row")
-
-    instruments = []
-    instrument_names = set()
-    for row_number, source_row in enumerate(reader, start=2):
-        if None in source_row:
-            raise HTTPException(
-                status_code=400,
-                detail=f"CSV row {row_number}: too many columns",
-            )
-        row = {
-            (key or "").strip().lower().replace(" ", "_"): (value or "").strip()
-            for key, value in source_row.items()
-        }
-        try:
-            instrument = Instrument(
-                instrument_name=row.get("instrument_name") or "",
-                parameters_taken=(
-                    row.get("parameters_it_takes")
-                    or row.get("parameters_taken")
-                    or ""
-                ),
-                category=row.get("category") or "",
-                station_categories=[
-                    value.strip()
-                    for value in (
-                        row.get("station_categories")
-                        or row.get("station_category")
-                        or ""
-                    ).replace(";", "|").split("|")
-                    if value.strip()
-                ],
-                description=row.get("description") or None,
-                is_active=True,
-            )
-        except ValidationError as exc:
-            message = exc.errors()[0]["msg"]
-            raise HTTPException(
-                status_code=400,
-                detail=f"CSV row {row_number}: {message}",
-            ) from exc
-
-        normalized_name = instrument.instrument_name.strip().lower()
-        if normalized_name in instrument_names:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f'CSV row {row_number}: duplicate instrument name '
-                    f'"{instrument.instrument_name}"'
-                ),
-            )
-        instrument_names.add(normalized_name)
-        instruments.append(instrument)
-
-    if not instruments:
-        raise HTTPException(status_code=400, detail="CSV file has no instrument rows")
+    instruments, merged_rows = parse_instrument_import(content)
+    instrument_names = {instrument.instrument_name.strip().casefold() for instrument in instruments}
+    import_headers = {(name or "").strip().lower().replace(" ", "_")
+                      for name in next(csv.reader(io.StringIO(content)), [])}
+    status_supplied = bool(import_headers.intersection({"status", "is_active"}))
 
     try:
         connection = get_connection()
@@ -2991,22 +4639,49 @@ async def import_instruments(
         placeholders = ", ".join(["%s"] * len(instrument_names))
         cursor.execute(
             f"""
-            SELECT instrument_name
+            SELECT instrument_id, instrument_name
             FROM instruments
             WHERE LOWER(instrument_name) IN ({placeholders})
             """,
             tuple(instrument_names),
         )
-        existing_names = [row[0] for row in cursor.fetchall()]
-        if existing_names:
+        existing = {row[1].casefold(): (row[0], row[1]) for row in cursor.fetchall()}
+        to_update = [instrument for instrument in instruments if instrument.instrument_name.strip().casefold() in existing]
+        to_insert = [instrument for instrument in instruments if instrument.instrument_name.strip().casefold() not in existing]
+        for instrument in to_update:
+            instrument_id = existing[instrument.instrument_name.strip().casefold()][0]
+            cursor.execute("""SELECT DISTINCT s.station_category FROM station_instruments si
+                JOIN stations s ON s.station_id = si.station_id
+                WHERE si.instrument_id = %s""", (instrument_id,))
+            installed_categories = {row[0] for row in cursor.fetchall()}
+            if installed_categories - set(instrument.station_categories):
+                raise HTTPException(status_code=409, detail=(
+                    f"{instrument.instrument_name} is installed at stations outside the imported categories"
+                ))
+        if mode == "preview":
+            return {"total": len(instruments), "new": len(to_insert),
+                    "existing": len(to_update), "merged_rows": merged_rows}
+        if mode == "create" and to_update:
             raise HTTPException(
                 status_code=409,
                 detail=(
                     "These instruments already exist: "
-                    + ", ".join(sorted(existing_names))
+                    + ", ".join(sorted(instrument.instrument_name for instrument in to_update[:10]))
                 ),
             )
-        for instrument in instruments:
+        for instrument in to_update:
+            instrument_id = existing[instrument.instrument_name.strip().casefold()][0]
+            before = audit_snapshot(connection, "instruments", instrument_id)
+            cursor.execute("""UPDATE instruments SET parameters_taken=%s, category=%s,
+                description=COALESCE(%s, description),
+                is_active=CASE WHEN %s THEN %s ELSE is_active END WHERE instrument_id=%s""",
+                (instrument.parameters_taken.strip(), instrument.category.strip(),
+                 instrument.description.strip() if instrument.description else None,
+                 status_supplied, instrument.is_active, instrument_id))
+            replace_instrument_station_categories(cursor, instrument_id, instrument.station_categories)
+            record_entity_edit(connection, "instruments", instrument_id, before,
+                               audit_snapshot(connection, "instruments", instrument_id), user)
+        for instrument in to_insert:
             cursor.execute(
                 """
                 INSERT INTO instruments (
@@ -3018,13 +4693,14 @@ async def import_instruments(
                     created_by_user_id,
                     recorded_by_username
                 )
-                VALUES (%s, %s, %s, %s, TRUE, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     instrument.instrument_name.strip(),
                     instrument.parameters_taken.strip(),
                     instrument.category.strip(),
                     instrument.description.strip() if instrument.description else None,
+                    instrument.is_active,
                     user["user_id"],
                     user["username"],
                 ),
@@ -3037,7 +4713,9 @@ async def import_instruments(
         connection.commit()
         return {
             "message": "Instruments imported successfully",
-            "imported": len(instruments),
+            "imported": len(to_insert),
+            "updated": len(to_update),
+            "merged_rows": merged_rows,
         }
     except HTTPException:
         if "connection" in locals() and connection.is_connected():
@@ -3064,6 +4742,7 @@ def update_instrument(
         connection = get_connection()
         ensure_application_tables(connection)
         cursor = connection.cursor()
+        before = audit_snapshot(connection, "instruments", instrument_id)
         cursor.execute(
             """
             SELECT DISTINCT stations.station_category
@@ -3116,6 +4795,8 @@ def update_instrument(
             instrument_id,
             instrument.station_categories,
         )
+        record_entity_edit(connection, "instruments", instrument_id, before,
+                           audit_snapshot(connection, "instruments", instrument_id), _admin)
         connection.commit()
         return {"message": "Instrument updated"}
     except HTTPException:
@@ -3269,6 +4950,7 @@ def get_station_inspections(
     date_from: date | None = None,
     date_to: date | None = None,
     user=Depends(require_password_change_complete),
+    district: str | None = None,
 ):
     try:
         connection = get_connection()
@@ -3307,6 +4989,8 @@ def get_station_inspections(
             items = [item for item in items if item["inspection_id"] == inspection_id]
         if station_id:
             items = [item for item in items if item["station_id"] == station_id]
+        if district:
+            items = [item for item in items if item["district"] == district]
         if stage:
             items = [item for item in items if item["workflow_stage"] == stage]
         if status:
@@ -3320,7 +5004,8 @@ def get_station_inspections(
             sort_by, sort_order,
             {
                 "inspection_date": "inspection_date", "station_name": "station_name",
-                "workflow_stage": "workflow_stage", "status": "status",
+                "finding": "finding", "workflow_stage": "workflow_stage", "status": "status",
+                "status_reason": "not_solved_reason", "created_by_username": "created_by_username",
                 "updated_at": "updated_at",
             },
             date_from, date_to, "inspection_date",
@@ -3507,6 +5192,7 @@ def update_station_inspection(
         ensure_application_tables(connection)
         cursor = connection.cursor(dictionary=True)
         inspection = get_inspection_for_user(cursor, inspection_id, user)
+        before = audit_snapshot(connection, "station_inspections", inspection_id)
         if not can_edit_station_inspection(user, inspection):
             raise HTTPException(status_code=403, detail="Only the inspector or assigned team can edit this inspection")
         cursor.execute("SELECT station_id FROM stations WHERE station_id = %s", (record.station_id,))
@@ -3548,6 +5234,8 @@ def update_station_inspection(
             "Station inspection updated",
             f'{inspection["station_name"]} inspection was updated by {user["username"]}.',
         )
+        record_entity_edit(connection, "station_inspections", inspection_id, before,
+                           audit_snapshot(connection, "station_inspections", inspection_id), user)
         connection.commit()
         return {"message": "Station inspection updated"}
     except HTTPException:
@@ -3572,6 +5260,7 @@ def act_on_station_inspection(
         ensure_application_tables(connection)
         cursor = connection.cursor(dictionary=True)
         inspection = get_inspection_for_user(cursor, inspection_id, user)
+        before = audit_snapshot(connection, "station_inspections", inspection_id)
         role = user["department"]
         current_stage = inspection["workflow_stage"]
         cursor.execute(
@@ -3686,6 +5375,8 @@ def act_on_station_inspection(
             f"Station inspection: {action_label}",
             f'{inspection["station_name"]}: {action_label} by {user["username"]}.',
         )
+        record_entity_edit(connection, "station_inspections", inspection_id, before,
+                           audit_snapshot(connection, "station_inspections", inspection_id), user)
         connection.commit()
         return {"message": f"Inspection action recorded: {action_label}"}
     except HTTPException:
@@ -3944,7 +5635,9 @@ async def upload_station_inspection_report(
 
 
 @app.get("/station-inspection-reports")
-def get_station_inspection_reports(user=Depends(require_password_change_complete)):
+def get_station_inspection_reports(
+    user=Depends(require_password_change_complete), district: str | None = None,
+):
     try:
         connection = get_connection()
         ensure_application_tables(connection)
@@ -3956,9 +5649,10 @@ def get_station_inspection_reports(user=Depends(require_password_change_complete
             FROM station_inspection_reports AS reports
         """
         parameters = []
+        conditions = []
         if user["department"] in ASSIGNED_STATION_ROLES:
-            query += """
-                WHERE EXISTS (
+            conditions.append("""
+                EXISTS (
                     SELECT 1
                     FROM station_inspection_report_stations AS links
                     INNER JOIN user_station_assignments AS assignments
@@ -3966,8 +5660,17 @@ def get_station_inspection_reports(user=Depends(require_password_change_complete
                     WHERE links.report_id = reports.report_id
                         AND assignments.user_id = %s
                 )
-            """
+            """)
             parameters.append(user["user_id"])
+        if district:
+            conditions.append("""EXISTS (
+                SELECT 1 FROM station_inspection_report_stations AS links
+                JOIN stations AS s ON s.station_id = links.station_id
+                WHERE links.report_id = reports.report_id AND s.district = %s
+            )""")
+            parameters.append(district)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY period_end DESC, period_start DESC, report_id DESC"
         cursor.execute(query, tuple(parameters))
         reports = cursor.fetchall()
@@ -3975,17 +5678,20 @@ def get_station_inspection_reports(user=Depends(require_password_change_complete
         stations_by_report = {report_id: [] for report_id in report_ids}
         if report_ids:
             placeholders = ", ".join(["%s"] * len(report_ids))
-            cursor.execute(
-                f"""
+            station_query = f"""
                 SELECT links.report_id, stations.station_id,
                     stations.station_code, stations.station_name
                 FROM station_inspection_report_stations AS links
                 INNER JOIN stations ON stations.station_id = links.station_id
-                WHERE links.report_id IN ({placeholders})
-                ORDER BY stations.station_name
-                """,
-                tuple(report_ids),
-            )
+                """
+            station_params = []
+            if user["department"] in ASSIGNED_STATION_ROLES:
+                station_query += """INNER JOIN user_station_assignments AS assignments
+                    ON assignments.station_id = stations.station_id AND assignments.user_id = %s """
+                station_params.append(user["user_id"])
+            station_query += f"WHERE links.report_id IN ({placeholders}) ORDER BY stations.station_name"
+            station_params.extend(report_ids)
+            cursor.execute(station_query, tuple(station_params))
             for station in cursor.fetchall():
                 stations_by_report[station["report_id"]].append({
                     "station_id": station["station_id"],
@@ -4525,7 +6231,9 @@ def close_discussion(
 
 
 @app.get("/maintenance-reports")
-def get_maintenance_reports(user=Depends(require_password_change_complete)):
+def get_maintenance_reports(
+    user=Depends(require_password_change_complete), district: str | None = None,
+):
     try:
         connection = get_connection()
         ensure_application_tables(connection)
@@ -4536,17 +6244,27 @@ def get_maintenance_reports(user=Depends(require_password_change_complete)):
             FROM maintenance_reports
         """
         parameters = []
+        conditions = []
         if user["department"] in ASSIGNED_STATION_ROLES:
-            query += """
-                WHERE EXISTS (
+            conditions.append("""
+                EXISTS (
                     SELECT 1 FROM maintenance_report_stations
                     INNER JOIN user_station_assignments
                         ON user_station_assignments.station_id = maintenance_report_stations.station_id
                     WHERE maintenance_report_stations.report_id = maintenance_reports.report_id
                         AND user_station_assignments.user_id = %s
                 )
-            """
+            """)
             parameters.append(user["user_id"])
+        if district:
+            conditions.append("""EXISTS (
+                SELECT 1 FROM maintenance_report_stations mrs
+                JOIN stations s ON s.station_id = mrs.station_id
+                WHERE mrs.report_id = maintenance_reports.report_id AND s.district = %s
+            )""")
+            parameters.append(district)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY period_end DESC, period_start DESC, report_id DESC"
         cursor.execute(query, tuple(parameters))
         items = cursor.fetchall()
@@ -4711,6 +6429,206 @@ def delete_maintenance_report(report_id: int, _user=Depends(require_maintenance_
         if "connection" in locals() and connection.is_connected(): connection.close()
 
 
+
+@app.get("/pre-maintenance-reports")
+def get_pre_maintenance_reports(
+    user=Depends(require_password_change_complete), district: str | None = None,
+):
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        query = """
+            SELECT report_id, period_start, period_end, notes, original_filename,
+                content_type, file_size, uploaded_by_username, uploaded_at
+            FROM pre_maintenance_reports
+        """
+        parameters = []
+        conditions = []
+        if user["department"] in ASSIGNED_STATION_ROLES:
+            conditions.append("""
+                EXISTS (
+                    SELECT 1 FROM pre_maintenance_report_stations
+                    INNER JOIN user_station_assignments
+                        ON user_station_assignments.station_id = pre_maintenance_report_stations.station_id
+                    WHERE pre_maintenance_report_stations.report_id = pre_maintenance_reports.report_id
+                        AND user_station_assignments.user_id = %s
+                )
+            """)
+            parameters.append(user["user_id"])
+        if district:
+            conditions.append("""EXISTS (
+                SELECT 1 FROM pre_maintenance_report_stations mrs
+                JOIN stations s ON s.station_id = mrs.station_id
+                WHERE mrs.report_id = pre_maintenance_reports.report_id AND s.district = %s
+            )""")
+            parameters.append(district)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY period_end DESC, period_start DESC, report_id DESC"
+        cursor.execute(query, tuple(parameters))
+        items = cursor.fetchall()
+        report_ids = [item["report_id"] for item in items]
+        stations_by_report = {report_id: [] for report_id in report_ids}
+        if report_ids:
+            placeholders = ", ".join(["%s"] * len(report_ids))
+            station_query = f"""
+                SELECT pre_maintenance_report_stations.report_id, stations.station_id,
+                    stations.station_code, stations.station_name
+                FROM pre_maintenance_report_stations
+                INNER JOIN stations
+                    ON stations.station_id = pre_maintenance_report_stations.station_id
+            """
+            station_parameters = list(report_ids)
+            if user["department"] in ASSIGNED_STATION_ROLES:
+                station_query += """
+                    INNER JOIN user_station_assignments
+                        ON user_station_assignments.station_id = stations.station_id
+                        AND user_station_assignments.user_id = %s
+                """
+                station_parameters = [user["user_id"], *station_parameters]
+            station_query += f" WHERE pre_maintenance_report_stations.report_id IN ({placeholders}) ORDER BY stations.station_name"
+            cursor.execute(station_query, tuple(station_parameters))
+            for station in cursor.fetchall():
+                stations_by_report[station["report_id"]].append({
+                    "station_id": station["station_id"],
+                    "station_code": station["station_code"],
+                    "station_name": station["station_name"],
+                })
+        for item in items:
+            item["stations"] = stations_by_report[item["report_id"]]
+        return {
+            "items": items,
+            "can_manage": user["department"] in (MAINTENANCE_ROLE, "Admin"),
+        }
+    except MySQLError as exc:
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.post("/pre-maintenance-reports", status_code=201)
+async def upload_pre_maintenance_report(
+    request: Request,
+    period_start: date,
+    period_end: date,
+    station_ids: str = Query(min_length=1),
+    filename: str = Query(min_length=1, max_length=255),
+    notes: str | None = Query(default=None, max_length=2000),
+    user=Depends(require_maintenance_or_it),
+):
+    if period_end < period_start:
+        raise HTTPException(status_code=400, detail="Pre-maintenance end date cannot be before the start date")
+    try:
+        selected_station_ids = list(dict.fromkeys(int(value) for value in station_ids.split(",") if value.strip()))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="One or more station selections are invalid") from exc
+    if not selected_station_ids:
+        raise HTTPException(status_code=400, detail="Select at least one station")
+    clean_filename = Path(filename).name
+    if Path(clean_filename).suffix.lower() not in {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt"}:
+        raise HTTPException(status_code=415, detail="Upload a PDF, Word, Excel, CSV, or text report")
+    content = await request.body()
+    if not content:
+        raise HTTPException(status_code=400, detail="The uploaded report is empty")
+    if len(content) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="The maximum report size is 20 MB")
+    try:
+        connection = get_connection()
+        ensure_application_tables(connection)
+        cursor = connection.cursor()
+        placeholders = ", ".join(["%s"] * len(selected_station_ids))
+        cursor.execute(
+            f"SELECT station_id FROM stations WHERE station_id IN ({placeholders})",
+            tuple(selected_station_ids),
+        )
+        if {row[0] for row in cursor.fetchall()} != set(selected_station_ids):
+            raise HTTPException(status_code=400, detail="One or more selected stations do not exist")
+        cursor.execute(
+            """
+            INSERT INTO pre_maintenance_reports (
+                period_start, period_end, notes, original_filename, content_type,
+                file_size, file_data, uploaded_by_user_id, uploaded_by_username
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                period_start, period_end, notes.strip() if notes else None,
+                clean_filename,
+                request.headers.get("content-type", "application/octet-stream").split(";", 1)[0],
+                len(content), content, user["user_id"], user["username"],
+            ),
+        )
+        report_id = cursor.lastrowid
+        cursor.executemany(
+            "INSERT INTO pre_maintenance_report_stations (report_id, station_id) VALUES (%s, %s)",
+            [(report_id, station_id) for station_id in selected_station_ids],
+        )
+        connection.commit()
+        return {"message": "Pre-maintenance report uploaded", "report_id": report_id}
+    except HTTPException:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise
+    except MySQLError as exc:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.get("/pre-maintenance-reports/{report_id}/file")
+def download_pre_maintenance_report(report_id: int, user=Depends(require_password_change_complete)):
+    try:
+        connection = get_connection()
+        cursor = connection.cursor(dictionary=True)
+        query = """
+            SELECT original_filename, content_type, file_data
+            FROM pre_maintenance_reports WHERE report_id = %s
+        """
+        parameters = [report_id]
+        if user["department"] in ASSIGNED_STATION_ROLES:
+            query += """
+                AND EXISTS (
+                    SELECT 1 FROM pre_maintenance_report_stations
+                    INNER JOIN user_station_assignments
+                        ON user_station_assignments.station_id = pre_maintenance_report_stations.station_id
+                    WHERE pre_maintenance_report_stations.report_id = pre_maintenance_reports.report_id
+                        AND user_station_assignments.user_id = %s
+                )
+            """
+            parameters.append(user["user_id"])
+        cursor.execute(query, tuple(parameters))
+        item = cursor.fetchone()
+        if item is None:
+            raise HTTPException(status_code=404, detail="Pre-maintenance report not found")
+        filename = item["original_filename"].replace('"', "")
+        return Response(
+            content=item["file_data"], media_type=item["content_type"],
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.delete("/pre-maintenance-reports/{report_id}", status_code=204)
+def delete_pre_maintenance_report(report_id: int, _user=Depends(require_maintenance_or_it)):
+    try:
+        connection = get_connection()
+        cursor = connection.cursor()
+        cursor.execute("DELETE FROM pre_maintenance_reports WHERE report_id = %s", (report_id,))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Pre-maintenance report not found")
+        connection.commit()
+    except HTTPException:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if "connection" in locals() and connection.is_connected(): connection.close()
+
+
 @app.get("/maintenance")
 def get_maintenance_records(
     station_id: int | None = Query(default=None, gt=0),
@@ -4722,6 +6640,7 @@ def get_maintenance_records(
     date_from: date | None = None,
     date_to: date | None = None,
     user=Depends(require_password_change_complete),
+    district: str | None = None,
 ):
 
     try:
@@ -4736,17 +6655,21 @@ def get_maintenance_records(
                 stations.station_code,
                 stations.station_name,
                 stations.station_category,
-                maintenance_date,
-                issue,
-                activity_done,
-                recommendations,
-                technicians,
+                stations.district,
+                maintenance_records.maintenance_date,
+                maintenance_records.issue,
+                maintenance_records.activity_done,
+                maintenance_records.recommendations,
+                maintenance_records.technicians,
                 COALESCE(
                     maintenance_records.recorded_by_username,
                     creator.username
                 ) AS recorded_by,
                 instruments.instrument_id,
-                instruments.instrument_name
+                instruments.instrument_name,
+                maintenance_record_instruments.issue AS instrument_issue,
+                maintenance_record_instruments.action_done AS instrument_action_done,
+                maintenance_record_instruments.recommendation AS instrument_recommendation
             FROM maintenance_records
             INNER JOIN stations
                 ON stations.station_id = maintenance_records.station_id
@@ -4765,6 +6688,9 @@ def get_maintenance_records(
         if station_id is not None:
             conditions.append("maintenance_records.station_id = %s")
             parameters.append(station_id)
+        if district:
+            conditions.append("stations.district = %s")
+            parameters.append(district)
         if user["department"] in ASSIGNED_STATION_ROLES:
             conditions.append(
                 "EXISTS (SELECT 1 FROM user_station_assignments "
@@ -4795,6 +6721,7 @@ def get_maintenance_records(
                     "station_code": row["station_code"],
                     "station_name": row["station_name"],
                     "station_category": row["station_category"],
+                    "district": row["district"],
                     "maintenance_date": row["maintenance_date"],
                     "issue": row["issue"],
                     "activity_done": row["activity_done"],
@@ -4807,19 +6734,24 @@ def get_maintenance_records(
             if row["instrument_id"] is not None:
                 records[maintenance_id]["instruments"].append({
                     "instrument_id": row["instrument_id"],
-                    "instrument_name": row["instrument_name"]
+                    "instrument_name": row["instrument_name"],
+                    "issue": row["instrument_issue"],
+                    "action_done": row["instrument_action_done"],
+                    "recommendation": row["instrument_recommendation"],
                 })
 
         items = list(records.values())
         for item in items:
             item["instrument_search"] = " ".join(
-                instrument["instrument_name"] for instrument in item["instruments"]
+                " ".join(str(instrument.get(key) or "") for key in
+                         ("instrument_name", "issue", "action_done", "recommendation"))
+                for instrument in item["instruments"]
             )
         items = filter_sort_collection(
             items, search,
             ["station_code", "station_name", "issue", "activity_done", "recommendations", "technicians", "instrument_search"],
             sort_by, sort_order,
-            {"station": "station_name", "maintenance_date": "maintenance_date", "issue": "issue", "technicians": "technicians"},
+            {"maintenance_id": "maintenance_id", "station": "station_name", "maintenance_date": "maintenance_date", "instruments": "instrument_search", "issue": "issue", "activity_done": "activity_done", "recommendations": "recommendations", "technicians": "technicians", "recorded_by": "recorded_by"},
             date_from, date_to, "maintenance_date",
         )
         instrument_ids = {
@@ -4852,16 +6784,79 @@ def get_maintenance_records(
             connection.close()
 
 
+@app.get("/maintenance/instrument-history/{station_id}/{instrument_id}")
+def get_instrument_maintenance_history(
+    station_id: int, instrument_id: int,
+    user=Depends(require_password_change_complete),
+):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT station_id FROM stations WHERE station_id = %s", (station_id,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail="Station not found")
+        ensure_user_can_access_station(cursor, user, station_id)
+        cursor.execute("""SELECT record.maintenance_id, record.maintenance_date,
+                record.technicians, COALESCE(record.recorded_by_username, creator.username) AS recorded_by,
+                link.issue, link.action_done, link.recommendation
+            FROM maintenance_record_instruments AS link
+            JOIN maintenance_records AS record ON record.maintenance_id = link.maintenance_id
+            LEFT JOIN users AS creator ON creator.user_id = record.created_by_user_id
+            WHERE record.station_id = %s AND link.instrument_id = %s
+            ORDER BY record.maintenance_date DESC, record.maintenance_id DESC""",
+            (station_id, instrument_id))
+        items = cursor.fetchall()
+        for item in items:
+            cursor.execute("""SELECT before_data, after_data, changed_by_username, changed_at
+                FROM record_edit_history WHERE entity_type = 'maintenance' AND entity_id = %s
+                ORDER BY changed_at DESC, history_id DESC""", (str(item["maintenance_id"]),))
+            changes = []
+            for event in cursor.fetchall():
+                before = json.loads(event["before_data"]) if isinstance(event["before_data"], (str, bytes)) else (event["before_data"] or {})
+                after = json.loads(event["after_data"]) if isinstance(event["after_data"], (str, bytes)) else (event["after_data"] or {})
+                if user["department"] in ASSIGNED_STATION_ROLES and any(
+                    snapshot.get("station_id") != station_id for snapshot in (before, after) if snapshot
+                ):
+                    continue
+                old_detail = next((entry for entry in before.get("instrument_details", [])
+                                   if entry["instrument_id"] == instrument_id), None)
+                new_detail = next((entry for entry in after.get("instrument_details", [])
+                                   if entry["instrument_id"] == instrument_id), None)
+                if old_detail is None and new_detail is None:
+                    continue
+                shared = {key: {"before": before.get(key), "after": after.get(key)}
+                          for key in ("maintenance_date", "technicians")
+                          if before.get(key) != after.get(key)}
+                if old_detail != new_detail or shared:
+                    changes.append({"changed_at": event["changed_at"],
+                                    "changed_by_username": event["changed_by_username"],
+                                    "before": old_detail, "after": new_detail,
+                                    "shared_changes": shared})
+            item["changes"] = changes
+        return {"items": items, "total": len(items)}
+    finally:
+        if "cursor" in locals(): cursor.close()
+        if connection.is_connected(): connection.close()
+
+
 @app.get("/maintenance/export")
 def export_maintenance(
     format: Literal["csv", "pdf"], station_id: int | None = Query(default=None, gt=0),
     search: str | None = None, sort_by: str = "maintenance_date",
     sort_order: Literal["asc", "desc"] = "desc", date_from: date | None = None,
     date_to: date | None = None, user=Depends(require_password_change_complete),
+    district: str | None = None,
 ):
-    items = get_maintenance_records(station_id, None, 100, search, sort_by, sort_order, date_from, date_to, user)
-    headers = ["Station", "Date", "Instruments", "Issue", "Activity done", "Recommendations", "Technicians", "Recorded by"]
-    rows = [[f'{item["station_code"]} - {item["station_name"]}', item["maintenance_date"], ", ".join(i["instrument_name"] for i in item["instruments"]), item["issue"], item["activity_done"], item["recommendations"], item["technicians"], item["recorded_by"]] for item in items]
+    items = get_maintenance_records(station_id, None, 100, search, sort_by, sort_order, date_from, date_to, user, district)
+    headers = ["Visit ID", "Station", "Date", "Instrument", "Issue", "Action done", "Recommendation", "Technicians", "Recorded by"]
+    rows = [[item["maintenance_id"], f'{item["station_code"]} - {item["station_name"]}',
+             item["maintenance_date"], instrument["instrument_name"], instrument["issue"],
+             instrument["action_done"], instrument["recommendation"], item["technicians"],
+             item["recorded_by"]]
+            for item in items for instrument in (item["instruments"] or [{
+                "instrument_name": "Not specified", "issue": item["issue"],
+                "action_done": item["activity_done"], "recommendation": item["recommendations"]}])]
     return csv_download("maintenance.csv", headers, rows) if format == "csv" else pdf_download("maintenance.pdf", "Maintenance Records", headers, rows, user["username"])
 
 
@@ -4884,7 +6879,7 @@ def add_maintenance_record(
         if cursor.fetchone() is None:
             raise HTTPException(status_code=404, detail="Station not found")
 
-        instrument_ids = list(dict.fromkeys(record.instrument_ids))
+        instrument_ids, details, issue, activity_done, recommendations = maintenance_instrument_payload(record)
         placeholders = ", ".join(["%s"] * len(instrument_ids))
         cursor.execute(
             f"""
@@ -4932,10 +6927,9 @@ def add_maintenance_record(
             (
                 record.station_id,
                 record.maintenance_date,
-                record.issue.strip(),
-                record.activity_done.strip(),
-                record.recommendations.strip()
-                    if record.recommendations else None,
+                issue,
+                activity_done,
+                recommendations,
                 record.technicians.strip(),
                 user["user_id"],
                 user["username"],
@@ -4946,13 +6940,16 @@ def add_maintenance_record(
             """
             INSERT INTO maintenance_record_instruments (
                 maintenance_id,
-                instrument_id
+                instrument_id,
+                issue,
+                action_done,
+                recommendation
             )
-            VALUES (%s, %s)
+            VALUES (%s, %s, %s, %s, %s)
             """,
             [
-                (maintenance_id, instrument_id)
-                for instrument_id in instrument_ids
+                (maintenance_id, *detail)
+                for detail in details
             ]
         )
         connection.commit()
@@ -4993,6 +6990,7 @@ def get_suspected_data_records(
     date_from: date | None = None,
     date_to: date | None = None,
     user=Depends(require_suspected_data_access),
+    district: str | None = None,
 ):
     try:
         connection = get_connection()
@@ -5004,6 +7002,7 @@ def get_suspected_data_records(
                 suspected_data_records.station_id,
                 stations.station_code,
                 stations.station_name,
+                stations.district,
                 suspected_data_records.issue,
                 suspected_data_records.description,
                 COALESCE(
@@ -5046,6 +7045,9 @@ def get_suspected_data_records(
         if station_id is not None:
             conditions.append("suspected_data_records.station_id = %s")
             parameters.append(station_id)
+        if district:
+            conditions.append("stations.district = %s")
+            parameters.append(district)
         if status is not None:
             conditions.append("suspected_data_records.status = %s")
             parameters.append(status)
@@ -5068,7 +7070,7 @@ def get_suspected_data_records(
             cursor.fetchall(), search,
             ["station_code", "station_name", "issue", "description", "status", "reported_by", "resolved_by", "maintenance_outcome", "way_forward", "final_comment"],
             sort_by, sort_order,
-            {"reported_at": "reported_at", "station": "station_name", "measurement": "issue", "status": "status", "resolved_at": "resolved_at"},
+            {"reported_at": "reported_at", "station": "station_name", "measurement": "issue", "description": "description", "reported_by": "reported_by", "maintenance_date": "maintenance_date", "maintenance_findings": "maintenance_issue", "how_solved": "how_solved", "maintenance_outcome": "maintenance_outcome", "way_forward": "way_forward", "resolved_by": "resolved_by", "status": "status", "resolved_at": "resolved_at", "final_is_solved": "final_is_solved", "final_comment": "final_comment", "final_reviewed_by": "final_reviewed_by", "final_reviewed_at": "final_reviewed_at"},
             date_from, date_to, "reported_at",
         )
         statuses = {}
@@ -5100,8 +7102,9 @@ def export_suspected_data(
     search: str | None = None, sort_by: str = "reported_at",
     sort_order: Literal["asc", "desc"] = "desc", date_from: date | None = None,
     date_to: date | None = None, user=Depends(require_suspected_data_access),
+    district: str | None = None,
 ):
-    items = get_suspected_data_records(station_id, status, None, 100, search, sort_by, sort_order, date_from, date_to, user)
+    items = get_suspected_data_records(station_id, status, None, 100, search, sort_by, sort_order, date_from, date_to, user, district)
     headers = ["Station", "Measurement", "Description", "Reported by", "Reported at", "Maintenance outcome", "Way forward", "Status", "Resolved by", "Final comment", "Final reviewed by"]
     rows = [[f'{item["station_code"]} - {item["station_name"]}', item["issue"], item["description"], item["reported_by"], item["reported_at"], item["maintenance_outcome"], item["way_forward"], item["status"], item["resolved_by"], item["final_comment"], item["final_reviewed_by"]] for item in items]
     return csv_download("qc-records.csv", headers, rows) if format == "csv" else pdf_download("qc-records.pdf", "Quality Control Records", headers, rows, user["username"])
@@ -5197,6 +7200,7 @@ def update_suspected_data_record(
         connection = get_connection()
         ensure_application_tables(connection)
         cursor = connection.cursor()
+        before = audit_snapshot(connection, "suspected_data", suspected_data_id)
         cursor.execute(
             """
             SELECT status, station_id
@@ -5270,6 +7274,8 @@ def update_suspected_data_record(
                 f"{record.issue.strip()} at {station[0]} - {station[1]} is ready for final review.",
                 "suspected_data", suspected_data_id, station_id=record.station_id,
             )
+        record_entity_edit(connection, "suspected_data", suspected_data_id, before,
+                           audit_snapshot(connection, "suspected_data", suspected_data_id), user)
         connection.commit()
         return {"message": "Suspected data record updated"}
     except HTTPException:
@@ -5297,6 +7303,7 @@ def review_suspected_data_final(
         connection = get_connection()
         ensure_application_tables(connection)
         cursor = connection.cursor(dictionary=True)
+        before = audit_snapshot(connection, "suspected_data", suspected_data_id)
         cursor.execute(
             """
             SELECT status, station_id
@@ -5332,6 +7339,8 @@ def review_suspected_data_final(
                 suspected_data_id,
             ),
         )
+        record_entity_edit(connection, "suspected_data", suspected_data_id, before,
+                           audit_snapshot(connection, "suspected_data", suspected_data_id), user)
         connection.commit()
         return {"message": "Final Data review saved"}
     except HTTPException:
@@ -5387,6 +7396,7 @@ def get_station_instruments(
     date_from: date | None = None,
     date_to: date | None = None,
     user=Depends(require_password_change_complete),
+    district: str | None = None,
 ):
     try:
         connection = get_connection()
@@ -5399,6 +7409,7 @@ def get_station_instruments(
                 stations.station_code,
                 stations.station_name,
                 stations.station_category,
+                stations.district,
                 station_instruments.instrument_id,
                 instruments.instrument_name,
                 instruments.parameters_taken,
@@ -5408,6 +7419,8 @@ def get_station_instruments(
                 station_instruments.installation_date,
                 station_instruments.calibration_date,
                 station_instruments.replacement_date,
+                station_instruments.recommended_calibration_date,
+                station_instruments.recommended_replacement_date,
                 station_instruments.status,
                 station_instruments.comment,
                 COALESCE(
@@ -5435,6 +7448,9 @@ def get_station_instruments(
         if station_id is not None:
             conditions.append("station_instruments.station_id = %s")
             parameters.append(station_id)
+        if district:
+            conditions.append("stations.district = %s")
+            parameters.append(district)
         if user["department"] in ASSIGNED_STATION_ROLES:
             conditions.append(
                 "EXISTS (SELECT 1 FROM user_station_assignments "
@@ -5452,9 +7468,9 @@ def get_station_instruments(
         cursor.execute(query, tuple(parameters))
         items = filter_sort_collection(
             cursor.fetchall(), search,
-            ["station_code", "station_name", "station_category", "instrument_name", "parameters_taken", "model", "manufacturer", "serial_number", "status", "comment"],
+            ["station_code", "station_name", "station_category", "district", "instrument_name", "parameters_taken", "model", "manufacturer", "serial_number", "status", "comment"],
             sort_by, sort_order,
-            {"station": "station_name", "instrument": "instrument_name", "status": "status", "installation_date": "installation_date", "calibration_date": "calibration_date", "replacement_date": "replacement_date"},
+            {"station": "station_name", "station_category": "station_category", "instrument": "instrument_name", "parameters": "parameters_taken", "model": "model", "manufacturer": "manufacturer", "serial_number": "serial_number", "status": "status", "comment": "comment", "recorded_by": "recorded_by", "recorded_at": "created_at", "updated_by": "updated_by", "updated_at": "updated_at", "installation_date": "installation_date", "calibration_date": "calibration_date", "replacement_date": "replacement_date", "recommended_calibration_date": "recommended_calibration_date", "recommended_replacement_date": "recommended_replacement_date"},
             date_from, date_to, "installation_date",
         )
         statuses = {}
@@ -5485,10 +7501,11 @@ def export_station_instruments(
     search: str | None = None, sort_by: str = "station",
     sort_order: Literal["asc", "desc"] = "asc", date_from: date | None = None,
     date_to: date | None = None, user=Depends(require_password_change_complete),
+    district: str | None = None,
 ):
-    items = get_station_instruments(station_id, None, 100, search, sort_by, sort_order, date_from, date_to, user)
-    headers = ["Station", "Category", "Instrument", "Model", "Manufacturer", "Serial number", "Installation date", "Calibration date", "Replacement date", "Status", "Comment"]
-    rows = [[f'{item["station_code"]} - {item["station_name"]}', item["station_category"], item["instrument_name"], item["model"], item["manufacturer"], item["serial_number"], item["installation_date"], item["calibration_date"], item["replacement_date"], item["status"], item["comment"]] for item in items]
+    items = get_station_instruments(station_id, None, 100, search, sort_by, sort_order, date_from, date_to, user, district)
+    headers = ["Station", "District", "Category", "Instrument", "Model", "Manufacturer", "Serial number", "Installation date", "Calibration date", "Replacement date", "Recommended calibration", "Recommended replacement", "Status", "Comment"]
+    rows = [[f'{item["station_code"]} - {item["station_name"]}', item["district"], item["station_category"], item["instrument_name"], item["model"], item["manufacturer"], item["serial_number"], item["installation_date"], item["calibration_date"], item["replacement_date"], item["recommended_calibration_date"], item["recommended_replacement_date"], item["status"], item["comment"]] for item in items]
     return csv_download("station-instruments.csv", headers, rows) if format == "csv" else pdf_download("station-instruments.pdf", "Station Instruments", headers, rows, user["username"])
 
 
@@ -5517,12 +7534,14 @@ def add_station_instrument(
                 installation_date,
                 calibration_date,
                 replacement_date,
+                recommended_calibration_date,
+                recommended_replacement_date,
                 status,
                 comment,
                 created_by_user_id,
                 recorded_by_username
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 item.station_id,
@@ -5533,6 +7552,8 @@ def add_station_instrument(
                 item.installation_date,
                 item.calibration_date,
                 item.replacement_date,
+                item.recommended_calibration_date,
+                item.recommended_replacement_date,
                 item.status,
                 item.comment.strip() if item.comment else None,
                 user["user_id"],
@@ -5570,6 +7591,7 @@ def update_station_instrument(
         connection = get_connection()
         ensure_application_tables(connection)
         cursor = connection.cursor()
+        before = audit_snapshot(connection, "station_instruments", station_instrument_id)
         cursor.execute(
             "SELECT station_instrument_id FROM station_instruments "
             "WHERE station_instrument_id = %s",
@@ -5593,6 +7615,8 @@ def update_station_instrument(
                 installation_date = %s,
                 calibration_date = %s,
                 replacement_date = %s,
+                recommended_calibration_date = %s,
+                recommended_replacement_date = %s,
                 status = %s,
                 comment = %s,
                 updated_by_user_id = %s,
@@ -5608,6 +7632,8 @@ def update_station_instrument(
                 item.installation_date,
                 item.calibration_date,
                 item.replacement_date,
+                item.recommended_calibration_date,
+                item.recommended_replacement_date,
                 item.status,
                 item.comment.strip() if item.comment else None,
                 user["user_id"],
@@ -5615,6 +7641,8 @@ def update_station_instrument(
                 station_instrument_id,
             ),
         )
+        record_entity_edit(connection, "station_instruments", station_instrument_id, before,
+                           audit_snapshot(connection, "station_instruments", station_instrument_id), user)
         connection.commit()
         return {"message": "Station instrument updated"}
     except HTTPException:
@@ -5747,6 +7775,8 @@ async def upload_volunteer_data_file(
     try:
         connection = get_connection()
         ensure_application_tables(connection)
+        target_month = month_start(report_month)
+        before = audit_snapshot(connection, "volunteer_data", target_month)
         cursor = connection.cursor()
         cursor.execute(
             """
@@ -5760,9 +7790,11 @@ async def upload_volunteer_data_file(
                 file_data = VALUES(file_data), uploaded_by_user_id = VALUES(uploaded_by_user_id),
                 uploaded_by_username = VALUES(uploaded_by_username), uploaded_at = CURRENT_TIMESTAMP
             """,
-            (month_start(report_month), file_kind, clean_filename, content_type,
+            (target_month, file_kind, clean_filename, content_type,
              len(content), content, user["user_id"], user["username"]),
         )
+        record_entity_edit(connection, "volunteer_data", str(target_month)[:7], before,
+                           audit_snapshot(connection, "volunteer_data", target_month), user)
         connection.commit()
         return {"message": "Monthly file saved"}
     except MySQLError as exc:
@@ -5802,6 +7834,8 @@ def add_volunteer_report_comment(
     try:
         connection = get_connection()
         ensure_application_tables(connection)
+        target_month = month_start(item.report_month)
+        before = audit_snapshot(connection, "volunteer_data", target_month)
         cursor = connection.cursor()
         cursor.execute(
             """
@@ -5809,8 +7843,10 @@ def add_volunteer_report_comment(
                 report_month, comment, commented_by_user_id, commented_by_username
             ) VALUES (%s, %s, %s, %s)
             """,
-            (month_start(item.report_month), item.comment.strip(), user["user_id"], user["username"]),
+            (target_month, item.comment.strip(), user["user_id"], user["username"]),
         )
+        record_entity_edit(connection, "volunteer_data", str(target_month)[:7], before,
+                           audit_snapshot(connection, "volunteer_data", target_month), user)
         connection.commit()
         return {"message": "Supervisor comment saved"}
     except MySQLError as exc:
@@ -5855,14 +7891,23 @@ def get_reporting_status(_user=Depends(require_reporting_view)):
         connection = get_connection()
         ensure_application_tables(connection)
         cursor = connection.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT COUNT(*) AS total FROM stations WHERE status = 'Operational'"
-        )
-        operational_stations = cursor.fetchone()["total"]
+        cursor.execute("""SELECT
+            COUNT(*) AS total_stations,
+            COALESCE(SUM(status = 'Operational'), 0) AS operational_stations,
+            COALESCE(SUM(status = 'Under maintenance'), 0) AS under_maintenance_stations,
+            COALESCE(SUM(status = 'Suspended'), 0) AS suspended_stations,
+            COALESCE(SUM(status = 'Closed'), 0) AS closed_stations
+            FROM stations""")
+        network = cursor.fetchone()
+        operational_stations = network["operational_stations"]
+        under_maintenance_stations = network["under_maintenance_stations"]
+        suspended_stations = network["suspended_stations"]
         cursor.execute(
             """
             SELECT reporting_status_id, DATE_FORMAT(report_month, '%Y-%m') AS report_month,
-                expected_stations, reported_stations, notes,
+                expected_stations, operational_stations, under_maintenance_stations,
+                suspended_stations,
+                reported_stations, notes,
                 recorded_by_username, updated_at
             FROM monthly_reporting_status ORDER BY report_month DESC
             """
@@ -5878,13 +7923,28 @@ def get_reporting_status(_user=Depends(require_reporting_view)):
         )
         files = {item["report_month"]: item for item in cursor.fetchall()}
         for item in items:
-            expected = item["expected_stations"]
-            item["pending_stations"] = max(expected - item["reported_stations"], 0)
-            item["coverage_percent"] = round(item["reported_stations"] * 100 / expected, 1) if expected else 0
+            if any(item[key] is None for key in
+                   ("operational_stations", "under_maintenance_stations", "suspended_stations")):
+                item["expected_stations"] = None
+                item["pending_stations"] = None
+                item["reporting_percent"] = None
+            else:
+                expected = (item["operational_stations"] + item["under_maintenance_stations"]
+                            + item["suspended_stations"])
+                item["expected_stations"] = expected
+                item["pending_stations"] = max(expected - item["reported_stations"], 0)
+                item["reporting_percent"] = reporting_percentage(item["operational_stations"], expected)
             item["non_reported_file"] = files.get(item["report_month"])
         return {
             "items": items,
+            "total_stations": network["total_stations"],
             "operational_stations": operational_stations,
+            "under_maintenance_stations": under_maintenance_stations,
+            "suspended_stations": suspended_stations,
+            "closed_stations": network["closed_stations"],
+            "expected_stations": operational_stations + under_maintenance_stations + suspended_stations,
+            "current_reporting_percent": reporting_percentage(
+                operational_stations, operational_stations + under_maintenance_stations + suspended_stations),
             "can_manage": _user["department"] == "Admin" or _user["department"] in DATA_OPERATIONS_ROLES,
         }
     finally:
@@ -5892,42 +7952,121 @@ def get_reporting_status(_user=Depends(require_reporting_view)):
         if "connection" in locals() and connection.is_connected(): connection.close()
 
 
+def reporting_snapshot(cursor, report_month):
+    cursor.execute("""SELECT reporting_status_id, DATE_FORMAT(report_month, '%Y-%m') AS report_month,
+        expected_stations, operational_stations, under_maintenance_stations,
+        suspended_stations, reported_stations, notes, recorded_by_username
+        FROM monthly_reporting_status WHERE report_month = %s""", (report_month,))
+    return cursor.fetchone()
+
+
+def record_reporting_change(cursor, report_month, action, before, after, user, reporting_status_id=None):
+    cursor.execute("""INSERT INTO monthly_reporting_changes
+        (reporting_status_id, report_month, action, before_data, after_data,
+         changed_by_user_id, changed_by_username)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+        (reporting_status_id, report_month, action,
+         json.dumps(before, default=str) if before is not None else None,
+         json.dumps(after, default=str) if after is not None else None,
+         user["user_id"], user["username"]))
+
+
 @app.post("/reporting-status")
 def save_reporting_status(item: MonthlyReportingStatus, user=Depends(require_data_operations_writer)):
     try:
         connection = get_connection()
         ensure_application_tables(connection)
-        cursor = connection.cursor()
-        cursor.execute(
-            "SELECT COUNT(*) FROM stations WHERE status = 'Operational'"
-        )
-        expected_stations = cursor.fetchone()[0]
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("""SELECT
+            COALESCE(SUM(status = 'Operational'), 0) AS operational_stations,
+            COALESCE(SUM(status = 'Under maintenance'), 0) AS under_maintenance_stations,
+            COALESCE(SUM(status = 'Suspended'), 0) AS suspended_stations
+            FROM stations""")
+        network = cursor.fetchone()
+        operational_stations = network["operational_stations"]
+        under_maintenance_stations = network["under_maintenance_stations"]
+        suspended_stations = network["suspended_stations"]
+        expected_stations = operational_stations + under_maintenance_stations + suspended_stations
         if item.reported_stations > expected_stations:
             raise HTTPException(
                 status_code=400,
-                detail=f"Reported stations cannot exceed the {expected_stations} operational stations",
+                detail=f"Reported stations cannot exceed the {expected_stations} expected stations",
             )
+        target_month = month_start(item.report_month)
+        before = reporting_snapshot(cursor, target_month)
         cursor.execute(
             """
             INSERT INTO monthly_reporting_status (
-                report_month, expected_stations, reported_stations, validated_reports,
+                report_month, expected_stations, operational_stations,
+                under_maintenance_stations, suspended_stations,
+                reported_stations, validated_reports,
                 notes, recorded_by_user_id, recorded_by_username
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE expected_stations = VALUES(expected_stations),
+                operational_stations = VALUES(operational_stations),
+                under_maintenance_stations = VALUES(under_maintenance_stations),
+                suspended_stations = VALUES(suspended_stations),
                 reported_stations = VALUES(reported_stations),
                 validated_reports = VALUES(validated_reports), notes = VALUES(notes),
                 recorded_by_user_id = VALUES(recorded_by_user_id),
                 recorded_by_username = VALUES(recorded_by_username), updated_at = CURRENT_TIMESTAMP
             """,
-            (month_start(item.report_month), expected_stations, item.reported_stations,
+            (target_month, expected_stations,
+             operational_stations, under_maintenance_stations, suspended_stations,
+             item.reported_stations,
              0, item.notes.strip() if item.notes else None,
              user["user_id"], user["username"]),
         )
+        after = reporting_snapshot(cursor, target_month)
+        record_reporting_change(cursor, target_month, "Updated" if before else "Created",
+                                before, after, user, after["reporting_status_id"])
         connection.commit()
         return {"message": "Monthly reporting status saved"}
+    except Exception:
+        if "connection" in locals() and connection.is_connected(): connection.rollback()
+        raise
     finally:
         if "cursor" in locals(): cursor.close()
         if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+@app.get("/reporting-status/history")
+def get_reporting_history(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    report_month: str | None = Query(default=None, max_length=7),
+    sort_by: Literal["changed_at", "report_month", "action", "changed_by_username"] = "changed_at",
+    sort_order: Literal["asc", "desc"] = "desc",
+    _user=Depends(require_reporting_view),
+):
+    target_month = month_start(report_month) if report_month else None
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        where = " WHERE report_month = %s" if target_month else ""
+        params = (target_month,) if target_month else ()
+        cursor.execute("SELECT COUNT(*) AS total FROM monthly_reporting_changes" + where, params)
+        total = cursor.fetchone()["total"]
+        order_column = {
+            "changed_at": "changed_at", "report_month": "report_month",
+            "action": "action", "changed_by_username": "changed_by_username",
+        }[sort_by]
+        cursor.execute("""SELECT change_id, reporting_status_id,
+            DATE_FORMAT(report_month, '%Y-%m') AS report_month, action,
+            before_data, after_data, changed_by_username, changed_at
+            FROM monthly_reporting_changes""" + where +
+            f" ORDER BY {order_column} {sort_order.upper()}, change_id DESC LIMIT %s OFFSET %s",
+            (*params, page_size, (page - 1) * page_size))
+        items = cursor.fetchall()
+        for item in items:
+            for key in ("before_data", "after_data"):
+                if isinstance(item[key], (str, bytes)):
+                    item[key] = json.loads(item[key])
+        return {"items": items, "total": total, "page": page, "page_size": page_size}
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
 
 
 @app.post("/reporting-status/non-reported-file")
@@ -5951,9 +8090,13 @@ async def upload_non_reported_station_file(
         ensure_application_tables(connection)
         cursor = connection.cursor()
         target_month = month_start(report_month)
-        cursor.execute("SELECT 1 FROM monthly_reporting_status WHERE report_month = %s", (target_month,))
-        if cursor.fetchone() is None:
+        cursor.execute("SELECT reporting_status_id FROM monthly_reporting_status WHERE report_month = %s", (target_month,))
+        record = cursor.fetchone()
+        if record is None:
             raise HTTPException(status_code=409, detail="Save the monthly reporting status before uploading its station list")
+        cursor.execute("""SELECT original_filename, file_size, uploaded_by_username
+            FROM monthly_non_reported_station_files WHERE report_month = %s""", (target_month,))
+        previous_file = cursor.fetchone()
         cursor.execute(
             """
             INSERT INTO monthly_non_reported_station_files (
@@ -5968,9 +8111,15 @@ async def upload_non_reported_station_file(
             (target_month, clean_filename, content_type, len(content), content,
              user["user_id"], user["username"]),
         )
+        before = ({"filename": previous_file[0], "file_size": previous_file[1],
+                   "uploaded_by_username": previous_file[2]} if previous_file else None)
+        after = {"filename": clean_filename, "file_size": len(content),
+                 "uploaded_by_username": user["username"]}
+        record_reporting_change(cursor, target_month, "File uploaded", before, after,
+                                user, record[0])
         connection.commit()
         return {"message": "Non-reported station list saved"}
-    except HTTPException:
+    except Exception:
         if "connection" in locals() and connection.is_connected(): connection.rollback()
         raise
     finally:
@@ -6001,19 +8150,30 @@ def download_non_reported_station_file(file_id: int, _user=Depends(require_repor
 @app.delete("/reporting-status/{reporting_status_id}", status_code=204)
 def delete_reporting_status(
     reporting_status_id: int,
-    _user=Depends(require_data_operations_writer),
+    user=Depends(require_data_operations_writer),
 ):
     try:
         connection = get_connection()
-        cursor = connection.cursor()
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
         cursor.execute("SELECT report_month FROM monthly_reporting_status WHERE reporting_status_id = %s", (reporting_status_id,))
         record = cursor.fetchone()
         if record is None:
             raise HTTPException(status_code=404, detail="Reporting status not found")
-        cursor.execute("DELETE FROM monthly_non_reported_station_files WHERE report_month = %s", (record[0],))
+        target_month = record["report_month"]
+        before = reporting_snapshot(cursor, target_month)
+        cursor.execute("""SELECT original_filename, file_size, uploaded_by_username
+            FROM monthly_non_reported_station_files WHERE report_month = %s""", (target_month,))
+        file_record = cursor.fetchone()
+        if file_record:
+            before["non_reported_file"] = {"filename": file_record["original_filename"],
+                                           "file_size": file_record["file_size"],
+                                           "uploaded_by_username": file_record["uploaded_by_username"]}
+        cursor.execute("DELETE FROM monthly_non_reported_station_files WHERE report_month = %s", (target_month,))
         cursor.execute("DELETE FROM monthly_reporting_status WHERE reporting_status_id = %s", (reporting_status_id,))
+        record_reporting_change(cursor, target_month, "Deleted", before, None, user, reporting_status_id)
         connection.commit()
-    except HTTPException:
+    except Exception:
         if "connection" in locals() and connection.is_connected(): connection.rollback()
         raise
     finally:
@@ -6058,9 +8218,12 @@ def get_data_requests(
         for item in items:
             totals[item["request_month"]] = totals.get(item["request_month"], 0) + item["served_requests"]
             categories[item["category"]] = categories.get(item["category"], 0) + item["served_requests"]
+        fiscal_year_totals, fiscal_quarter_totals = fiscal_totals_by_month(totals)
         return {
             "items": items,
             "monthly_totals": totals,
+            "fiscal_quarter_totals": fiscal_quarter_totals,
+            "fiscal_year_totals": fiscal_year_totals,
             "category_totals": categories,
             "can_manage": _user["department"] == "Admin" or _user["department"] in DATA_OPERATIONS_ROLES,
         }
@@ -6075,6 +8238,10 @@ def save_data_request(item: MonthlyDataRequest, user=Depends(require_data_operat
         connection = get_connection()
         ensure_application_tables(connection)
         cursor = connection.cursor()
+        cursor.execute("SELECT data_request_id FROM monthly_data_requests WHERE request_month = %s AND category = %s",
+                       (month_start(item.request_month), item.category.strip()))
+        existing = cursor.fetchone()
+        before = audit_snapshot(connection, "data_requests", existing[0]) if existing else {}
         cursor.execute(
             """
             INSERT INTO monthly_data_requests (
@@ -6088,6 +8255,11 @@ def save_data_request(item: MonthlyDataRequest, user=Depends(require_data_operat
             (month_start(item.request_month), item.category.strip(), item.served_requests,
              item.notes.strip() if item.notes else None, user["user_id"], user["username"]),
         )
+        cursor.execute("SELECT data_request_id FROM monthly_data_requests WHERE request_month = %s AND category = %s",
+                       (month_start(item.request_month), item.category.strip()))
+        data_request_id = cursor.fetchone()[0]
+        record_entity_edit(connection, "data_requests", data_request_id, before,
+                           audit_snapshot(connection, "data_requests", data_request_id), user)
         connection.commit()
         return {"message": "Monthly data request count saved"}
     finally:
@@ -6112,6 +8284,12 @@ def save_data_request_batch(
         ensure_application_tables(connection)
         cursor = connection.cursor()
         target_month = month_start(item.request_month)
+        before_by_category = {}
+        for name, _entry in categories.values():
+            cursor.execute("SELECT data_request_id FROM monthly_data_requests WHERE request_month = %s AND category = %s",
+                           (target_month, name))
+            existing = cursor.fetchone()
+            before_by_category[name] = audit_snapshot(connection, "data_requests", existing[0]) if existing else {}
         cursor.executemany(
             """
             INSERT INTO monthly_data_requests (
@@ -6131,6 +8309,12 @@ def save_data_request_batch(
                 for name, entry in categories.values()
             ],
         )
+        for name, _entry in categories.values():
+            cursor.execute("SELECT data_request_id FROM monthly_data_requests WHERE request_month = %s AND category = %s",
+                           (target_month, name))
+            data_request_id = cursor.fetchone()[0]
+            record_entity_edit(connection, "data_requests", data_request_id, before_by_category[name],
+                               audit_snapshot(connection, "data_requests", data_request_id), user)
         connection.commit()
         return {"message": "Monthly request categories saved", "saved": len(categories)}
     except MySQLError as exc:
@@ -6151,6 +8335,7 @@ def update_data_request(
         connection = get_connection()
         ensure_application_tables(connection)
         cursor = connection.cursor()
+        before = audit_snapshot(connection, "data_requests", data_request_id)
         cursor.execute(
             """
             UPDATE monthly_data_requests
@@ -6167,6 +8352,8 @@ def update_data_request(
         )
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Data request record not found")
+        record_entity_edit(connection, "data_requests", data_request_id, before,
+                           audit_snapshot(connection, "data_requests", data_request_id), user)
         connection.commit()
         return {"message": "Data request record updated"}
     except IntegrityError as exc:
@@ -6279,7 +8466,7 @@ def search_database(
                 CAST(latitude AS DOUBLE) AS latitude,
                 CAST(longitude AS DOUBLE) AS longitude,
                 CAST(altitude AS DOUBLE) AS altitude,
-                province, district, sector, station_category, status, suspended,
+                province, district, sector, station_category, status,
                 comment, action
             FROM stations WHERE 1=1
             """ + station_scope,
@@ -6306,7 +8493,7 @@ def search_database(
                 (item for item in accessible_stations if item["station_id"] == context_station_id),
                 None,
             )
-        cursor.execute("SELECT COUNT(*) AS total, SUM(suspended) AS suspended FROM stations WHERE 1=1" + station_scope, tuple(scope_parameters))
+        cursor.execute("SELECT COUNT(*) AS total, SUM(status = 'Suspended') AS suspended FROM stations WHERE 1=1" + station_scope, tuple(scope_parameters))
         station_summary = cursor.fetchone()
         cursor.execute("SELECT COUNT(*) AS total FROM maintenance_records WHERE 1=1" + record_scope, tuple(scope_parameters))
         maintenance_total = cursor.fetchone()["total"]
@@ -6319,7 +8506,8 @@ def search_database(
         cursor.execute(
             """
             SELECT DATE_FORMAT(report_month, '%Y-%m') AS report_month,
-                expected_stations, reported_stations
+                operational_stations, under_maintenance_stations, suspended_stations,
+                reported_stations
             FROM monthly_reporting_status ORDER BY report_month DESC LIMIT 1
             """
         )
@@ -6376,7 +8564,7 @@ def search_database(
                 f"{station_candidate['altitude']:g} metres."
             )
         elif station_candidate and asks_for_suspension_cause:
-            if station_candidate["suspended"]:
+            if station_candidate["status"] == "Suspended":
                 cause = station_candidate["comment"] or "No suspension cause has been recorded"
                 next_action = station_candidate["action"]
                 answer = f"{station_candidate['station_name']} is suspended. The recorded cause is: {cause}."
@@ -6424,8 +8612,7 @@ def search_database(
         elif station_candidate and ("category" in lower or "type" in lower):
             answer = f"{station_candidate['station_name']} is classified as {station_candidate['station_category']}."
         elif station_candidate and ("status" in lower or "operational" in lower or "suspended" in lower):
-            suspension = "suspended" if station_candidate["suspended"] else "not suspended"
-            answer = f"{station_candidate['station_name']} is {station_candidate['status']} and is {suspension}."
+            answer = f"{station_candidate['station_name']} has status {station_candidate['status']}."
         elif "suspend" in lower:
             answer = f"There are {int(station_summary['suspended'] or 0)} suspended stations."
         elif "maintenance" in lower:
@@ -6437,9 +8624,13 @@ def search_database(
         elif "request" in lower:
             answer = f"A total of {request_total} served data requests has been recorded."
         elif "report" in lower and latest_reporting:
-            expected = latest_reporting["expected_stations"]
-            coverage = round(latest_reporting["reported_stations"] * 100 / expected, 1) if expected else 0
-            answer = f"For {latest_reporting['report_month']}, {latest_reporting['reported_stations']} of {expected} stations reported ({coverage}% coverage)."
+            counts = [latest_reporting[key] for key in
+                      ("operational_stations", "under_maintenance_stations", "suspended_stations")]
+            expected = sum(counts) if all(count is not None for count in counts) else None
+            percent = reporting_percentage(latest_reporting["operational_stations"], expected)
+            answer = (f"For {latest_reporting['report_month']}, {latest_reporting['reported_stations']} stations reported. "
+                      + (f"Reporting percentage was {percent}% ({latest_reporting['operational_stations']} operational / {expected} expected)."
+                         if percent is not None else "The operational/expected percentage is unavailable for this older record."))
         elif "station" in lower:
             answer = f"The network contains {station_summary['total']} stations."
         else:

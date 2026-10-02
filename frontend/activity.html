@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Activity Log | Station Operations</title>
+    <link rel="stylesheet" href="css/app.css?v=20261001activity">
+</head>
+<body>
+    <header class="app-header"><div class="header-inner">
+        <div><p class="eyebrow">Operations</p><h1>Station Operations</h1></div>
+        <nav aria-label="Primary navigation"></nav>
+        <div class="user-menu"><span><strong data-user-name></strong><small data-user-department></small></span>
+            <button class="header-button" type="button" data-logout>Sign out</button></div>
+    </div></header>
+    <main class="welcome-main">
+        <section>
+            <div class="section-heading"><div><p class="eyebrow">Administration</p><h2>Activity log</h2></div>
+                <button id="activityRefresh" type="button" class="secondary-button">Refresh</button></div>
+            <p id="activityMessage" role="status"></p>
+            <div class="table-wrap"><table><thead><tr><th>Time</th><th>Person</th><th>Action</th><th>Record</th><th>Reference</th><th>Affected</th></tr></thead>
+                <tbody id="activityRows"></tbody></table></div>
+            <div class="notification-controls"><button id="activityPrevious" type="button" title="Previous page" aria-label="Previous page">&lt;</button>
+                <span id="activityPage"></span><button id="activityNext" type="button" title="Next page" aria-label="Next page">&gt;</button></div>
+        </section>
+    </main>
+    <script src="js/config.js"></script>
+    <script src="js/api.js?v=20261001activity"></script>
+    <script src="js/activity.js"></script>
+</body>
+</html>

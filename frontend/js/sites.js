@@ -18,7 +18,7 @@ function appendSiteStations(row, site) {
         const name = document.createElement("strong");
         name.textContent = `${station.station_code} - ${station.station_name}`;
         const details = document.createElement("small");
-        details.textContent = `${station.station_category} · ${station.status}${station.suspended ? " · Suspended" : ""}`;
+        details.textContent = `${station.station_category} · ${station.status}`;
         item.append(name, details);
         list.appendChild(item);
     });
@@ -29,7 +29,9 @@ function appendSiteStations(row, site) {
 async function loadSites() {
     const table = document.getElementById("siteTable");
     showTableMessage(table, 10, "Loading sites...");
-    const parameters = collectionParameters(siteCollection);
+    const parameters = collectionParameters(siteCollection, {
+        district: document.getElementById("districtFilter")?.value || ""
+    });
     const response = await apiFetch(`/sites?${parameters}`);
     if (!response.ok) {
         showTableMessage(table, 10, await getErrorMessage(response, "Unable to load sites"));
@@ -63,6 +65,11 @@ async function loadSites() {
 document.addEventListener("DOMContentLoaded", async () => {
     initializeShell();
     if (!await requireSession()) return;
+    const stationsResponse = await apiFetch("/stations");
+    if (stationsResponse.ok) setupDistrictFilter(
+        document.querySelector(".table-tools"), await stationsResponse.json(),
+        () => { siteCollection.page = 1; loadSites(); }
+    );
     document.getElementById("refreshSites").addEventListener("click", loadSites);
     bindCollectionControls({
         state: siteCollection,

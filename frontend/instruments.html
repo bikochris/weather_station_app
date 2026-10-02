@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instruments | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css?v=20260927n">
+    <title>Instruments | Station Operations</title>
+    <link rel="stylesheet" href="css/app.css?v=20261001activity">
 </head>
 <body>
     <header class="app-header">
         <div class="header-inner">
             <div>
                 <p class="eyebrow">Operations</p>
-                <h1>Weather Station Management</h1>
+                <h1>Station Operations</h1>
             </div>
             <nav aria-label="Primary navigation">
                 <a href="index.html">Home</a>
@@ -103,6 +103,7 @@
                     <div class="field span-2">
                         <label for="instrumentCsvFile">CSV file</label>
                         <input type="file" id="instrumentCsvFile" accept=".csv,text/csv">
+                        <small>Exported CSV files can be imported here. Repeated instrument names are combined; existing names update only after confirmation.</small>
                     </div>
                     <div class="form-actions span-2">
                         <button type="button" id="uploadInstruments">Upload CSV</button>
@@ -139,17 +140,17 @@
                 <button class="secondary-button" id="instrumentExportPdf" type="button">Export PDF</button>
             </div>
             <div class="table-wrap">
-                <table class="instrument-table">
+                <table class="instrument-table" data-server-sorted="true">
                     <thead>
                         <tr>
-                            <th>ID</th>
+                            <th data-sort="instrument_id">ID</th>
                             <th data-sort="instrument_name">Instrument</th>
-                            <th>Parameters it takes</th>
+                            <th data-sort="parameters_taken">Parameters it takes</th>
                             <th data-sort="category">Category</th>
-                            <th>Station categories</th>
-                            <th>Description</th>
+                            <th data-sort="station_categories">Station categories</th>
+                            <th data-sort="description">Description</th>
                             <th data-sort="status">Status</th>
-                            <th>Recorded by</th>
+                            <th data-sort="recorded_by">Recorded by</th>
                             <th class="it-only" hidden>Actions</th>
                         </tr>
                     </thead>
@@ -161,7 +162,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20260928p"></script>
-    <script src="js/instruments.js?v=20260926d"></script>
+    <script src="js/api.js?v=20261001activity"></script>
+    <script src="js/instruments.js?v=20260930audit2"></script>
 </body>
 </html>

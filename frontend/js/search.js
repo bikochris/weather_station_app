@@ -5,7 +5,7 @@ function appendChatMessage(role, text) {
     const message = document.createElement("div");
     message.className = `chat-message ${role}-message`;
     const heading = document.createElement("strong");
-    heading.textContent = role === "user" ? currentUser.full_name : "Database assistant";
+    heading.textContent = role === "user" ? currentUser.full_name : "Operational search";
     const content = document.createElement("p");
     content.textContent = text;
     message.append(heading, content);
@@ -48,7 +48,7 @@ function clearConversation() {
     const welcome = document.createElement("div");
     welcome.className = "chat-message assistant-message";
     const heading = document.createElement("strong");
-    heading.textContent = "Database assistant";
+    heading.textContent = "Operational search";
     const content = document.createElement("p");
     content.textContent = "Conversation cleared. Ask a new question about the database.";
     welcome.append(heading, content);

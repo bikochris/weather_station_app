@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Station Instruments | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css?v=20260927n">
+    <title>Station Instruments | Station Operations</title>
+    <link rel="stylesheet" href="css/app.css?v=20261001activity">
 </head>
 <body>
     <header class="app-header">
         <div class="header-inner">
             <div>
                 <p class="eyebrow">Operations</p>
-                <h1>Weather Station Management</h1>
+                <h1>Station Operations</h1>
             </div>
             <nav aria-label="Primary navigation">
                 <a href="index.html">Home</a>
@@ -79,6 +79,14 @@
                     <label for="replacementDate">Replacement date <span class="muted">(optional)</span></label>
                     <input type="date" id="replacementDate">
                 </div>
+                <div class="field">
+                    <label for="recommendedCalibrationDate">Recommended calibration date</label>
+                    <input type="date" id="recommendedCalibrationDate">
+                </div>
+                <div class="field">
+                    <label for="recommendedReplacementDate">Recommended replacement date</label>
+                    <input type="date" id="recommendedReplacementDate">
+                </div>
                 <div class="field span-2">
                     <label for="stationInstrumentStatus">Status</label>
                     <select id="stationInstrumentStatus" required>
@@ -120,6 +128,10 @@
                         <label for="stationFilter">Station</label>
                         <select id="stationFilter"></select>
                     </div>
+                    <div class="field filter-field">
+                        <label for="districtFilter">District</label>
+                        <select id="districtFilter"><option value="">All districts</option></select>
+                    </div>
                     <button class="secondary-button" type="button" id="refreshStationInstruments">Refresh</button>
                 </div>
             </div>
@@ -143,30 +155,32 @@
             </div>
 
             <div class="table-wrap">
-                <table class="station-instrument-table">
+                <table class="station-instrument-table" data-server-sorted="true">
                     <thead>
                         <tr>
                             <th data-sort="station">Station</th>
-                            <th>Station category</th>
+                            <th data-sort="station_category">Station category</th>
                             <th data-sort="instrument">Instrument</th>
-                            <th>Parameters</th>
-                            <th>Model</th>
-                            <th>Manufacturer</th>
-                            <th>Serial number</th>
+                            <th data-sort="parameters">Parameters</th>
+                            <th data-sort="model">Model</th>
+                            <th data-sort="manufacturer">Manufacturer</th>
+                            <th data-sort="serial_number">Serial number</th>
                             <th data-sort="installation_date">Installation date</th>
                             <th data-sort="calibration_date">Calibration date</th>
                             <th data-sort="replacement_date">Replacement date</th>
+                            <th data-sort="recommended_calibration_date">Recommended calibration</th>
+                            <th data-sort="recommended_replacement_date">Recommended replacement</th>
                             <th data-sort="status">Status</th>
-                            <th>Comment</th>
-                            <th>Recorded by</th>
-                            <th>Recorded at</th>
-                            <th>Updated by</th>
-                            <th>Updated at</th>
+                            <th data-sort="comment">Comment</th>
+                            <th data-sort="recorded_by">Recorded by</th>
+                            <th data-sort="recorded_at">Recorded at</th>
+                            <th data-sort="updated_by">Updated by</th>
+                            <th data-sort="updated_at">Updated at</th>
                             <th id="stationInstrumentActionsHeading">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="stationInstrumentTable">
-                        <tr><td colspan="17">Loading station instruments...</td></tr>
+                        <tr><td colspan="19">Loading station instruments...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -199,7 +213,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20260928p"></script>
-    <script src="js/station-instruments.js?v=20260926b"></script>
+    <script src="js/api.js?v=20261001activity"></script>
+    <script src="js/station-instruments.js?v=20260930audit2"></script>
 </body>
 </html>

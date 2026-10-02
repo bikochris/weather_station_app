@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Station Visitors | Station Operations</title>
+    <link rel="stylesheet" href="css/app.css?v=20261001activity">
+</head>
+<body>
+    <header class="app-header"><div class="header-inner">
+        <div><p class="eyebrow">Operations</p><h1>Station Operations</h1></div>
+        <nav aria-label="Primary navigation"><a href="index.html">Home</a><a class="active" href="station-visitors.html">Station visitors</a></nav>
+        <div class="user-menu"><span><strong data-user-name></strong><small data-user-department></small></span><button class="header-button" type="button" data-logout>Sign out</button></div>
+    </div></header>
+    <main class="dashboard-layout">
+        <div class="dashboard-content">
+            <section id="visitorEditor">
+                <div class="section-heading"><div><p class="eyebrow">Visit log</p><h2>Record station visitors</h2></div></div>
+                <form id="visitorForm" class="form-grid">
+                    <div class="field"><label for="visitorStation">Station</label><select id="visitorStation" required></select></div>
+                    <div class="field"><label for="visitorCategory">Visitor category</label><select id="visitorCategory" required></select></div>
+                    <div class="field"><label for="visitorDate">Visit date</label><input id="visitorDate" type="date" required></div>
+                    <div class="field"><label for="visitorInstitution">Institution or school</label><input id="visitorInstitution" maxlength="200" required></div>
+                    <div class="field"><label for="visitorNumber">Number of visitors</label><input id="visitorNumber" type="number" min="1" step="1" required></div>
+                    <div class="field span-2"><label for="visitorMission">Mission of visit</label><textarea id="visitorMission" maxlength="1000" required></textarea></div>
+                    <div class="form-actions span-2"><button type="submit">Save visit</button><button type="button" id="cancelVisitor" class="secondary-button" hidden>Cancel edit</button></div>
+                    <p id="visitorMessage" class="message span-2" aria-live="polite"></p>
+                </form>
+            </section>
+            <section id="visitorCategoryPanel" hidden>
+                <div class="section-heading"><div><p class="eyebrow">Admin settings</p><h2>Visitor categories</h2></div></div>
+                <form id="visitorCategoryForm" class="filter-bar"><div class="field"><label for="newVisitorCategory">Category name</label><input id="newVisitorCategory" maxlength="100" required></div><button type="submit">Save category</button></form>
+                <p id="categoryMessage" class="message" aria-live="polite"></p><div id="visitorCategoryList"></div>
+            </section>
+            <section>
+                <div class="section-heading"><div><p class="eyebrow">Station activity</p><h2>Visitor records</h2></div></div>
+                <div class="filter-bar">
+                    <div class="field"><label for="filterDistrict">District</label><select id="filterDistrict"></select></div>
+                    <div class="field"><label for="filterStation">Station</label><select id="filterStation"></select></div>
+                    <div class="field"><label for="filterCategory">Category</label><select id="filterCategory"></select></div>
+                    <div class="field"><label for="filterInstitution">Institution or school</label><input id="filterInstitution" placeholder="Any institution"></div>
+                    <div class="field"><label for="monthFrom">From month</label><input id="monthFrom" type="month"></div>
+                    <div class="field"><label for="monthTo">To month</label><input id="monthTo" type="month"></div>
+                    <button class="secondary-button" id="applyVisitorFilters" type="button">Apply</button>
+                </div>
+                <div class="table-wrap"><table class="wide-data-table"><thead><tr><th>Visit date</th><th>District</th><th>Station</th><th>Institution or school</th><th>Mission</th><th>Category</th><th>Visitors</th><th>Recorded by</th><th id="visitorActionHeader">Actions</th></tr></thead><tbody id="visitorRows"></tbody></table></div>
+            </section>
+        </div>
+        <aside class="dashboard-sidebar"><p class="eyebrow">Visitor activity</p><h2>Selected period</h2><div class="metric-grid"><div class="metric-item"><span>Visitors</span><strong id="metricVisitors">0</strong></div><div class="metric-item"><span>Visits</span><strong id="metricVisits">0</strong></div><div class="metric-item"><span>Stations</span><strong id="metricStations">0</strong></div></div></aside>
+    </main>
+    <script src="js/config.js"></script><script src="js/api.js?v=20261001activity"></script><script src="js/station-visitors.js?v=20260930visitday1"></script>
+</body>
+</html>

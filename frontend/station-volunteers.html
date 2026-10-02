@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Volunteers at Stations | Station Operations</title>
+    <link rel="stylesheet" href="css/app.css?v=20261001activity">
+</head>
+<body>
+    <header class="app-header"><div class="header-inner">
+        <div><p class="eyebrow">Operations</p><h1>Station Operations</h1></div>
+        <nav aria-label="Primary navigation"><a href="index.html">Home</a><a class="active" href="station-volunteers.html">Volunteers at stations</a></nav>
+        <div class="user-menu"><span><strong data-user-name></strong><small data-user-department></small></span><button class="header-button" type="button" data-logout>Sign out</button></div>
+    </div></header>
+    <main class="dashboard-layout">
+        <div class="dashboard-content">
+            <section id="volunteerEditor">
+                <div class="section-heading"><div><p class="eyebrow">Station personnel</p><h2 id="volunteerFormHeading">Add volunteer</h2></div></div>
+                <form id="volunteerForm" class="form-grid">
+                    <div class="field span-2"><label for="volunteerStation">Station</label><select id="volunteerStation" required></select></div>
+                    <div class="field"><label for="stationCode">Station ID</label><input id="stationCode" readonly></div>
+                    <div class="field"><label for="stationName">Station name</label><input id="stationName" readonly></div>
+                    <div class="field"><label for="stationProvince">Province</label><input id="stationProvince" readonly></div>
+                    <div class="field"><label for="stationDistrict">District</label><input id="stationDistrict" readonly></div>
+                    <div class="field"><label for="stationSector">Sector</label><input id="stationSector" readonly></div>
+                    <div class="field"><label for="volunteerName">Volunteer name</label><input id="volunteerName" maxlength="150" required></div>
+                    <div class="field"><label for="volunteerId">ID</label><input id="volunteerId" maxlength="50" required></div>
+                    <div class="field"><label for="accountType">Account type</label><input id="accountType" maxlength="100" required></div>
+                    <div class="field"><label for="accountName">Account name</label><input id="accountName" maxlength="150" required></div>
+                    <div class="field"><label for="accountNumber">Account number</label><input id="accountNumber" maxlength="100" required></div>
+                    <div class="field"><label for="mobilePhone">Mobile phone</label><input id="mobilePhone" type="tel" maxlength="50" required></div>
+                    <div class="form-actions span-2"><button id="saveVolunteer" type="submit">Save volunteer</button><button id="cancelVolunteer" class="secondary-button" type="button" hidden>Cancel edit</button></div>
+                    <p id="volunteerMessage" class="message span-2" aria-live="polite"></p>
+                </form>
+            </section>
+            <section>
+                <div class="section-heading"><div><p class="eyebrow">Personnel register</p><h2>Volunteers at stations</h2></div><div class="action-group"><button id="exportVolunteerCsv" class="secondary-button" type="button">Export CSV</button><button id="exportVolunteerPdf" class="secondary-button" type="button">Export PDF</button></div></div>
+                <div class="filter-bar analytics-filter">
+                    <div class="field"><label for="filterProvince">Province</label><select id="filterProvince"></select></div>
+                    <div class="field"><label for="filterDistrict">District</label><select id="filterDistrict"></select></div>
+                    <div class="field"><label for="filterSector">Sector</label><select id="filterSector"></select></div>
+                    <div class="field"><label for="filterStation">Station</label><select id="filterStation"></select></div>
+                    <div class="field"><label for="filterAccountType">Account type</label><input id="filterAccountType" placeholder="Any account type"></div>
+                    <button id="applyVolunteerFilters" class="secondary-button" type="button">Apply</button>
+                </div>
+                <div class="table-toolbar"><div class="field"><label for="searchVolunteers">Search volunteers</label><input id="searchVolunteers" placeholder="Name, ID, station, account or phone"></div><div class="field"><label for="volunteerPageSize">Rows per page</label><select id="volunteerPageSize"><option>10</option><option selected>25</option><option>50</option><option>100</option></select></div></div>
+                <div class="table-wrap"><table class="wide-data-table station-volunteer-table"><thead><tr>
+                    <th data-sort="station_code">Station ID</th><th data-sort="station_name">Station name</th><th data-sort="province">Province</th><th data-sort="district">District</th><th data-sort="sector">Sector</th><th data-sort="volunteer_name">Volunteer name</th><th data-sort="volunteer_identifier">ID</th><th data-sort="account_type">Account type</th><th data-sort="account_name">Account name</th><th data-sort="account_number">Account number</th><th data-sort="mobile_phone">Mobile phone</th><th>Actions</th>
+                </tr></thead><tbody id="volunteerRows"><tr><td colspan="12">Loading...</td></tr></tbody></table></div>
+                <div class="pagination-bar" id="volunteerPagination"></div>
+            </section>
+        </div>
+        <aside class="dashboard-sidebar"><p class="eyebrow">Selected register</p><h2>Volunteer totals</h2><div class="metric-grid"><div class="metric-item"><span>Volunteers</span><strong id="metricVolunteers">0</strong></div><div class="metric-item"><span>Stations</span><strong id="metricStations">0</strong></div></div></aside>
+    </main>
+    <script src="js/config.js"></script><script src="js/api.js?v=20261001activity"></script><script src="js/station-volunteers.js?v=20260930volunteers1"></script>
+</body>
+</html>

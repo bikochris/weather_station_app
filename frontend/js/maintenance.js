@@ -162,7 +162,8 @@ async function deleteMaintenanceReport(reportId) {
 
 async function loadMaintenanceReports() {
     const table = document.getElementById("maintenanceReportTable");
-    const response = await apiFetch("/maintenance-reports");
+    const district = document.getElementById("districtFilter")?.value || "";
+    const response = await apiFetch(`/maintenance-reports?${new URLSearchParams({district})}`);
     if (!response.ok) throw new Error(await getErrorMessage(response, "Unable to load maintenance reports"));
     const result = await response.json();
     maintenanceReports = result.items;
@@ -225,6 +226,7 @@ function renderMaintenanceInstrumentOptions(selectedIds = new Set()) {
         )
         : [];
     container.replaceChildren();
+    document.getElementById("maintenanceInstrumentDetails").replaceChildren();
     if (!station) {
         const message = document.createElement("p");
         message.className = "muted";
@@ -255,6 +257,7 @@ function renderMaintenanceInstrumentOptions(selectedIds = new Set()) {
         checkbox.name = "instrumentIds";
         checkbox.value = instrument.instrument_id;
         checkbox.checked = selectedIds.has(instrument.instrument_id);
+        checkbox.addEventListener("change", () => renderMaintenanceInstrumentDetails());
         const details = document.createElement("span");
         const name = document.createElement("strong");
         name.textContent = instrument.instrument_name;
@@ -263,6 +266,55 @@ function renderMaintenanceInstrumentOptions(selectedIds = new Set()) {
         details.append(name, category);
         label.append(checkbox, details);
         container.appendChild(label);
+    });
+    renderMaintenanceInstrumentDetails();
+}
+
+
+function renderMaintenanceInstrumentDetails(initialDetails = null) {
+    const container = document.getElementById("maintenanceInstrumentDetails");
+    const previous = new Map();
+    if (initialDetails) {
+        initialDetails.forEach(item => previous.set(Number(item.instrument_id), item));
+    } else {
+        container.querySelectorAll(".maintenance-instrument-detail").forEach(section => {
+            previous.set(Number(section.dataset.instrumentId), {
+                issue: section.querySelector('[data-field="issue"]').value,
+                action_done: section.querySelector('[data-field="action_done"]').value,
+                recommendation: section.querySelector('[data-field="recommendation"]').value
+            });
+        });
+    }
+    const selected = [...document.querySelectorAll('input[name="instrumentIds"]:checked')];
+    container.replaceChildren();
+    if (!selected.length) return;
+    const heading = document.createElement("h3");
+    heading.className = "maintenance-details-heading";
+    heading.textContent = "Work completed by instrument";
+    container.append(heading);
+    selected.forEach((checkbox) => {
+        const instrumentId = Number(checkbox.value);
+        const instrument = maintenanceInstrumentCatalog.find(item => item.instrument_id === instrumentId);
+        const values = previous.get(instrumentId) || {};
+        const section = document.createElement("section");
+        section.className = "maintenance-instrument-detail";
+        section.dataset.instrumentId = String(instrumentId);
+        const title = document.createElement("h4");
+        title.textContent = instrument?.instrument_name || `Instrument ${instrumentId}`;
+        section.append(title);
+        const fields = document.createElement("div");
+        fields.className = "maintenance-instrument-fields";
+        [["issue", "Issue", true], ["action_done", "Action done", true],
+            ["recommendation", "Recommendation", false]].forEach(([key, label, required]) => {
+            const field = document.createElement("div"); field.className = "field";
+            const id = `maintenance-${key}-${instrumentId}`;
+            const caption = document.createElement("label"); caption.htmlFor = id; caption.textContent = label;
+            const input = document.createElement("textarea");
+            input.id = id; input.dataset.field = key; input.maxLength = 2000;
+            input.required = required; input.rows = 3; input.value = values[key] || "";
+            field.append(caption, input); fields.append(field);
+        });
+        section.append(fields); container.append(section);
     });
 }
 
@@ -284,10 +336,8 @@ function editMaintenance(maintenanceId) {
     document.getElementById("stationId").value = record.station_id;
     const selectedIds = new Set(record.instruments.map((item) => item.instrument_id));
     renderMaintenanceInstrumentOptions(selectedIds);
+    renderMaintenanceInstrumentDetails(record.instruments);
     document.getElementById("maintenanceDate").value = record.maintenance_date;
-    document.getElementById("issue").value = record.issue;
-    document.getElementById("activityDone").value = record.activity_done;
-    document.getElementById("recommendations").value = record.recommendations || "";
     document.getElementById("technicians").value = record.technicians;
     document.getElementById("maintenanceSubmit").textContent = "Save changes";
     document.getElementById("cancelMaintenanceEdit").hidden = false;
@@ -296,7 +346,7 @@ function editMaintenance(maintenanceId) {
 
 
 async function deleteMaintenance(maintenanceId) {
-    if (!window.confirm("Delete this maintenance record?")) return;
+    if (!window.confirm("Delete this entire maintenance visit and all its instrument entries?")) return;
     const response = await apiFetch(`/maintenance/${maintenanceId}`, {method: "DELETE"});
     if (!response.ok) {
         window.alert(await getErrorMessage(response, "Unable to delete maintenance record"));
@@ -313,15 +363,101 @@ function appendMaintenanceActions(row, record) {
     const editButton = document.createElement("button");
     editButton.type = "button";
     editButton.className = "secondary-button";
-    editButton.textContent = "Edit";
+    editButton.textContent = "Edit visit";
     editButton.addEventListener("click", () => editMaintenance(record.maintenance_id));
     const deleteButton = document.createElement("button");
     deleteButton.type = "button";
     deleteButton.className = "danger-button";
-    deleteButton.textContent = "Delete";
+    deleteButton.textContent = "Delete visit";
     deleteButton.addEventListener("click", () => deleteMaintenance(record.maintenance_id));
     group.append(editButton, deleteButton);
     cell.appendChild(group);
+}
+
+
+function appendInstrumentHistory(row, record, instrument, columnCount) {
+    const instrumentCell = row.cells[3];
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "record-history-toggle";
+    toggle.textContent = "History";
+    toggle.setAttribute("aria-expanded", "false");
+    const detailRow = document.createElement("tr");
+    detailRow.className = "record-history-detail";
+    detailRow.hidden = true;
+    detailRow.id = `instrument-history-${record.maintenance_id}-${instrument.instrument_id}`;
+    toggle.setAttribute("aria-controls", detailRow.id);
+    const detailCell = detailRow.insertCell();
+    detailCell.colSpan = columnCount;
+    const content = document.createElement("div");
+    content.className = "instrument-maintenance-history";
+    detailCell.append(content);
+    instrumentCell.append(document.createElement("br"), toggle);
+    row.after(detailRow);
+    let loaded = false;
+    const open = async () => {
+        detailRow.hidden = !detailRow.hidden;
+        toggle.setAttribute("aria-expanded", String(!detailRow.hidden));
+        if (detailRow.hidden || loaded) return;
+        content.textContent = "Loading instrument history...";
+        try {
+            const response = await apiFetch(`/maintenance/instrument-history/${record.station_id}/${instrument.instrument_id}`);
+            if (!response.ok) throw new Error(await getErrorMessage(response, "Unable to load instrument history"));
+            const history = await response.json();
+            if (!detailRow.isConnected) return;
+            content.replaceChildren();
+            const heading = document.createElement("h4");
+            heading.textContent = `${instrument.instrument_name} at ${record.station_name} · ${history.total} visit${history.total === 1 ? "" : "s"}`;
+            content.append(heading);
+            history.items.forEach(item => {
+                const entry = document.createElement("div");
+                entry.className = "instrument-history-entry";
+                const title = document.createElement("strong");
+                title.textContent = `${item.maintenance_date} · Visit #${item.maintenance_id}`;
+                entry.append(title);
+                [["Issue", item.issue], ["Action done", item.action_done],
+                    ["Recommendation", item.recommendation], ["Technicians", item.technicians],
+                    ["Recorded by", item.recorded_by]].forEach(([label, value]) => {
+                    const line = document.createElement("div");
+                    line.textContent = `${label}: ${value || "-"}`;
+                    entry.append(line);
+                });
+                if (item.changes.length) {
+                    const changes = document.createElement("details");
+                    const summary = document.createElement("summary");
+                    summary.textContent = `${item.changes.length} tracked edit${item.changes.length === 1 ? "" : "s"}`;
+                    changes.append(summary);
+                    item.changes.forEach(change => {
+                        const edit = document.createElement("div");
+                        edit.className = "instrument-history-change";
+                        const actor = document.createElement("strong");
+                        actor.textContent = `${new Date(change.changed_at).toLocaleString()} · ${change.changed_by_username}`;
+                        edit.append(actor);
+                        for (const [key, label] of [["issue", "Issue"], ["action_done", "Action done"],
+                            ["recommendation", "Recommendation"]]) {
+                            if ((change.before?.[key] || "") === (change.after?.[key] || "")) continue;
+                            const line = document.createElement("div");
+                            line.textContent = `${label}: ${change.before?.[key] || "-"} → ${change.after?.[key] || "-"}`;
+                            edit.append(line);
+                        }
+                        Object.entries(change.shared_changes).forEach(([key, values]) => {
+                            const line = document.createElement("div");
+                            line.textContent = `${key.replaceAll("_", " ")}: ${values.before || "-"} → ${values.after || "-"}`;
+                            edit.append(line);
+                        });
+                        changes.append(edit);
+                    });
+                    entry.append(changes);
+                }
+                content.append(entry);
+            });
+            loaded = true;
+        } catch (error) { content.textContent = error.message; }
+    };
+    toggle.addEventListener("click", event => { event.stopPropagation(); open(); });
+    row.addEventListener("click", event => {
+        if (!event.target.closest("button, a, input, select, textarea, summary")) open();
+    });
 }
 
 
@@ -330,6 +466,7 @@ async function loadMaintenanceRecords() {
     const stationId = document.getElementById("stationFilter").value;
     const parameters = collectionParameters(maintenanceCollection, {
         station_id: stationId,
+        district: document.getElementById("districtFilter")?.value || "",
         date_from: document.getElementById("maintenanceDateFrom").value,
         date_to: document.getElementById("maintenanceDateTo").value
     });
@@ -358,21 +495,25 @@ async function loadMaintenanceRecords() {
             return;
         }
         maintenanceRecords.forEach((record) => {
-            const row = document.createElement("tr");
-            const names = record.instruments.length
-                ? record.instruments.map((instrument) => instrument.instrument_name).join(", ")
-                : "Not specified";
-            appendCell(row, record.maintenance_id);
-            appendCell(row, `${record.station_code} - ${record.station_name}`);
-            appendCell(row, record.maintenance_date);
-            appendCell(row, names);
-            appendCell(row, record.issue);
-            appendCell(row, record.activity_done);
-            appendCell(row, record.recommendations);
-            appendCell(row, record.technicians);
-            appendCell(row, record.recorded_by || "Legacy record");
-            if (canManage) appendMaintenanceActions(row, record);
-            table.appendChild(row);
+            const instruments = record.instruments.length ? record.instruments : [null];
+            instruments.forEach((instrument, index) => {
+                const row = document.createElement("tr");
+                appendCell(row, record.maintenance_id);
+                appendCell(row, `${record.station_code} - ${record.station_name}`);
+                appendCell(row, record.maintenance_date);
+                appendCell(row, instrument?.instrument_name || "Not specified");
+                appendCell(row, instrument?.issue || record.issue);
+                appendCell(row, instrument?.action_done || record.activity_done);
+                appendCell(row, instrument?.recommendation || record.recommendations);
+                appendCell(row, record.technicians);
+                appendCell(row, record.recorded_by || "Legacy record");
+                if (canManage) {
+                    if (index === 0) appendMaintenanceActions(row, record);
+                    else appendCell(row, "");
+                }
+                table.appendChild(row);
+                if (instrument) appendInstrumentHistory(row, record, instrument, columnCount);
+            });
         });
     } catch (error) {
         showTableMessage(table, columnCount, error.message);
@@ -398,6 +539,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         } else {
             await loadStationOptions();
         }
+        setupDistrictFilter(document.querySelector(".history-heading .filter-bar"), maintenanceStations,
+            () => { maintenanceCollection.page = 1; loadMaintenanceRecords(); loadMaintenanceReports(); });
         await Promise.all([loadMaintenanceRecords(), loadMaintenanceReports()]);
     } catch (error) {
         setMessage(message, error.message, "error");
@@ -419,9 +562,12 @@ document.addEventListener("DOMContentLoaded", async () => {
             station_id: Number(document.getElementById("stationId").value),
             maintenance_date: document.getElementById("maintenanceDate").value,
             instrument_ids: instrumentIds,
-            issue: document.getElementById("issue").value.trim(),
-            activity_done: document.getElementById("activityDone").value.trim(),
-            recommendations: document.getElementById("recommendations").value.trim() || null,
+            instrument_details: [...document.querySelectorAll(".maintenance-instrument-detail")].map(section => ({
+                instrument_id: Number(section.dataset.instrumentId),
+                issue: section.querySelector('[data-field="issue"]').value.trim(),
+                action_done: section.querySelector('[data-field="action_done"]').value.trim(),
+                recommendation: section.querySelector('[data-field="recommendation"]').value.trim() || null
+            })),
             technicians: document.getElementById("technicians").value.trim()
         };
         try {
@@ -512,6 +658,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         pdfButtonId: "maintenanceExportPdf",
         getExtraParameters: () => ({
             station_id: document.getElementById("stationFilter").value,
+            district: document.getElementById("districtFilter")?.value || "",
             date_from: document.getElementById("maintenanceDateFrom").value,
             date_to: document.getElementById("maintenanceDateTo").value
         })

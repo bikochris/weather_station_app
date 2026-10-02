@@ -2,16 +2,39 @@ let dataRequestRecords = [];
 let editingRequestId = null;
 let canManageRequests = false;
 
-function renderRequestChart(categories) {
-    const chart = document.getElementById("requestCategoryChart");
+function formatRequestMonth(month) {
+    const [year, number] = month.split("-").map(Number);
+    return new Intl.DateTimeFormat(undefined, {month: "short", year: "numeric"}).format(new Date(year, number - 1, 1));
+}
+
+function formatRequestQuarter(period) {
+    const quarterMonths = {Q1: "Jul-Sep", Q2: "Oct-Dec", Q3: "Jan-Mar", Q4: "Apr-Jun"};
+    const [year, quarter] = period.split(" ");
+    return `FY ${year} ${quarter} (${quarterMonths[quarter]})`;
+}
+
+function renderRequestPeriods(id, values, labelFor = value => value) {
+    const container = document.getElementById(id);
+    container.replaceChildren();
+    Object.entries(values).sort((a, b) => b[0].localeCompare(a[0])).forEach(([period, count]) => {
+        const row = document.createElement("div"); row.className = "data-period-row";
+        const label = document.createElement("span"); label.textContent = labelFor(period);
+        const total = document.createElement("strong"); total.textContent = count.toLocaleString();
+        row.append(label, total); container.append(row);
+    });
+    if (!container.childElementCount) container.textContent = "No requests";
+}
+
+function renderRequestChart(categories, id = "requestCategoryChart", labelFor = value => value, chronological = false) {
+    const chart = document.getElementById(id);
     chart.replaceChildren();
-    const entries = Object.entries(categories).sort((a, b) => b[1] - a[1]);
+    const entries = Object.entries(categories).sort((a, b) => chronological ? a[0].localeCompare(b[0]) : b[1] - a[1]);
     const max = Math.max(...entries.map((entry) => entry[1]), 1);
     entries.forEach(([label, value]) => {
         const row = document.createElement("div");
         row.className = "horizontal-bar-row";
         const name = document.createElement("span");
-        name.textContent = label;
+        name.textContent = labelFor(label);
         const track = document.createElement("div");
         track.className = "horizontal-bar-track";
         const bar = document.createElement("div");
@@ -19,11 +42,11 @@ function renderRequestChart(categories) {
         bar.style.width = `${value * 100 / max}%`;
         track.appendChild(bar);
         const count = document.createElement("strong");
-        count.textContent = value;
+        count.textContent = value.toLocaleString();
         row.append(name, track, count);
         chart.appendChild(row);
     });
-    if (!entries.length) chart.textContent = "No request categories recorded.";
+    if (!entries.length) chart.textContent = "No requests in this period.";
 }
 
 function addRequestCategoryRow(values = {}) {
@@ -169,8 +192,16 @@ async function loadDataRequests() {
         }
         table.appendChild(row);
     });
+    attachRecordHistoryRows(table, "data_requests", dataRequestRecords,
+        item => item.data_request_id);
     populateCategorySuggestions(result.category_totals);
     renderRequestChart(result.category_totals);
+    renderRequestPeriods("requestMonths", result.monthly_totals, formatRequestMonth);
+    renderRequestPeriods("requestFiscalQuarters", result.fiscal_quarter_totals, formatRequestQuarter);
+    renderRequestPeriods("requestFiscalYears", result.fiscal_year_totals, year => `FY ${year}`);
+    renderRequestChart(result.monthly_totals, "requestMonthChart", formatRequestMonth, true);
+    renderRequestChart(result.fiscal_quarter_totals, "requestQuarterChart", formatRequestQuarter, true);
+    renderRequestChart(result.fiscal_year_totals, "requestYearChart", year => `FY ${year}`, true);
     const months = Object.entries(result.monthly_totals).sort((a, b) => b[0].localeCompare(a[0]));
     setMetric("totalRequestsMetric", Object.values(result.category_totals).reduce((sum, value) => sum + value, 0));
     setMetric("requestCategoriesMetric", Object.keys(result.category_totals).length);

@@ -40,7 +40,7 @@ class WeatherStationLauncher:
     def __init__(self, root):
         self.root = root
         self.process = None
-        self.root.title("Weather Station App Launcher")
+        self.root.title("Station Operations Launcher")
         self.root.geometry("690x620")
         self.root.minsize(620, 570)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
@@ -48,9 +48,9 @@ class WeatherStationLauncher:
         self.values = {
             "host": tk.StringVar(value=current.get("DB_HOST") or "localhost"),
             "port": tk.StringVar(value=current.get("DB_PORT") or "3306"),
-            "user": tk.StringVar(value=current.get("DB_USER") or "weather_app"),
+            "user": tk.StringVar(value=current.get("DB_USER") or "Chris32"),
             "password": tk.StringVar(value=current.get("DB_PASSWORD") or ""),
-            "name": tk.StringVar(value=current.get("DB_NAME") or "weather_db"),
+            "name": tk.StringVar(value=current.get("DB_NAME") or "Weather_Stations_App"),
             "web_port": tk.StringVar(value="8000"),
         }
         self.status = tk.StringVar(value="Ready")

@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Station Inspections | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css?v=20260928s">
+    <title>Station Inspections | Station Operations</title>
+    <link rel="stylesheet" href="css/app.css?v=20261001activity">
 </head>
 <body>
     <header class="app-header">
         <div class="header-inner">
-            <div><p class="eyebrow">Operations</p><h1>Weather Station Management</h1></div>
+            <div><p class="eyebrow">Operations</p><h1>Station Operations</h1></div>
             <nav aria-label="Primary navigation">
                 <a href="index.html">Home</a><a href="stations.html">Stations</a><a href="sites.html">Sites</a>
                 <a href="maintenance.html">Maintenance</a><a class="active" href="station-inspections.html">Inspections</a><a href="discussions.html">Discussions</a>
@@ -170,8 +170,8 @@
                     <div class="field"><label for="inspectionPageSize">Rows per page</label><select id="inspectionPageSize"><option value="10">10</option><option value="25" selected>25</option><option value="50">50</option><option value="100">100</option></select></div>
                 </div>
                 <div class="table-wrap">
-                    <table class="inspection-table">
-                        <thead><tr><th data-sort="inspection_date">Date</th><th data-sort="station_name">Station</th><th>Finding</th><th data-sort="workflow_stage">Stage</th><th data-sort="status">Status</th><th>Reason</th><th>Inspector action</th><th>HQ review action</th><th>Maintenance action</th><th>Management action</th><th>Inspector</th><th data-sort="updated_at">Updated</th><th>Evidence</th><th>Actions</th></tr></thead>
+                    <table class="inspection-table" data-server-sorted="true">
+                        <thead><tr><th data-sort="inspection_date">Date</th><th data-sort="station_name">Station</th><th data-sort="finding">Finding</th><th data-sort="workflow_stage">Stage</th><th data-sort="status">Status</th><th data-sort="status_reason">Reason</th><th>Inspector action</th><th>HQ review action</th><th>Maintenance action</th><th>Management action</th><th data-sort="created_by_username">Inspector</th><th data-sort="updated_at">Updated</th><th>Evidence</th><th>Actions</th></tr></thead>
                         <tbody id="inspectionTable"></tbody>
                     </table>
                 </div>
@@ -194,7 +194,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20260928p"></script>
-    <script src="js/station-inspections.js?v=20260928f"></script>
+    <script src="js/api.js?v=20261001activity"></script>
+    <script src="js/station-inspections.js?v=20260930audit2"></script>
 </body>
 </html>

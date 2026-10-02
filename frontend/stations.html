@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stations | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css?v=20260927n">
+    <title>Stations | Station Operations</title>
+    <link rel="stylesheet" href="css/app.css?v=20261001activity">
 </head>
 <body>
     <header class="app-header">
         <div class="header-inner">
             <div>
                 <p class="eyebrow">Operations</p>
-                <h1>Weather Station Management</h1>
+                <h1>Station Operations</h1>
             </div>
             <nav aria-label="Primary navigation">
                 <a href="index.html">Home</a>
@@ -102,19 +102,14 @@
                 </div>
 
                 <div class="field">
-                    <label for="status">Operational status</label>
+                    <label for="status">Station status</label>
                     <select id="status" required>
                         <option value="Operational">Operational</option>
-                        <option value="Non-operational">Non-operational</option>
-                        <option value="Maintenance">Maintenance</option>
+                        <option value="Under maintenance">Under maintenance</option>
+                        <option value="Suspended">Suspended</option>
                         <option value="Closed">Closed</option>
                     </select>
                 </div>
-
-                <label class="checkbox-row span-2" for="stationSuspended">
-                    <input type="checkbox" id="stationSuspended">
-                    <span>Station is suspended</span>
-                </label>
 
                 <div class="field span-2">
                     <label for="stationComment">Comment</label>
@@ -145,6 +140,7 @@
                     <div class="field span-2">
                         <label for="stationCsvFile">CSV file</label>
                         <input type="file" id="stationCsvFile" accept=".csv,text/csv">
+                        <small>Exported station CSV files can be imported here. Existing Station IDs are updated only after confirmation.</small>
                     </div>
                     <div class="form-actions span-2">
                         <button type="button" id="uploadStations">Upload CSV</button>
@@ -183,11 +179,13 @@
                         </select>
                     </div>
                     <div class="field filter-field">
-                        <label for="stationSuspendedFilter">Suspension</label>
-                        <select id="stationSuspendedFilter">
-                            <option value="">All stations</option>
-                            <option value="1">Suspended</option>
-                            <option value="0">Not suspended</option>
+                        <label for="stationStatusFilter">Station status</label>
+                        <select id="stationStatusFilter">
+                            <option value="">All statuses</option>
+                            <option value="Operational">Operational</option>
+                            <option value="Under maintenance">Under maintenance</option>
+                            <option value="Suspended">Suspended</option>
+                            <option value="Closed">Closed</option>
                         </select>
                     </div>
                     <button class="secondary-button" id="refreshStations" type="button">Refresh</button>
@@ -213,24 +211,23 @@
             </div>
 
             <div class="table-wrap">
-                <table class="station-table">
+                <table class="station-table" data-server-sorted="true">
                     <thead>
                         <tr>
                             <th data-sort="station_code">Station ID</th>
                             <th data-sort="station_name">Station</th>
-                            <th>Latitude</th>
-                            <th>Longitude</th>
-                            <th>Altitude</th>
-                            <th>Province</th>
-                            <th>District</th>
-                            <th>Sector</th>
+                            <th data-sort="latitude">Latitude</th>
+                            <th data-sort="longitude">Longitude</th>
+                            <th data-sort="altitude">Altitude</th>
+                            <th data-sort="province">Province</th>
+                            <th data-sort="district">District</th>
+                            <th data-sort="sector">Sector</th>
                             <th data-sort="station_category">Station category</th>
-                            <th data-sort="status">Operational status</th>
-                            <th data-sort="suspended">Suspended</th>
-                            <th>Comment</th>
-                            <th>Action</th>
+                            <th data-sort="status">Station status</th>
+                            <th data-sort="comment">Comment</th>
+                            <th data-sort="action">Action</th>
                             <th data-sort="created_at">Registered at</th>
-                            <th>Recorded by</th>
+                            <th data-sort="recorded_by">Recorded by</th>
                             <th class="it-only" hidden>Manage</th>
                         </tr>
                     </thead>
@@ -249,6 +246,8 @@
                     <div class="metric-item"><span>Overall stations</span><strong id="stationTotalMetric">0</strong></div>
                     <div class="metric-item"><span>Operational</span><strong id="stationOperationalMetric">0</strong></div>
                     <div class="metric-item"><span>Need attention</span><strong id="stationAttentionMetric">0</strong></div>
+                    <div class="metric-item"><span>Under maintenance</span><strong id="stationUnderMaintenanceMetric">0</strong></div>
+                    <div class="metric-item"><span>Closed</span><strong id="stationClosedMetric">0</strong></div>
                     <div class="metric-item"><span>Suspended</span><strong id="stationSuspendedMetric">0</strong></div>
                     <div class="metric-item"><span>Suspended AWS</span><strong id="stationSuspendedAwsMetric">0</strong></div>
                     <div class="metric-item"><span>Suspended ARG</span><strong id="stationSuspendedArgMetric">0</strong></div>
@@ -260,7 +259,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20260928p"></script>
-    <script src="js/stations.js?v=20260926d"></script>
+    <script src="js/api.js?v=20261001activity"></script>
+    <script src="js/stations.js?v=20260930audit2"></script>
 </body>
 </html>

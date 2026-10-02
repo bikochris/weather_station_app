@@ -29,6 +29,8 @@ async function loadSuspectedDataStationOptions() {
         throw new Error(await getErrorMessage(response, "Unable to load stations"));
     }
     const stations = await response.json();
+    setupDistrictFilter(document.querySelector(".history-heading .filter-bar"), stations,
+        () => { suspectedDataCollection.page = 1; loadSuspectedDataRecords(); });
     const formSelect = document.getElementById("stationId");
     const resolutionSelect = document.getElementById("resolutionStationId");
     const filterSelect = document.getElementById("stationFilter");
@@ -234,6 +236,7 @@ async function loadSuspectedDataRecords() {
     const status = document.getElementById("statusFilter").value;
     const parameters = collectionParameters(suspectedDataCollection, {
         station_id: stationId,
+        district: document.getElementById("districtFilter")?.value || "",
         status,
         date_from: document.getElementById("suspectedDateFrom").value,
         date_to: document.getElementById("suspectedDateTo").value
@@ -292,6 +295,8 @@ async function loadSuspectedDataRecords() {
             if (canAct) appendSuspectedDataActions(row, record);
             table.appendChild(row);
         });
+        attachRecordHistoryRows(table, "suspected_data", suspectedDataRecords,
+            record => record.suspected_data_id);
     } catch (error) {
         showTableMessage(table, columnCount, error.message);
     }
@@ -477,6 +482,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         pdfButtonId: "suspectedDataExportPdf",
         getExtraParameters: () => ({
             station_id: document.getElementById("stationFilter").value,
+            district: document.getElementById("districtFilter")?.value || "",
             status: document.getElementById("statusFilter").value,
             date_from: document.getElementById("suspectedDateFrom").value,
             date_to: document.getElementById("suspectedDateTo").value

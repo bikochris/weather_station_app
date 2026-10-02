@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quality Control | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css?v=20260927n">
+    <title>Quality Control | Station Operations</title>
+    <link rel="stylesheet" href="css/app.css?v=20261001activity">
 </head>
 <body>
     <header class="app-header">
         <div class="header-inner">
             <div>
                 <p class="eyebrow">Operations</p>
-                <h1>Weather Station Management</h1>
+                <h1>Station Operations</h1>
             </div>
             <nav aria-label="Primary navigation">
                 <a href="index.html">Home</a>
@@ -244,26 +244,26 @@
             </div>
 
             <div class="table-wrap">
-                <table class="suspected-data-table">
+                <table class="suspected-data-table" data-server-sorted="true">
                     <thead>
                         <tr>
                             <th data-sort="station">Station</th>
                             <th data-sort="measurement">Measurement</th>
-                            <th>Description</th>
-                            <th>Reported by</th>
+                            <th data-sort="description">Description</th>
+                            <th data-sort="reported_by">Reported by</th>
                             <th data-sort="reported_at">Reported at</th>
-                            <th>Maintenance date</th>
-                            <th>Maintenance findings</th>
-                            <th>How solved</th>
-                            <th>Maintenance outcome</th>
-                            <th>Way forward</th>
-                            <th>Resolved by</th>
+                            <th data-sort="maintenance_date">Maintenance date</th>
+                            <th data-sort="maintenance_findings">Maintenance findings</th>
+                            <th data-sort="how_solved">How solved</th>
+                            <th data-sort="maintenance_outcome">Maintenance outcome</th>
+                            <th data-sort="way_forward">Way forward</th>
+                            <th data-sort="resolved_by">Resolved by</th>
                             <th data-sort="resolved_at">Resolved at</th>
                             <th data-sort="status">Status</th>
-                            <th>Finally solved?</th>
-                            <th>Final comment</th>
-                            <th>Final reviewed by</th>
-                            <th>Final reviewed at</th>
+                            <th data-sort="final_is_solved">Finally solved?</th>
+                            <th data-sort="final_comment">Final comment</th>
+                            <th data-sort="final_reviewed_by">Final reviewed by</th>
+                            <th data-sort="final_reviewed_at">Final reviewed at</th>
                             <th id="suspectedDataActionsHeading">Actions</th>
                         </tr>
                     </thead>
@@ -301,7 +301,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20260928p"></script>
-    <script src="js/suspected-data.js?v=20260926f"></script>
+    <script src="js/api.js?v=20261001activity"></script>
+    <script src="js/suspected-data.js?v=20260930audit2"></script>
 </body>
 </html>

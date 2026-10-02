@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Data Counts | Station Operations</title>
+    <link rel="stylesheet" href="css/app.css?v=20261001activity">
+</head>
+<body>
+<header class="app-header"><div class="header-inner">
+    <div><p class="eyebrow">Operations</p><h1>Station Operations</h1></div>
+    <nav aria-label="Primary navigation">
+        <a href="index.html">Home</a><a href="stations.html">Stations</a><a href="sites.html">Sites</a><a href="maintenance.html">Maintenance</a><a href="station-inspections.html">Inspections</a><a href="discussions.html">Discussions</a><a href="suspected-data.html">QC</a><a href="instruments.html">Instruments</a><a href="station-instruments.html">Station instruments</a><a href="volunteer-data.html">Volunteer data</a><a href="reporting-status.html">Reporting</a><a href="data-requests.html">Requests</a><a class="active" href="data-counts.html">Data counts</a><a href="instrument-status-summary.html">Instrument summary</a><a href="maintenance-summary.html">Maintenance summary</a><a href="kpi.html">KPI</a><a href="search.html">Search</a><a class="user-directory-access" href="users.html" hidden>Users</a>
+    </nav>
+    <div class="user-menu"><span><strong data-user-name></strong><small data-user-department></small></span><button class="header-button" type="button" data-logout>Sign out</button></div>
+</div></header>
+<main class="dashboard-layout"><div class="dashboard-content">
+    <section id="dataCountEditor"><div class="section-heading"><div><p class="eyebrow">Monthly observation volume</p><h2>Record data count</h2></div></div>
+        <form id="dataCountForm" class="form-grid">
+            <div class="field"><label for="entryMonth">Month</label><input id="entryMonth" type="month" required></div>
+            <div class="field"><label for="entryNotes">Notes</label><input id="entryNotes" maxlength="1000"></div>
+            <fieldset class="span-2 data-count-selector"><legend>Station categories</legend><div id="entryCategoryOptions" class="data-category-choices"></div></fieldset>
+            <div class="field"><label for="entryCount">Number of records for selected categories</label><input id="entryCount" type="number" min="0" step="1" required></div>
+            <div class="form-actions span-2"><button type="submit">Save count</button><button id="cancelCountEdit" class="secondary-button" type="button" hidden>Cancel edit</button></div>
+            <p id="entryMessage" class="message span-2" aria-live="polite"></p>
+        </form>
+    </section>
+    <section><div class="section-heading"><div><p class="eyebrow">Recorded totals</p><h2>Data counts</h2></div></div>
+        <div class="filter-bar analytics-filter">
+            <div class="field"><label>Station categories</label><details class="data-category-filter"><summary id="filterCategorySummary">All categories</summary><div id="filterCategoryOptions" class="data-category-options"></div></details></div>
+            <div class="field"><label for="monthFrom">From month</label><input id="monthFrom" type="month"></div>
+            <div class="field"><label for="monthTo">To month</label><input id="monthTo" type="month"></div>
+            <button class="secondary-button" id="applyFilters" type="button">Apply</button>
+        </div>
+        <div class="data-period-grid">
+            <div><h3>Month</h3><div id="dataMonths" class="data-period-list"></div></div>
+            <div><h3>Fiscal year (July-June)</h3><div id="dataFiscalYears" class="data-period-list"></div></div>
+            <div><h3>Fiscal quarter</h3><div id="dataFiscalQuarters" class="data-period-list"></div></div>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>Month</th><th>Station category</th><th>Records</th><th>Notes</th><th>Recorded by</th><th>Updated</th><th id="countActionsHeader">Actions</th></tr></thead><tbody id="dataCountRows"><tr><td colspan="7">Loading...</td></tr></tbody></table></div>
+    </section>
+    <section class="data-graphs"><div class="section-heading"><div><p class="eyebrow">Trends</p><h2>Data volume over time</h2></div></div>
+        <div class="data-graph data-graph-monthly"><h3>Monthly</h3><div id="dataCountMonthChart" class="horizontal-chart" aria-label="Monthly data counts"></div></div>
+        <div class="data-graph data-graph-quarterly"><h3>Fiscal quarters</h3><div id="dataCountQuarterChart" class="horizontal-chart" aria-label="Fiscal-quarter data counts"></div></div>
+        <div class="data-graph data-graph-yearly"><h3>Fiscal years (July-June)</h3><div id="dataCountYearChart" class="horizontal-chart" aria-label="Fiscal-year data counts"></div></div>
+    </section>
+</div><aside class="dashboard-sidebar" aria-label="Data count summary"><p class="eyebrow">Data volume</p><h2>Period totals</h2><div class="metric-grid"><div class="metric-item"><span>Records</span><strong id="metricRecords">0</strong></div><div class="metric-item"><span>Categories</span><strong id="metricCategories">0</strong></div><div class="metric-item"><span>Monthly entries</span><strong id="metricEntries">0</strong></div></div></aside></main>
+<script src="js/config.js"></script><script src="js/api.js?v=20261001activity"></script><script src="js/analytics-pages.js?v=20260930audit2"></script>
+</body></html>

@@ -67,6 +67,7 @@ async function loadVolunteerData() {
         if (["monthly_qc", "filtered_data", "filled_data"].every((kind) => item.files[kind]) && item.comments.length) complete += 1;
         table.appendChild(row);
     });
+    attachRecordHistoryRows(table, "volunteer_data", result.items, item => item.report_month);
     setMetric("volunteerMonthsMetric", result.items.length); setMetric("completePackagesMetric", complete); setMetric("uploadedFilesMetric", files); setMetric("supervisorCommentsMetric", comments);
 }
 

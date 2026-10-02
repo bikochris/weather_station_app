@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pre-maintenance reports | Station Operations</title>
+    <link rel="stylesheet" href="css/app.css?v=20261001activity">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div>
+                <p class="eyebrow">Operations</p>
+                <h1>Station Operations</h1>
+            </div>
+            <nav aria-label="Primary navigation">
+                <a href="index.html">Home</a>
+                <a href="stations.html">Stations</a>
+                <a href="sites.html">Sites</a>
+                <a href="maintenance.html">Maintenance</a>
+                <a class="active" href="pre-maintenance-reports.html">Pre-maintenance reports</a>
+                <a href="suspected-data.html">QC</a>
+                <a href="instruments.html">Instruments</a>
+                <a href="station-instruments.html">Station instruments</a>
+                <a href="volunteer-data.html">Volunteer data</a>
+                <a href="reporting-status.html">Reporting</a>
+                <a href="data-requests.html">Requests</a>
+                <a href="kpi.html">KPI</a>
+                <a href="search.html">Search</a>
+                <a class="user-directory-access" href="users.html" hidden>Users</a>
+            </nav>
+            <div class="user-menu">
+                <span><strong data-user-name></strong><small data-user-department></small></span>
+                <button class="header-button" type="button" data-logout>Sign out</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="dashboard-layout">
+        <div class="dashboard-content">
+        <section>
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Planning documentation</p>
+                    <h2>Pre-maintenance reports</h2>
+                </div>
+            </div>
+            <form id="maintenanceReportForm" class="form-grid" hidden>
+                <div class="field">
+                    <label for="reportPeriodStart">Pre-maintenance period start</label>
+                    <input type="date" id="reportPeriodStart" required>
+                </div>
+                <div class="field">
+                    <label for="reportPeriodEnd">Pre-maintenance period end</label>
+                    <input type="date" id="reportPeriodEnd" required>
+                </div>
+                <fieldset class="span-2">
+                    <legend>Stations covered by this report</legend>
+                    <div class="report-station-picker">
+                        <div class="report-district-panel">
+                            <strong>District</strong>
+                            <div id="maintenanceReportDistricts" class="report-district-list"></div>
+                        </div>
+                        <div class="report-stations-panel">
+                            <div class="field report-station-search">
+                                <label for="reportStationSearch">Stations in selected district</label>
+                                <input type="search" id="reportStationSearch" placeholder="Search by station ID or name">
+                            </div>
+                            <div id="maintenanceReportStations" class="report-station-list"></div>
+                        </div>
+                    </div>
+                    <p class="field-help"><strong id="selectedReportStationCount">0</strong> stations selected</p>
+                </fieldset>
+                <div class="field">
+                    <label for="maintenanceReportFile">Report file</label>
+                    <input type="file" id="maintenanceReportFile" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt" required>
+                    <small>PDF, Word, Excel, CSV, or text file, up to 20 MB.</small>
+                </div>
+                <div class="field">
+                    <label for="maintenanceReportNotes">Report note</label>
+                    <textarea id="maintenanceReportNotes" maxlength="2000"></textarea>
+                </div>
+                <div class="form-actions span-2">
+                    <button type="submit">Upload pre-maintenance report</button>
+                </div>
+                <p id="maintenanceReportMessage" class="message span-2" aria-live="polite"></p>
+            </form>
+            <div class="table-wrap maintenance-report-table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Period</th>
+                            <th>Stations</th>
+                            <th>Report</th>
+                            <th>Notes</th>
+                            <th>Uploaded by</th>
+                            <th>Uploaded at</th>
+                            <th id="maintenanceReportActionsHeading">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="maintenanceReportTable"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section>
+            <div class="section-heading history-heading">
+                <div>
+                    <p class="eyebrow">Planning archive</p>
+                    <h2>Pre-maintenance report history</h2>
+                </div>
+                <div class="filter-bar">
+                    <div class="field filter-field">
+                        <label for="maintenanceDateFrom">From</label>
+                        <input type="date" id="maintenanceDateFrom">
+                    </div>
+                    <div class="field filter-field">
+                        <label for="maintenanceDateTo">To</label>
+                        <input type="date" id="maintenanceDateTo">
+                    </div>
+                    <div class="field filter-field">
+                        <label for="stationFilter">Filter by station</label>
+                        <select id="stationFilter">
+                            <option value="">All stations</option>
+                        </select>
+                    </div>
+                    <button class="secondary-button" id="refreshMaintenance" type="button">Refresh</button>
+                </div>
+            </div>
+
+            <div class="table-tools">
+                <div class="field search-field">
+                    <label for="maintenanceSearch">Search reports</label>
+                    <input type="search" id="maintenanceSearch" placeholder="Station, report name, note, or uploader">
+                </div>
+                <div class="field">
+                    <label for="maintenancePageSize">Rows per page</label>
+                    <select id="maintenancePageSize">
+                        <option value="10">10</option>
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+                <button class="secondary-button" id="maintenanceExportCsv" type="button">Export CSV</button>
+                <button class="secondary-button" id="maintenanceExportPdf" type="button">Export PDF</button>
+            </div>
+
+            <div class="table-wrap">
+                <table class="maintenance-table">
+                    <thead>
+                        <tr>
+                            <th data-sort="period_end">Period</th>
+                            <th>Stations</th>
+                            <th data-sort="original_filename">Report</th>
+                            <th>Notes</th>
+                            <th data-sort="uploaded_by_username">Uploaded by</th>
+                            <th data-sort="uploaded_at">Uploaded at</th>
+                            <th id="maintenanceActionsHeading" hidden>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="maintenanceTable"></tbody>
+                </table>
+            </div>
+            <div id="maintenancePagination" class="pagination-bar"></div>
+        </section>
+        </div>
+
+        <aside class="dashboard-sidebar" aria-label="Maintenance statistics">
+            <p class="eyebrow">Planning analytics</p>
+            <h2>Pre-maintenance overview</h2>
+            <div class="summary-panel">
+                <div class="metric-grid">
+                    <div class="metric-item"><span>Pre-maintenance reports</span><strong id="maintenanceTotalMetric">0</strong></div>
+                    <div class="metric-item"><span>Stations covered</span><strong id="maintenanceStationMetric">0</strong></div>
+                    <div class="metric-item"><span>Files uploaded</span><strong id="maintenanceInstrumentMetric">0</strong></div>
+                    <div class="metric-item"><span>Latest report</span><strong id="maintenanceLatestMetric">-</strong></div>
+                </div>
+                <div id="maintenanceCategoryBreakdown" class="breakdown-grid"></div>
+            </div>
+        </aside>
+    </main>
+
+    <script src="js/config.js"></script>
+    <script src="js/api.js?v=20261001activity"></script>
+    <script src="js/pre-maintenance-reports.js?v=20261001a"></script>
+</body>
+</html>

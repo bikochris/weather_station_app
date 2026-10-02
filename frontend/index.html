@@ -3,25 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Home | Weather Station Management</title>
-    <link rel="stylesheet" href="css/app.css?v=20260927q">
+    <title>Home | Station Operations</title>
+    <link rel="stylesheet" href="css/app.css?v=20261001activity">
 </head>
 <body>
     <header class="app-header">
         <div class="header-inner">
             <div>
                 <p class="eyebrow">Operations</p>
-                <h1>Weather Station Management</h1>
+                <h1>Station Operations</h1>
             </div>
             <nav aria-label="Primary navigation">
                 <a class="active" href="index.html">Home</a>
                 <a href="stations.html">Stations</a>
                 <a href="sites.html">Sites</a>
-                <a href="maintenance.html">Maintenance</a><a href="station-inspections.html">Inspections</a><a href="discussions.html">Discussions</a>
+                <a href="maintenance.html">Maintenance</a>
+                <a href="pre-maintenance-reports.html">Pre-maintenance reports</a><a href="station-inspections.html">Inspections</a><a href="discussions.html">Discussions</a>
                 <a href="suspected-data.html">QC</a>
                 <a href="instruments.html">Instruments</a>
                 <a href="station-instruments.html">Station instruments</a>
                 <a href="volunteer-data.html">Volunteer data</a>
+                <a href="station-volunteers.html">Volunteers at stations</a>
                 <a href="reporting-status.html">Reporting</a>
                 <a href="data-requests.html">Requests</a>
                 <a href="kpi.html">KPI</a>
@@ -79,6 +81,13 @@
                     <p>Review interventions, reports, instruments, and recent technical work.</p>
                     <strong><span id="homeMaintenanceMetric">--</span> records</strong>
                 </a>
+                <a class="operation-route route-maintenance" data-tool-page="pre-maintenance-reports.html" href="pre-maintenance-reports.html">
+                    <img class="route-icon" src="assets/icons/clipboard-check.svg" alt="">
+                    <span class="route-kicker">Maintenance planning</span>
+                    <h3>Pre-maintenance reports</h3>
+                    <p>Review planned work, station coverage, and reports before maintenance.</p>
+                    <strong>Open workspace</strong>
+                </a>
                 <a class="operation-route route-inspections" data-tool-page="station-inspections.html" href="station-inspections.html">
                     <img class="route-icon" src="assets/icons/clipboard-check.svg" alt="">
                     <span class="route-kicker">Field assurance</span>
@@ -102,9 +111,29 @@
                     <img class="route-icon" src="assets/icons/package-search.svg" alt="">
                     <span class="route-kicker">Asset inventory</span><h3>Station instruments</h3><p>Track installed assets, condition, calibration, and replacement dates.</p><strong>Open workspace</strong>
                 </a>
+                <a class="operation-route route-reporting" data-tool-page="data-counts.html" href="data-counts.html">
+                    <img class="route-icon" src="assets/icons/chart-no-axes-combined.svg" alt="">
+                    <span class="route-kicker">Observation volume</span><h3>Data counts</h3><p>Record and compare monthly data totals by station category.</p><strong>Open workspace</strong>
+                </a>
+                <a class="operation-route route-volunteer" data-tool-page="station-visitors.html" href="station-visitors.html">
+                    <img class="route-icon" src="assets/icons/users-round.svg" alt="">
+                    <span class="route-kicker">Site activity</span><h3>Station visitors</h3><p>Log monthly visits, missions, visitor categories, and totals.</p><strong>Open workspace</strong>
+                </a>
+                <a class="operation-route route-inventory" data-tool-page="instrument-status-summary.html" href="instrument-status-summary.html">
+                    <img class="route-icon" src="assets/icons/gauge.svg" alt="">
+                    <span class="route-kicker">Equipment health</span><h3>Instrument summary</h3><p>See operational assets and upcoming calibration or replacement needs.</p><strong>Open workspace</strong>
+                </a>
+                <a class="operation-route route-maintenance" data-tool-page="maintenance-summary.html" href="maintenance-summary.html">
+                    <img class="route-icon" src="assets/icons/wrench.svg" alt="">
+                    <span class="route-kicker">Service schedule</span><h3>Maintenance summary</h3><p>Review recorded maintenance dates and stations due for service.</p><strong>Open workspace</strong>
+                </a>
                 <a class="operation-route route-volunteer" data-tool-page="volunteer-data.html" href="volunteer-data.html">
                     <img class="route-icon" src="assets/icons/users-round.svg" alt="">
                     <span class="route-kicker">Monthly submissions</span><h3>Volunteer data</h3><p>Manage monthly QC reports, filtered data, filled data, and comments.</p><strong>Open workspace</strong>
+                </a>
+                <a class="operation-route route-volunteer" data-tool-page="station-volunteers.html" href="station-volunteers.html">
+                    <img class="route-icon" src="assets/icons/users-round.svg" alt="">
+                    <span class="route-kicker">Station personnel</span><h3>Volunteers at stations</h3><p>Register volunteers and maintain their station and account details.</p><strong>Open workspace</strong>
                 </a>
                 <a class="operation-route route-reporting" data-tool-page="reporting-status.html" href="reporting-status.html">
                     <img class="route-icon" src="assets/icons/chart-no-axes-combined.svg" alt="">
@@ -131,7 +160,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20260928p"></script>
+    <script src="js/api.js?v=20261001activity"></script>
     <script src="js/home.js?v=20260927b"></script>
 </body>
 </html>

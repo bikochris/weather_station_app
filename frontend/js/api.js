@@ -2,6 +2,8 @@ const API_URL = window.WEATHER_API_URL || window.location.origin;
 const TOKEN_KEY = "weather_station_access_token";
 let currentUser = null;
 let notificationTimer = null;
+let notificationPage = 1;
+let notificationUnreadOnly = false;
 const OBSERVATION_ROLES = new Set([
     "Observation Officer",
     "Observation Supervisor"
@@ -22,6 +24,7 @@ const READ_ONLY_ALL_ROLES = new Set([
 ]);
 const MAINTENANCE_ROLE = "Instrument Maintenance and Calibration Officer";
 const ADMIN_ONLY_PAGES = new Set([
+    "activity.html",
     "users.html",
     "kpi.html",
     "search.html"
@@ -110,30 +113,30 @@ async function requireSession() {
     const allowedPages = {
         "Admin": null,
         [MAINTENANCE_ROLE]: new Set([
-            "index.html", "stations.html", "sites.html", "maintenance.html", "station-inspections.html", "discussions.html", "suspected-data.html",
-            "station-instruments.html"
+            "index.html", "stations.html", "sites.html", "maintenance.html", "pre-maintenance-reports.html", "station-inspections.html", "discussions.html", "suspected-data.html",
+            "station-instruments.html", "instrument-status-summary.html", "maintenance-summary.html", "data-counts.html", "station-visitors.html"
         ]),
         "Data Quality Control Officer": new Set([
-            "index.html", "stations.html", "sites.html", "maintenance.html", "station-inspections.html", "discussions.html", "suspected-data.html",
-            "station-instruments.html", "volunteer-data.html", "reporting-status.html",
-            "data-requests.html"
+            "index.html", "stations.html", "sites.html", "maintenance.html", "pre-maintenance-reports.html", "station-inspections.html", "discussions.html", "suspected-data.html",
+            "station-instruments.html", "volunteer-data.html", "station-volunteers.html", "reporting-status.html",
+            "data-requests.html", "data-counts.html", "instrument-status-summary.html", "maintenance-summary.html", "station-visitors.html"
         ]),
         "Observation Processing Officer": new Set([
-            "index.html", "stations.html", "sites.html", "maintenance.html", "station-inspections.html", "discussions.html", "suspected-data.html",
-            "station-instruments.html", "volunteer-data.html", "reporting-status.html",
-            "data-requests.html"
+            "index.html", "stations.html", "sites.html", "maintenance.html", "pre-maintenance-reports.html", "station-inspections.html", "discussions.html", "suspected-data.html",
+            "station-instruments.html", "volunteer-data.html", "station-volunteers.html", "reporting-status.html",
+            "data-requests.html", "data-counts.html", "instrument-status-summary.html", "maintenance-summary.html", "station-visitors.html"
         ]),
         "Observation Officer": new Set([
-            "index.html", "stations.html", "sites.html", "maintenance.html", "station-inspections.html", "discussions.html", "suspected-data.html",
-            "station-instruments.html"
+            "index.html", "stations.html", "sites.html", "maintenance.html", "pre-maintenance-reports.html", "station-inspections.html", "discussions.html", "suspected-data.html",
+            "station-instruments.html", "data-counts.html", "instrument-status-summary.html", "maintenance-summary.html", "station-visitors.html"
         ]),
         "Observation Supervisor": new Set([
-            "index.html", "stations.html", "sites.html", "maintenance.html", "station-inspections.html", "discussions.html", "suspected-data.html",
-            "station-instruments.html"
+            "index.html", "stations.html", "sites.html", "maintenance.html", "pre-maintenance-reports.html", "station-inspections.html", "discussions.html", "suspected-data.html",
+            "station-instruments.html", "data-counts.html", "instrument-status-summary.html", "maintenance-summary.html", "station-visitors.html"
         ]),
         "Observation Supervisor at HQ": new Set([
-            "index.html", "stations.html", "sites.html", "maintenance.html", "station-inspections.html", "discussions.html", "suspected-data.html",
-            "station-instruments.html", "volunteer-data.html", "reporting-status.html"
+            "index.html", "stations.html", "sites.html", "maintenance.html", "pre-maintenance-reports.html", "station-inspections.html", "discussions.html", "suspected-data.html",
+            "station-instruments.html", "volunteer-data.html", "station-volunteers.html", "reporting-status.html", "data-counts.html", "instrument-status-summary.html", "maintenance-summary.html", "station-visitors.html"
         ]),
         "Big Data Specialist": null,
         "Data Quality Control Specialist": null,
@@ -228,13 +231,92 @@ async function logout() {
 
 
 function initializeShell() {
+    const navigation = document.querySelector(".app-header nav");
+    if (navigation) {
+        let anchor = navigation.querySelector('a[href="station-instruments.html"]');
+        if (!anchor) {
+            const pages = [
+                ["index.html", "Home"], ["stations.html", "Stations"], ["sites.html", "Sites"],
+                ["maintenance.html", "Maintenance"], ["station-inspections.html", "Inspections"],
+                ["discussions.html", "Discussions"], ["suspected-data.html", "QC"],
+                ["instruments.html", "Instruments"], ["station-instruments.html", "Station instruments"],
+                ["volunteer-data.html", "Volunteer data"], ["station-volunteers.html", "Volunteers at stations"], ["reporting-status.html", "Reporting"],
+                ["data-requests.html", "Requests"], ["kpi.html", "KPI"], ["search.html", "Search"],
+                ["users.html", "Users"]
+            ];
+            navigation.replaceChildren();
+            pages.forEach(([href, label]) => {
+                const link = document.createElement("a");
+                link.href = href; link.textContent = label;
+                if (window.location.pathname.endsWith(href)) link.className = "active";
+                navigation.append(link);
+            });
+            anchor = navigation.querySelector('a[href="station-instruments.html"]');
+        }
+        const maintenanceLink = navigation.querySelector('a[href="maintenance.html"]');
+        if (maintenanceLink && !navigation.querySelector('a[href="pre-maintenance-reports.html"]')) {
+            const link = document.createElement("a");
+            link.href = "pre-maintenance-reports.html";
+            link.textContent = "Pre-maintenance reports";
+            if (window.location.pathname.endsWith("pre-maintenance-reports.html")) link.className = "active";
+            maintenanceLink.after(link);
+        }
+        if (anchor) {
+            const pages = [
+                ["data-counts.html", "Data counts"],
+                ["instrument-status-summary.html", "Instrument summary"],
+                ["maintenance-summary.html", "Maintenance summary"],
+                ["station-visitors.html", "Station visitors"],
+                ["station-volunteers.html", "Volunteers at stations"]
+            ];
+            let previous = anchor;
+            pages.forEach(([href, label]) => {
+                let link = navigation.querySelector(`a[href="${href}"]`);
+                if (!link) {
+                    link = document.createElement("a");
+                    link.href = href;
+                    link.textContent = label;
+                    previous.after(link);
+                }
+                if (window.location.pathname.endsWith(href)) link.classList.add("active");
+                previous = link;
+            });
+        }
+    }
     document.querySelectorAll("[data-logout]").forEach((button) => {
         button.addEventListener("click", logout);
     });
 }
 
 
+function setupDistrictFilter(container, stations, onChange) {
+    const field = document.createElement("div");
+    field.className = "field filter-field";
+    const label = document.createElement("label");
+    label.htmlFor = "districtFilter";
+    label.textContent = "District";
+    const select = document.createElement("select");
+    select.id = "districtFilter";
+    select.appendChild(new Option("All districts", ""));
+    [...new Set(stations.map(station => station.district).filter(Boolean))]
+        .sort().forEach(district => select.appendChild(new Option(district, district)));
+    select.addEventListener("change", onChange);
+    field.append(label, select);
+    container.prepend(field);
+    return select;
+}
+
+
 function notificationTarget(notification) {
+    const pages = {
+        stations: "stations.html", instruments: "instruments.html", users: "users.html",
+        maintenance: "maintenance.html", maintenance_report: "maintenance.html#maintenanceReports",
+        pre_maintenance_report: "pre-maintenance-reports.html", station_visitors: "station-visitors.html",
+        station_volunteers: "station-volunteers.html", data_counts: "data-counts.html",
+        maintenance_summary: "maintenance-summary.html", volunteer_data: "volunteer-data.html",
+        reporting_status: "reporting-status.html", data_requests: "data-requests.html"
+    };
+    if (pages[notification.related_record_type]) return pages[notification.related_record_type];
     if (notification.related_record_type === "suspected_data") {
         return `suspected-data.html?record=${notification.related_record_id}`;
     }
@@ -247,14 +329,21 @@ function notificationTarget(notification) {
     if (notification.related_record_type === "discussion") {
         return `discussions.html?record=${notification.related_record_id}`;
     }
+    if (notification.related_record_type === "station_instrument") {
+        return "instrument-status-summary.html";
+    }
     return null;
 }
 
 
 async function markNotificationRead(notification) {
-    await apiFetch(`/notifications/${notification.notification_id}/read`, {
+    const response = await apiFetch(`/notifications/${notification.notification_id}/read`, {
         method: "PUT"
     });
+    if (!response.ok) {
+        window.alert(await getErrorMessage(response, "Unable to mark notification as read"));
+        return;
+    }
     const target = notificationTarget(notification);
     if (target) window.location.href = target;
     else await loadNotifications();
@@ -266,16 +355,23 @@ async function loadNotifications() {
     const badge = document.getElementById("notificationBadge");
     if (!list || !badge || !currentUser) return;
     try {
-        const response = await apiFetch("/notifications?limit=20");
-        if (!response.ok) return;
+        const response = await apiFetch(`/notifications?limit=20&page=${notificationPage}&unread_only=${notificationUnreadOnly}`);
+        if (!response.ok) throw new Error("Unable to load notifications");
         const result = await response.json();
+        if (notificationPage > result.total_pages) {
+            notificationPage = result.total_pages;
+            return await loadNotifications();
+        }
+        document.getElementById("notificationPageLabel").textContent = `${result.page} / ${result.total_pages}`;
+        document.getElementById("notificationPrevious").disabled = result.page <= 1;
+        document.getElementById("notificationNext").disabled = result.page >= result.total_pages;
         badge.textContent = result.unread_count > 99 ? "99+" : result.unread_count;
         badge.hidden = result.unread_count === 0;
         list.replaceChildren();
         if (!result.items.length) {
             const empty = document.createElement("p");
             empty.className = "notification-empty";
-            empty.textContent = "No notifications";
+            empty.textContent = notificationUnreadOnly ? "No unread notifications" : "No notifications";
             list.appendChild(empty);
             return;
         }
@@ -294,7 +390,11 @@ async function loadNotifications() {
             list.appendChild(button);
         });
     } catch {
-        // Notification failures must not interrupt the working page.
+        list.replaceChildren();
+        const error = document.createElement("p");
+        error.className = "notification-empty";
+        error.textContent = "Notifications are unavailable. Try refreshing.";
+        list.append(error);
     }
 }
 
@@ -329,14 +429,61 @@ function initializeNotificationCenter() {
     readAll.className = "text-button";
     readAll.textContent = "Mark all read";
     readAll.addEventListener("click", async () => {
-        await apiFetch("/notifications/read-all", {method: "PUT"});
+        const response = await apiFetch("/notifications/read-all", {method: "PUT"});
+        if (!response.ok) {
+            window.alert(await getErrorMessage(response, "Unable to mark notifications as read"));
+            return;
+        }
+        notificationPage = 1;
         await loadNotifications();
     });
     heading.append(title, readAll);
     const list = document.createElement("div");
     list.id = "notificationList";
     list.className = "notification-list";
-    panel.append(heading, list);
+    const controls = document.createElement("div");
+    controls.className = "notification-controls";
+    const unreadLabel = document.createElement("label");
+    const unread = document.createElement("input");
+    unread.type = "checkbox";
+    unread.addEventListener("change", () => {
+        notificationUnreadOnly = unread.checked;
+        notificationPage = 1;
+        loadNotifications();
+    });
+    unreadLabel.append(unread, document.createTextNode(" Unread only"));
+    const refresh = document.createElement("button");
+    refresh.type = "button";
+    refresh.className = "text-button";
+    refresh.textContent = "Refresh";
+    refresh.addEventListener("click", loadNotifications);
+    controls.append(unreadLabel, refresh);
+    if (isITUser()) {
+        const activity = document.createElement("a");
+        activity.href = "activity.html";
+        activity.textContent = "Activity log";
+        controls.append(activity);
+    }
+    const footer = document.createElement("div");
+    footer.className = "notification-controls";
+    const previous = document.createElement("button");
+    previous.id = "notificationPrevious";
+    previous.type = "button";
+    previous.textContent = "<";
+    previous.title = "Previous page";
+    previous.setAttribute("aria-label", "Previous notifications");
+    previous.addEventListener("click", () => {notificationPage = Math.max(1, notificationPage - 1); loadNotifications();});
+    const pageLabel = document.createElement("span");
+    pageLabel.id = "notificationPageLabel";
+    const next = document.createElement("button");
+    next.id = "notificationNext";
+    next.type = "button";
+    next.textContent = ">";
+    next.title = "Next page";
+    next.setAttribute("aria-label", "Next notifications");
+    next.addEventListener("click", () => {notificationPage += 1; loadNotifications();});
+    footer.append(previous, pageLabel, next);
+    panel.append(heading, controls, list, footer);
     menu.insertBefore(toggle, menu.querySelector("[data-logout]"));
     menu.appendChild(panel);
     toggle.addEventListener("click", () => {
@@ -346,7 +493,20 @@ function initializeNotificationCenter() {
     });
     loadNotifications();
     if (notificationTimer) window.clearInterval(notificationTimer);
-    notificationTimer = window.setInterval(loadNotifications, 60000);
+    document.addEventListener("click", (event) => {
+        if (!panel.hidden && !panel.contains(event.target) && !toggle.contains(event.target)) {
+            panel.hidden = true;
+            toggle.setAttribute("aria-expanded", "false");
+        }
+    });
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !panel.hidden) {
+            panel.hidden = true;
+            toggle.setAttribute("aria-expanded", "false");
+            toggle.focus();
+        }
+    });
+    notificationTimer = window.setInterval(loadNotifications, 30000);
 }
 
 
@@ -512,6 +672,18 @@ function bindCollectionControls({
     pdfButtonId,
     getExtraParameters = () => ({})
 }) {
+    const table = document.querySelector(tableSelector);
+    table.dataset.serverSorted = "true";
+    const headings = [...table.querySelectorAll("thead th[data-sort]")];
+    const updateSortHeadings = () => headings.forEach((heading) => {
+        const active = heading.dataset.sort === state.sortBy;
+        heading.setAttribute("aria-sort", active
+            ? (state.sortOrder === "asc" ? "ascending" : "descending")
+            : "none");
+        heading.title = active
+            ? `Sort ${state.sortOrder === "asc" ? "descending" : "ascending"}`
+            : "Sort ascending";
+    });
     let searchTimer;
     document.getElementById(searchId).addEventListener("input", (event) => {
         window.clearTimeout(searchTimer);
@@ -526,7 +698,7 @@ function bindCollectionControls({
         state.page = 1;
         reload();
     });
-    document.querySelectorAll(`${tableSelector} th[data-sort]`).forEach((heading) => {
+    headings.forEach((heading) => {
         heading.classList.add("sortable-heading");
         heading.tabIndex = 0;
         const sort = () => {
@@ -536,13 +708,18 @@ function bindCollectionControls({
                 : "asc";
             state.sortBy = column;
             state.page = 1;
+            updateSortHeadings();
             reload();
         };
         heading.addEventListener("click", sort);
         heading.addEventListener("keydown", (event) => {
-            if (event.key === "Enter" || event.key === " ") sort();
+            if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                sort();
+            }
         });
     });
+    updateSortHeadings();
     document.getElementById(csvButtonId).addEventListener(
         "click",
         () => downloadCollectionExport(
@@ -561,6 +738,236 @@ function bindCollectionControls({
             getExtraParameters()
         )
     );
+}
+
+
+function sortableCellValue(cell, dateColumn) {
+    const raw = (cell?.dataset.sortValue || cell?.textContent || "").trim();
+    if (!raw || raw === "-") return null;
+    if (dateColumn) {
+        const localDate = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(.*)$/);
+        if (localDate) return `${localDate[3]}-${localDate[2].padStart(2, "0")}-${localDate[1].padStart(2, "0")}${localDate[4]}`;
+        const parsed = Date.parse(raw);
+        if (!Number.isNaN(parsed)) return parsed;
+    }
+    const numeric = raw.replace(/,/g, "").replace(/%$/, "");
+    if (/^-?\d+(?:\.\d+)?$/.test(numeric)) return Number(numeric);
+    return raw;
+}
+
+
+function enableLocalTableSorting(table) {
+    if (table.dataset.serverSorted) return;
+    const body = table.tBodies[0];
+    if (!body) return;
+    const headings = [...table.querySelectorAll("thead th")];
+    const collator = new Intl.Collator(undefined, {numeric: true, sensitivity: "base"});
+    let activeIndex = -1;
+    let direction = "asc";
+    let scheduled = false;
+    const applySort = () => {
+        scheduled = false;
+        if (activeIndex < 0) return;
+        const allRows = [...body.rows];
+        const rows = allRows.filter(row => !row.dataset.detailFor);
+        const visibleHeadings = headings.filter(heading => !heading.hidden);
+        if (rows.some(row => row.cells.length !== visibleHeadings.length)) return;
+        const detailRows = new Map(allRows.filter(row => row.dataset.detailFor)
+            .map(row => [row.dataset.detailFor, row]));
+        const cellIndex = headings.slice(0, activeIndex).filter(heading => !heading.hidden).length;
+        const dateColumn = /date|month|period|time|updated|uploaded|registered|reviewed/i.test(headings[activeIndex].textContent);
+        const sorted = rows.map((row, index) => ({row, index})).sort((left, right) => {
+            const a = sortableCellValue(left.row.cells[cellIndex], dateColumn);
+            const b = sortableCellValue(right.row.cells[cellIndex], dateColumn);
+            if (a == null || b == null) return a == null && b == null ? left.index - right.index : (a == null ? 1 : -1);
+            const result = typeof a === "number" && typeof b === "number"
+                ? a - b : collator.compare(String(a), String(b));
+            return (direction === "asc" ? result : -result) || left.index - right.index;
+        });
+        if (sorted.some((entry, index) => entry.row !== rows[index])) {
+            body.append(...sorted.flatMap(({row}) => {
+                const detail = detailRows.get(row.dataset.rowId);
+                return detail ? [row, detail] : [row];
+            }));
+        }
+    };
+    const scheduleSort = () => {
+        if (scheduled || activeIndex < 0) return;
+        scheduled = true;
+        requestAnimationFrame(applySort);
+    };
+    new MutationObserver(scheduleSort).observe(body, {childList: true});
+    headings.forEach((heading, index) => {
+        if (heading.hidden || /^(actions?|manage)$/i.test(heading.textContent.trim())) return;
+        heading.classList.add("sortable-heading");
+        heading.tabIndex = 0;
+        heading.setAttribute("aria-sort", "none");
+        heading.title = "Sort ascending";
+        const sort = () => {
+            direction = activeIndex === index && direction === "asc" ? "desc" : "asc";
+            activeIndex = index;
+            headings.forEach(item => {
+                item.setAttribute("aria-sort", item === heading
+                    ? (direction === "asc" ? "ascending" : "descending") : "none");
+                item.title = item === heading && direction === "asc" ? "Sort descending" : "Sort ascending";
+            });
+            scheduleSort();
+        };
+        heading.addEventListener("click", sort);
+        heading.addEventListener("keydown", event => {
+            if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                sort();
+            }
+        });
+    });
+}
+
+
+window.addEventListener("load", () => {
+    document.querySelectorAll("main table").forEach(enableLocalTableSorting);
+});
+
+
+function auditDisplayValue(value) {
+    if (value == null || value === "") return "-";
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (Array.isArray(value)) {
+        if (!value.length) return "-";
+        if (value[0] && typeof value[0] === "object") {
+            if (value[0].instrument_id && Object.hasOwn(value[0], "issue")) {
+                return value.map(item => `Instrument ${item.instrument_id}: ${item.issue || "-"} / ${item.action_done || "-"} / ${item.recommendation || "-"}`).join("; ");
+            }
+            if (value[0].original_filename) return value.map(file => `${file.file_kind}: ${file.original_filename}`).join(", ");
+            if (value[0].comment) return value.map(entry => `${entry.commented_by_username || "Unknown"}: ${entry.comment}`).join("; ");
+            const last = value[value.length - 1];
+            return [last.action_type, last.comment, last.status_after, last.reason]
+                .filter(Boolean).join(" · ") || `${value.length} entries`;
+        }
+        return value.join(", ");
+    }
+    return String(value);
+}
+
+
+function renderRecordHistoryEntry(container, item) {
+    const entry = document.createElement("div");
+    entry.className = "record-history-entry";
+    const meta = document.createElement("strong");
+    meta.textContent = `${new Date(item.changed_at).toLocaleString()} · ${item.changed_by_username}`;
+    const list = document.createElement("ul");
+    const before = item.before_data || {};
+    const after = item.after_data || {};
+    const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])]
+        .filter(key => !/^(created_at|updated_at|password_hash|created_by_user_id|recorded_by_user_id|updated_by_user_id|resolved_by_user_id|final_reviewed_by_user_id)$/.test(key));
+    keys.forEach(key => {
+        if (JSON.stringify(before[key]) === JSON.stringify(after[key])) return;
+        const line = document.createElement("li");
+        const label = key.replace(/_/g, " ").replace(/^./, letter => letter.toUpperCase());
+        line.textContent = `${label}: ${auditDisplayValue(before[key])} → ${auditDisplayValue(after[key])}`;
+        list.append(line);
+    });
+    if (!list.childElementCount) {
+        const line = document.createElement("li");
+        line.textContent = "Saved without changes to displayed fields";
+        list.append(line);
+    }
+    entry.append(meta, list);
+    container.append(entry);
+}
+
+
+async function loadRecordHistoryPanel(panel, content, entityType, entityId, page = 1) {
+    if (page === 1) content.textContent = "Loading changes...";
+    try {
+        const params = new URLSearchParams({page: String(page), page_size: "100"});
+        const response = await apiFetch(`/record-history/${entityType}/${encodeURIComponent(entityId)}?${params}`);
+        if (!response.ok) throw new Error(await getErrorMessage(response, "Unable to load history"));
+        const result = await response.json();
+        if (!panel.isConnected || panel.hidden) return;
+        if (page === 1) content.replaceChildren();
+        content.querySelector(".record-history-more")?.remove();
+        if (!result.items.length && page === 1) {
+            content.textContent = "No edits recorded for this record yet.";
+            return;
+        }
+        result.items.forEach(item => renderRecordHistoryEntry(content, item));
+        if (page * result.page_size < result.total) {
+            const more = document.createElement("button");
+            more.type = "button";
+            more.className = "secondary-button record-history-more";
+            more.textContent = "Show more changes";
+            more.addEventListener("click", () => loadRecordHistoryPanel(panel, content, entityType, entityId, page + 1));
+            content.append(more);
+        }
+    } catch (error) {
+        if (panel.isConnected) content.textContent = error.message;
+    }
+}
+
+
+function attachRecordHistoryPanel(container, entityType, entityId) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "record-history-toggle";
+    button.textContent = "History";
+    button.setAttribute("aria-expanded", "false");
+    const panel = document.createElement("div");
+    panel.className = "record-history-content";
+    panel.hidden = true;
+    const content = document.createElement("div");
+    panel.append(content);
+    button.addEventListener("click", () => {
+        panel.hidden = !panel.hidden;
+        button.setAttribute("aria-expanded", String(!panel.hidden));
+        if (!panel.hidden) loadRecordHistoryPanel(panel, content, entityType, entityId);
+    });
+    container.append(button, panel);
+}
+
+
+function attachRecordHistoryRows(tbody, entityType, items, idForItem) {
+    const rows = [...tbody.rows];
+    if (!items.length || rows.length !== items.length) return;
+    rows.forEach((row, index) => {
+        const itemEntity = typeof entityType === "function" ? entityType(items[index]) : entityType;
+        const entityId = idForItem(items[index]);
+        if (entityId == null) return;
+        const key = `${itemEntity}:${entityId}`;
+        row.dataset.rowId = key;
+        row.classList.add("record-history-parent");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "record-history-toggle";
+        button.textContent = "History";
+        button.setAttribute("aria-label", `Show edit history for this record`);
+        button.setAttribute("aria-expanded", "false");
+        const firstCell = row.cells[0];
+        firstCell.dataset.sortValue = firstCell.textContent.trim();
+        firstCell.prepend(button);
+        const detail = document.createElement("tr");
+        detail.className = "record-history-detail";
+        detail.dataset.detailFor = key;
+        detail.id = `record-history-${itemEntity}-${String(entityId).replace(/[^a-zA-Z0-9-]/g, "-")}`;
+        detail.hidden = true;
+        button.setAttribute("aria-controls", detail.id);
+        const cell = detail.insertCell();
+        cell.colSpan = row.cells.length;
+        const content = document.createElement("div");
+        content.className = "record-history-content";
+        cell.append(content);
+        row.after(detail);
+        const toggle = () => {
+            detail.hidden = !detail.hidden;
+            button.setAttribute("aria-expanded", String(!detail.hidden));
+            if (!detail.hidden) loadRecordHistoryPanel(detail, content, itemEntity, entityId);
+        };
+        button.addEventListener("click", event => { event.stopPropagation(); toggle(); });
+        row.addEventListener("click", event => {
+            if (event.target.closest("button, a, input, select, textarea, summary")) return;
+            toggle();
+        });
+    });
 }
 
 

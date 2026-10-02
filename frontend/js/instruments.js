@@ -110,6 +110,7 @@ async function loadInstruments() {
             if (isITUser()) appendInstrumentActions(row, instrument);
             table.appendChild(row);
         });
+        attachRecordHistoryRows(table, "instruments", instrumentRecords, instrument => instrument.instrument_id);
     } catch (error) {
         showTableMessage(table, columnCount, error.message);
     }
@@ -140,12 +141,29 @@ async function uploadInstruments() {
         setMessage(message, "Choose a CSV file first.", "error");
         return;
     }
-    setMessage(message, "Uploading...");
+    setMessage(message, "Checking CSV...");
     try {
-        const response = await apiFetch("/instruments/import", {
+        const csvText = await file.text();
+        const preview = await apiFetch("/instruments/import?mode=preview", {
             method: "POST",
             headers: {"Content-Type": "text/csv;charset=utf-8"},
-            body: await file.text()
+            body: csvText
+        });
+        if (!preview.ok) {
+            throw new Error(await getErrorMessage(preview, "Unable to validate instruments"));
+        }
+        const counts = await preview.json();
+        if (counts.existing && !confirm(
+            `${counts.existing} instrument(s) already exist and will be updated; ${counts.new} new instrument(s) will be added. Continue?`
+        )) {
+            setMessage(message, "Import cancelled. No instruments were changed.");
+            return;
+        }
+        setMessage(message, "Uploading...");
+        const response = await apiFetch("/instruments/import?mode=upsert", {
+            method: "POST",
+            headers: {"Content-Type": "text/csv;charset=utf-8"},
+            body: csvText
         });
         if (!response.ok) {
             throw new Error(await getErrorMessage(response, "Unable to import instruments"));
@@ -154,7 +172,7 @@ async function uploadInstruments() {
         input.value = "";
         setMessage(
             message,
-            `${result.imported} instrument${result.imported === 1 ? "" : "s"} imported.`,
+            `${result.imported} added; ${result.updated} updated; ${result.merged_rows} duplicate CSV row(s) merged.`,
             "success"
         );
         await loadInstruments();

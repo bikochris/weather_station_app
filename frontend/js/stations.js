@@ -7,6 +7,8 @@ function renderStationStatistics(summary) {
     setMetric("stationTotalMetric", summary.total || 0);
     setMetric("stationOperationalMetric", summary.operational || 0);
     setMetric("stationAttentionMetric", summary.attention || 0);
+    setMetric("stationUnderMaintenanceMetric", summary.under_maintenance || 0);
+    setMetric("stationClosedMetric", summary.closed || 0);
     setMetric("stationSuspendedMetric", summary.suspended || 0);
     setMetric("stationSuspendedAwsMetric", summary.suspended_aws || 0);
     setMetric("stationSuspendedArgMetric", summary.suspended_arg || 0);
@@ -44,7 +46,6 @@ function editStation(stationId) {
     document.getElementById("sector").value = station.sector || "";
     document.getElementById("stationCategory").value = station.station_category || "";
     document.getElementById("status").value = station.status;
-    document.getElementById("stationSuspended").checked = Boolean(station.suspended);
     document.getElementById("stationComment").value = station.comment || "";
     document.getElementById("stationAction").value = station.action || "";
     document.getElementById("stationSubmit").textContent = "Save changes";
@@ -87,15 +88,16 @@ function appendStationActions(row, station) {
 
 async function loadStations() {
     const table = document.getElementById("stationTable");
-    const columnCount = isITUser() ? 16 : 15;
+    const columnCount = isITUser() ? 15 : 14;
     showTableMessage(table, columnCount, "Loading stations...");
 
     try {
         const parameters = collectionParameters(stationCollection, {
+            district: document.getElementById("districtFilter")?.value || "",
             date_from: document.getElementById("stationDateFrom").value,
             date_to: document.getElementById("stationDateTo").value,
             station_category: document.getElementById("stationCategoryFilter").value,
-            suspended: document.getElementById("stationSuspendedFilter").value
+            status: document.getElementById("stationStatusFilter").value
         });
         const response = await apiFetch(`/stations?${parameters}`);
         if (!response.ok) {
@@ -128,7 +130,6 @@ async function loadStations() {
             appendCell(row, station.sector);
             appendCell(row, station.station_category || "Not classified");
             appendCell(row, station.status);
-            appendCell(row, station.suspended ? "1" : "0");
             appendCell(row, station.comment);
             appendCell(row, station.action);
             appendCell(
@@ -141,6 +142,7 @@ async function loadStations() {
             if (isITUser()) appendStationActions(row, station);
             table.appendChild(row);
         });
+        attachRecordHistoryRows(table, "stations", stationRecords, station => station.station_id);
     } catch (error) {
         showTableMessage(table, columnCount, error.message);
     }
@@ -158,8 +160,7 @@ function downloadStationTemplate() {
         "district",
         "sector",
         "station_category",
-        "operational_status",
-        "suspended",
+        "station_status",
         "comment",
         "action"
     ];
@@ -174,7 +175,6 @@ function downloadStationTemplate() {
         "Nyarugenge",
         "Automatic Weather stations",
         "Operational",
-        "0",
         "Primary station",
         "Corrective maintenance by next quarter"
     ];
@@ -200,19 +200,36 @@ async function uploadStations() {
         return;
     }
 
-    setMessage(message, "Uploading stations...");
+    setMessage(message, "Checking CSV...");
     try {
-        const response = await apiFetch("/stations/import", {
+        const csvText = await file.text();
+        const preview = await apiFetch("/stations/import?mode=preview", {
             method: "POST",
             headers: {"Content-Type": "text/csv; charset=utf-8"},
-            body: await file.text()
+            body: csvText
+        });
+        if (!preview.ok) {
+            throw new Error(await getErrorMessage(preview, "Unable to validate stations"));
+        }
+        const counts = await preview.json();
+        if (counts.existing && !confirm(
+            `${counts.existing} station(s) already exist and will be updated; ${counts.new} new station(s) will be added. Continue?`
+        )) {
+            setMessage(message, "Import cancelled. No stations were changed.");
+            return;
+        }
+        setMessage(message, "Uploading stations...");
+        const response = await apiFetch("/stations/import?mode=upsert", {
+            method: "POST",
+            headers: {"Content-Type": "text/csv; charset=utf-8"},
+            body: csvText
         });
         if (!response.ok) {
             throw new Error(await getErrorMessage(response, "Unable to import stations"));
         }
         const result = await response.json();
         input.value = "";
-        setMessage(message, `${result.imported} station(s) imported.`, "success");
+        setMessage(message, `${result.imported} station(s) added; ${result.updated} station(s) updated.`, "success");
         await loadStations();
     } catch (error) {
         setMessage(message, error.message, "error");
@@ -224,6 +241,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     initializeShell();
     if (!await requireSession()) return;
     document.getElementById("stationEditor").hidden = !isITUser();
+    try {
+        const response = await apiFetch("/stations");
+        if (response.ok) setupDistrictFilter(
+            document.querySelector(".history-heading .filter-bar"), await response.json(),
+            () => { stationCollection.page = 1; loadStations(); }
+        );
+    } catch (_error) { /* A list error is shown by loadStations. */ }
 
     const form = document.getElementById("stationForm");
     const message = document.getElementById("formMessage");
@@ -243,7 +267,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             sector: document.getElementById("sector").value.trim(),
             station_category: document.getElementById("stationCategory").value,
             status: document.getElementById("status").value,
-            suspended: document.getElementById("stationSuspended").checked,
             comment: document.getElementById("stationComment").value.trim() || null,
             action: document.getElementById("stationAction").value.trim() || null
         };
@@ -274,13 +297,10 @@ document.addEventListener("DOMContentLoaded", async () => {
             loadStations();
         }
     );
-    document.getElementById("stationSuspendedFilter").addEventListener(
-        "change",
-        () => {
-            stationCollection.page = 1;
-            loadStations();
-        }
-    );
+    document.getElementById("stationStatusFilter").addEventListener("change", () => {
+        stationCollection.page = 1;
+        loadStations();
+    });
     document.getElementById("stationDateFrom").addEventListener("change", () => {
         stationCollection.page = 1;
         loadStations();
@@ -299,10 +319,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         csvButtonId: "stationExportCsv",
         pdfButtonId: "stationExportPdf",
         getExtraParameters: () => ({
+            district: document.getElementById("districtFilter")?.value || "",
             date_from: document.getElementById("stationDateFrom").value,
             date_to: document.getElementById("stationDateTo").value,
             station_category: document.getElementById("stationCategoryFilter").value,
-            suspended: document.getElementById("stationSuspendedFilter").value
+            status: document.getElementById("stationStatusFilter").value
         })
     });
     document.getElementById("downloadStationTemplate").addEventListener(

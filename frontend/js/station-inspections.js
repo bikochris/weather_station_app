@@ -129,7 +129,8 @@ function resetInspectionReportForm() {
 
 
 async function loadInspectionReports() {
-    const response = await apiFetch("/station-inspection-reports");
+    const district = document.getElementById("districtFilter")?.value || "";
+    const response = await apiFetch(`/station-inspection-reports?${new URLSearchParams({district})}`);
     if (!response.ok) {
         showTableMessage(
             document.getElementById("inspectionReportList"), 7,
@@ -503,6 +504,7 @@ async function loadInspections() {
     const table = document.getElementById("inspectionTable");
     showTableMessage(table, 14, "Loading station inspections...");
     const parameters = collectionParameters(inspectionCollection, {
+        district: document.getElementById("districtFilter")?.value || "",
         stage: document.getElementById("inspectionStageFilter").value,
         status: document.getElementById("inspectionStatusFilter").value,
         date_from: document.getElementById("inspectionDateFrom").value,
@@ -544,6 +546,8 @@ async function loadInspections() {
         appendInspectionActions(row, record);
         table.appendChild(row);
     });
+    attachRecordHistoryRows(table, "station_inspections", inspectionRecords,
+        record => record.inspection_id);
 }
 
 
@@ -553,6 +557,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     resetInspectionForm();
     try {
         await loadInspectionStations();
+        setupDistrictFilter(document.querySelector(".history-heading .filter-bar"), inspectionStations,
+            () => { inspectionCollection.page = 1; loadInspections(); loadInspectionReports(); });
         await loadInspections();
         resetInspectionReportForm();
         await loadInspectionReports();

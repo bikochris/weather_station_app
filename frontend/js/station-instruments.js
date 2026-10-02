@@ -55,6 +55,10 @@ async function loadStationInstrumentOptions() {
         ""
     ));
     stationFilter.replaceChildren(new Option("All stations", ""));
+    const districtFilter = document.getElementById("districtFilter");
+    districtFilter.replaceChildren(new Option("All districts", ""));
+    [...new Set(stationInstrumentStations.map((station) => station.district).filter(Boolean))]
+        .sort().forEach((district) => districtFilter.appendChild(new Option(district, district)));
     stationInstrumentStations.forEach((station) => {
         const category = station.station_category || "Not classified";
         const label = `${station.station_code} - ${station.station_name} (${category})`;
@@ -120,6 +124,8 @@ function editStationInstrument(recordId) {
     document.getElementById("installationDate").value = record.installation_date;
     document.getElementById("calibrationDate").value = record.calibration_date || "";
     document.getElementById("replacementDate").value = record.replacement_date || "";
+    document.getElementById("recommendedCalibrationDate").value = record.recommended_calibration_date || "";
+    document.getElementById("recommendedReplacementDate").value = record.recommended_replacement_date || "";
     document.getElementById("stationInstrumentStatus").value = record.status;
     document.getElementById("stationInstrumentComment").value = record.comment || "";
     document.getElementById("stationInstrumentSubmit").textContent = "Save changes";
@@ -168,9 +174,10 @@ async function loadStationInstruments() {
     const table = document.getElementById("stationInstrumentTable");
     const stationId = document.getElementById("stationFilter").value;
     const canManage = isITUser() || isMaintenanceUser();
-    const columnCount = canManage ? 17 : 16;
+    const columnCount = canManage ? 19 : 18;
     const parameters = collectionParameters(stationInstrumentCollection, {
         station_id: stationId,
+        district: document.getElementById("districtFilter").value,
         date_from: document.getElementById("installationDateFrom").value,
         date_to: document.getElementById("installationDateTo").value
     });
@@ -210,6 +217,8 @@ async function loadStationInstruments() {
             appendCell(row, record.installation_date);
             appendCell(row, record.calibration_date || "-");
             appendCell(row, record.replacement_date || "-");
+            appendCell(row, record.recommended_calibration_date || "-");
+            appendCell(row, record.recommended_replacement_date || "-");
             appendCell(row, record.status);
             appendCell(row, record.comment || "-");
             appendCell(row, record.recorded_by || "Legacy record");
@@ -224,6 +233,8 @@ async function loadStationInstruments() {
             if (canManage) appendStationInstrumentActions(row, record);
             table.appendChild(row);
         });
+        attachRecordHistoryRows(table, "station_instruments", stationInstrumentRecords,
+            record => record.station_instrument_id);
     } catch (error) {
         showTableMessage(table, columnCount, error.message);
     }
@@ -269,6 +280,10 @@ document.addEventListener("DOMContentLoaded", async () => {
                             document.getElementById("calibrationDate").value || null,
                         replacement_date:
                             document.getElementById("replacementDate").value || null,
+                        recommended_calibration_date:
+                            document.getElementById("recommendedCalibrationDate").value || null,
+                        recommended_replacement_date:
+                            document.getElementById("recommendedReplacementDate").value || null,
                         status: document.getElementById("stationInstrumentStatus").value,
                         comment:
                             document.getElementById("stationInstrumentComment").value.trim() || null
@@ -308,6 +323,10 @@ document.addEventListener("DOMContentLoaded", async () => {
             loadStationInstruments();
         }
     );
+    document.getElementById("districtFilter").addEventListener("change", () => {
+        stationInstrumentCollection.page = 1;
+        loadStationInstruments();
+    });
     document.getElementById("installationDateFrom").addEventListener(
         "change",
         () => {
@@ -333,6 +352,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         pdfButtonId: "stationInstrumentExportPdf",
         getExtraParameters: () => ({
             station_id: document.getElementById("stationFilter").value,
+            district: document.getElementById("districtFilter").value,
             date_from: document.getElementById("installationDateFrom").value,
             date_to: document.getElementById("installationDateTo").value
         })
