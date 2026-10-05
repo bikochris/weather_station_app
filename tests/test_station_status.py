@@ -15,7 +15,7 @@ def station(status):
         province="Kigali",
         district="Gasabo",
         sector="Test",
-        station_category="Automatic Weather stations",
+        station_category="Automatic Weather station",
         status=status,
     )
 

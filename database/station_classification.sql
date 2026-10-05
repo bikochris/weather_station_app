@@ -3,14 +3,14 @@ START TRANSACTION;
 UPDATE stations
 SET station_category = CASE
     WHEN station_name = 'Maranyundo_WR' THEN 'Weather radar'
-    WHEN station_name = 'Butare Aero_UAS' THEN 'Upper air station'
-    WHEN RIGHT(TRIM(station_name), 4) = '_AWS' THEN 'Automatic Weather stations'
-    WHEN RIGHT(TRIM(station_name), 4) = '_ARG' THEN 'Automatic Raingauge'
+    WHEN station_name = 'Butare Aero_UAS' THEN 'Upper Air Station'
+    WHEN RIGHT(TRIM(station_name), 4) = '_AWS' THEN 'Automatic Weather station'
+    WHEN RIGHT(TRIM(station_name), 4) = '_ARG' THEN 'Automatic Rain Gauge'
     WHEN station_name IN (
         'Kawangire', 'Kazo', 'Nyagatare', 'Gitega', 'Byumba',
         'Busogo  ISAE', 'Gikongoro', 'Byimana', 'Rubengera',
         'Kigali  Airport', 'Ruhengeri Aero', 'Gisenyi Aero', 'Kamembe Aero'
-    ) THEN 'Principal stations'
+    ) THEN 'Principal Station'
     WHEN station_name IN (
         'Juru', 'Nyamata_Paroisse', 'Kabarore', 'Ngarama',
         'Nyagahanga_EFA', 'Mukarange', 'Rwinkwavu', 'Gahara', 'Kirehe',
@@ -25,7 +25,7 @@ SET station_category = CASE
         'Kinazi', 'Twumba', 'Muramba', 'Nyange_Ngororero', 'Sovu',
         'Bigogwe', 'Cyato', 'Nyamasheke', 'Ntendezi', 'Kanama', 'Bugarama',
         'Gihango', 'Murunda_Paroisse'
-    ) THEN 'Climatic stations'
+    ) THEN 'Climatic Station'
     WHEN station_name IN (
         'Ruhuha', 'Gasange', 'Rwimbogo', 'Kiziguro', 'Muhura', 'Gahini',
         'Kabarondo', 'Murundi', 'Mwiri', 'Ndego', 'Musaza', 'Nyamugali',
@@ -42,7 +42,7 @@ SET station_category = CASE
         'Kanjongo', 'Kirimbi', 'Shangi_Paroisse', 'Busasamana', 'Cyanzarwe',
         'Nyundo_Paroisse', 'Mibirizi Paroisse', 'Mururu', 'Nkanka',
         'Nyakabuye', 'Boneza', 'Mushubati_Paroisse'
-    ) THEN 'Rainfall station'
+    ) THEN 'Rainfall Station'
     ELSE station_category
 END;
 
@@ -77,16 +77,16 @@ VALUES
 INSERT IGNORE INTO instrument_station_categories (instrument_id, station_category)
 SELECT instrument_id, 'Weather radar' FROM instruments WHERE instrument_name = 'Weather Radome'
 UNION ALL
-SELECT instrument_id, 'Upper air station' FROM instruments WHERE instrument_name IN ('Robotic Room', 'UHF Antenna', 'Launcher Vessel')
+SELECT instrument_id, 'Upper Air Station' FROM instruments WHERE instrument_name IN ('Robotic Room', 'UHF Antenna', 'Launcher Vessel')
 UNION ALL
-SELECT instrument_id, 'Automatic Weather stations' FROM instruments WHERE instrument_name IN ('Data Logger', 'Battery', 'Anemometer')
+SELECT instrument_id, 'Automatic Weather station' FROM instruments WHERE instrument_name IN ('Data Logger', 'Battery', 'Anemometer')
 UNION ALL
-SELECT instrument_id, 'Automatic Raingauge' FROM instruments WHERE instrument_name IN ('Data Logger', 'Battery', 'Rain Gauge')
+SELECT instrument_id, 'Automatic Rain Gauge' FROM instruments WHERE instrument_name IN ('Data Logger', 'Battery', 'Rain Gauge')
 UNION ALL
-SELECT instrument_id, 'Principal stations' FROM instruments WHERE instrument_name IN ('Thermography', 'Hygrography', 'Solar Radiation')
+SELECT instrument_id, 'Principal Station' FROM instruments WHERE instrument_name IN ('Thermography', 'Hygrography', 'Solar Radiation')
 UNION ALL
-SELECT instrument_id, 'Climatic stations' FROM instruments WHERE instrument_name IN ('Thermometer', 'Stevenson Screen')
+SELECT instrument_id, 'Climatic Station' FROM instruments WHERE instrument_name IN ('Thermometer', 'Stevenson Screen')
 UNION ALL
-SELECT instrument_id, 'Rainfall station' FROM instruments WHERE instrument_name IN ('Raingauge', 'Measuring Cylinder');
+SELECT instrument_id, 'Rainfall Station' FROM instruments WHERE instrument_name IN ('Raingauge', 'Measuring Cylinder');
 
 COMMIT;

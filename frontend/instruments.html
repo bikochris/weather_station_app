@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Instruments | Station Operations</title>
-    <link rel="stylesheet" href="css/app.css?v=20261001activity">
+    <link rel="stylesheet" href="css/app.css?v=20261004searchable">
 </head>
 <body>
     <header class="app-header">
@@ -24,7 +24,7 @@
                 <a href="volunteer-data.html">Volunteer data</a>
                 <a href="reporting-status.html">Reporting</a>
                 <a href="data-requests.html">Requests</a>
-                <a href="kpi.html">KPI</a>
+                <a href="kpi.html">Dashboard</a>
                 <a href="search.html">Search</a>
                 <a class="user-directory-access" href="users.html" hidden>Users</a>
             </nav>
@@ -58,15 +58,7 @@
 
                 <fieldset class="span-2">
                     <legend>Available at station categories</legend>
-                    <div class="category-checkbox-grid">
-                        <label><input type="checkbox" name="stationCategories" value="Upper air station"> Upper air station</label>
-                        <label><input type="checkbox" name="stationCategories" value="Weather radar"> Weather radar</label>
-                        <label><input type="checkbox" name="stationCategories" value="Automatic Weather stations"> Automatic Weather stations</label>
-                        <label><input type="checkbox" name="stationCategories" value="Automatic Raingauge"> Automatic Raingauge</label>
-                        <label><input type="checkbox" name="stationCategories" value="Principal stations"> Principal stations</label>
-                        <label><input type="checkbox" name="stationCategories" value="Climatic stations"> Climatic stations</label>
-                        <label><input type="checkbox" name="stationCategories" value="Rainfall station"> Rainfall station</label>
-                    </div>
+                    <div class="category-checkbox-grid" id="instrumentStationCategories"></div>
                 </fieldset>
 
                 <div class="field span-2">
@@ -162,7 +154,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20261001activity"></script>
-    <script src="js/instruments.js?v=20260930audit2"></script>
+    <script src="js/api.js?v=20261004searchable"></script>
+    <script src="js/instruments.js?v=20261004categorymanager"></script>
 </body>
 </html>

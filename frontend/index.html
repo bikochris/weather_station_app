@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Home | Station Operations</title>
-    <link rel="stylesheet" href="css/app.css?v=20261001activity">
+    <link rel="stylesheet" href="css/app.css?v=20261004searchable">
 </head>
 <body>
     <header class="app-header">
@@ -26,7 +26,7 @@
                 <a href="station-volunteers.html">Volunteers at stations</a>
                 <a href="reporting-status.html">Reporting</a>
                 <a href="data-requests.html">Requests</a>
-                <a href="kpi.html">KPI</a>
+                <a href="kpi.html">Dashboard</a>
                 <a href="search.html">Search</a>
                 <a class="user-directory-access" href="users.html" hidden>Users</a>
             </nav>
@@ -145,7 +145,7 @@
                 </a>
                 <a class="operation-route route-kpi" data-tool-page="kpi.html" href="kpi.html">
                     <img class="route-icon" src="assets/icons/target.svg" alt="">
-                    <span class="route-kicker">Performance</span><h3>KPI</h3><p>Review activity, completed work, and pending responsibilities.</p><strong>Open workspace</strong>
+                    <span class="route-kicker">Performance</span><h3>Dashboard</h3><p>Review activity, completed work, and pending responsibilities.</p><strong>Open workspace</strong>
                 </a>
                 <a class="operation-route route-search" data-tool-page="search.html" href="search.html">
                     <img class="route-icon" src="assets/icons/search.svg" alt="">
@@ -155,12 +155,16 @@
                     <img class="route-icon" src="assets/icons/users.svg" alt="">
                     <span class="route-kicker">Administration</span><h3>Users</h3><p>Manage accounts, responsibilities, and station assignments.</p><strong>Open workspace</strong>
                 </a>
+                <a class="operation-route route-deleted-items user-directory-access" data-tool-page="deleted-items.html" href="deleted-items.html" hidden>
+                    <img class="route-icon" src="assets/icons/package-search.svg" alt="">
+                    <span class="route-kicker">Administration</span><h3>Deleted items</h3><p>Review backups and restore removed records.</p><strong>Open workspace</strong>
+                </a>
             </div>
         </section>
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20261001activity"></script>
+    <script src="js/api.js?v=20261004searchable"></script>
     <script src="js/home.js?v=20260927b"></script>
 </body>
 </html>

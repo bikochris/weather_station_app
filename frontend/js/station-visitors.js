@@ -17,7 +17,7 @@ function refreshVisitorStations() {
     const district = visitorField("filterDistrict").value;
     const select = visitorField("filterStation");
     select.replaceChildren(); visitorOption(select, "All stations", "");
-    visitorStations.filter(station => !district || station.district === district)
+    visitorStations.filter(station => matchesSelectedFilter(station.district, district))
         .forEach(station => visitorOption(select, `${station.station_code} - ${station.station_name}`, station.station_id));
 }
 

@@ -2,6 +2,71 @@ let stationInstrumentRecords = [];
 let stationInstrumentStations = [];
 let stationInstrumentCatalog = [];
 const stationInstrumentCollection = createCollectionState("station", "asc");
+let stationInstrumentPreviewedFile = null;
+
+
+function selectedInstrumentIsSensing() {
+    const instrumentId = Number(document.getElementById("instrumentId").value);
+    return stationInstrumentCatalog.some((instrument) =>
+        instrument.instrument_id === instrumentId &&
+        (instrument.category || "").trim().toLowerCase() === "sensing"
+    );
+}
+
+
+function updateSensingConnectionFields() {
+    const sensing = selectedInstrumentIsSensing();
+    document.getElementById("sensingConnectionFields").hidden = !sensing;
+    if (!sensing) {
+        document.getElementById("dataLoggerPorts").value = "";
+        document.getElementById("stationInstrumentAlgorithm").value = "";
+        document.querySelectorAll(".wire-color").forEach((input) => { input.value = ""; });
+    }
+}
+
+
+function renderWiringEditor() {
+    const tbody = document.getElementById("wiringEditorRows");
+    for (let number = 1; number <= 10; number += 1) {
+        const row = document.createElement("tr");
+        appendCell(row, String(number));
+        const cell = document.createElement("td");
+        const input = document.createElement("input");
+        input.className = "wire-color";
+        input.type = "text";
+        input.maxLength = 50;
+        input.setAttribute("aria-label", `Wire ${number} color`);
+        cell.appendChild(input);
+        row.appendChild(cell);
+        tbody.appendChild(row);
+    }
+}
+
+
+function appendWiringCell(row, colors) {
+    const cell = appendCell(row, "");
+    const wired = (colors || []).map((color, index) => ({number: index + 1, color})).filter(({color}) => color);
+    if (!wired.length) {
+        cell.textContent = "-";
+        return;
+    }
+    const details = document.createElement("details");
+    details.className = "wiring-detail";
+    const summary = document.createElement("summary");
+    summary.textContent = `${wired.length} wire${wired.length === 1 ? "" : "s"}`;
+    details.appendChild(summary);
+    const table = document.createElement("table");
+    const body = document.createElement("tbody");
+    wired.forEach(({number, color}) => {
+        const wireRow = document.createElement("tr");
+        appendCell(wireRow, String(number));
+        appendCell(wireRow, color);
+        body.appendChild(wireRow);
+    });
+    table.appendChild(body);
+    details.appendChild(table);
+    cell.appendChild(details);
+}
 
 
 function renderStationInstrumentStatistics(summary) {
@@ -95,6 +160,7 @@ function populateStationCategoryInstruments(selectedInstrumentId = "") {
         ));
     });
     instrumentSelect.value = String(selectedInstrumentId || "");
+    updateSensingConnectionFields();
 }
 
 
@@ -107,6 +173,7 @@ function resetStationInstrumentForm() {
         "Add station instrument";
     document.getElementById("cancelStationInstrumentEdit").hidden = true;
     populateStationCategoryInstruments();
+    updateSensingConnectionFields();
 }
 
 
@@ -128,6 +195,11 @@ function editStationInstrument(recordId) {
     document.getElementById("recommendedReplacementDate").value = record.recommended_replacement_date || "";
     document.getElementById("stationInstrumentStatus").value = record.status;
     document.getElementById("stationInstrumentComment").value = record.comment || "";
+    document.getElementById("dataLoggerPorts").value = record.data_logger_ports || "";
+    document.getElementById("stationInstrumentAlgorithm").value = record.algorithm || "";
+    document.querySelectorAll(".wire-color").forEach((input, index) => {
+        input.value = (record.wiring_colors || [])[index] || "";
+    });
     document.getElementById("stationInstrumentSubmit").textContent = "Save changes";
     document.getElementById("cancelStationInstrumentEdit").hidden = false;
     document.getElementById("stationInstrumentForm").scrollIntoView({behavior: "smooth"});
@@ -174,7 +246,7 @@ async function loadStationInstruments() {
     const table = document.getElementById("stationInstrumentTable");
     const stationId = document.getElementById("stationFilter").value;
     const canManage = isITUser() || isMaintenanceUser();
-    const columnCount = canManage ? 19 : 18;
+    const columnCount = canManage ? 22 : 21;
     const parameters = collectionParameters(stationInstrumentCollection, {
         station_id: stationId,
         district: document.getElementById("districtFilter").value,
@@ -221,6 +293,9 @@ async function loadStationInstruments() {
             appendCell(row, record.recommended_replacement_date || "-");
             appendCell(row, record.status);
             appendCell(row, record.comment || "-");
+            appendCell(row, record.data_logger_ports || "-");
+            appendCell(row, record.algorithm || "-");
+            appendWiringCell(row, record.wiring_colors);
             appendCell(row, record.recorded_by || "Legacy record");
             appendCell(row, formatStationInstrumentTimestamp(record.created_at));
             appendCell(row, record.updated_by || "-");
@@ -246,9 +321,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!await requireSession()) return;
     const canManage = isITUser() || isMaintenanceUser();
     document.getElementById("stationInstrumentEditor").hidden = !canManage;
+    document.getElementById("stationInstrumentImport").hidden = !canManage;
     document.getElementById("stationInstrumentActionsHeading").hidden = !canManage;
     const form = document.getElementById("stationInstrumentForm");
     const message = document.getElementById("stationInstrumentMessage");
+    renderWiringEditor();
     resetStationInstrumentForm();
     try {
         await loadStationInstrumentOptions();
@@ -286,7 +363,13 @@ document.addEventListener("DOMContentLoaded", async () => {
                             document.getElementById("recommendedReplacementDate").value || null,
                         status: document.getElementById("stationInstrumentStatus").value,
                         comment:
-                            document.getElementById("stationInstrumentComment").value.trim() || null
+                            document.getElementById("stationInstrumentComment").value.trim() || null,
+                        data_logger_ports: selectedInstrumentIsSensing()
+                            ? document.getElementById("dataLoggerPorts").value.trim() || null : null,
+                        algorithm: selectedInstrumentIsSensing()
+                            ? document.getElementById("stationInstrumentAlgorithm").value.trim() || null : null,
+                        wiring_colors: selectedInstrumentIsSensing()
+                            ? [...document.querySelectorAll(".wire-color")].map((input) => input.value.trim() || null) : []
                     })
                 }
             );
@@ -361,4 +444,68 @@ document.addEventListener("DOMContentLoaded", async () => {
         "change",
         () => populateStationCategoryInstruments()
     );
+    document.getElementById("instrumentId").addEventListener("change", updateSensingConnectionFields);
+    if (canManage) bindStationInstrumentImport();
 });
+
+
+function bindStationInstrumentImport() {
+    const fileInput = document.getElementById("stationInstrumentCsv");
+    const upload = document.getElementById("stationInstrumentUpload");
+    const message = document.getElementById("stationInstrumentImportMessage");
+    fileInput.addEventListener("change", () => {
+        stationInstrumentPreviewedFile = null;
+        upload.disabled = true;
+        setMessage(message, "");
+    });
+    document.getElementById("stationInstrumentTemplate").addEventListener("click", async () => {
+        try {
+            const response = await apiFetch("/station-instruments/template");
+            if (!response.ok) throw new Error(await getErrorMessage(response, "Unable to download template"));
+            const url = URL.createObjectURL(await response.blob());
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = "station-instrument-template.csv";
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch (error) {
+            setMessage(message, error.message, "error");
+        }
+    });
+    async function importCsv(mode) {
+        const file = fileInput.files[0];
+        if (!file) {
+            setMessage(message, "Choose a CSV file first.", "error");
+            return;
+        }
+        if (mode === "create" && stationInstrumentPreviewedFile !== file) {
+            setMessage(message, "Preview this file before uploading.", "error");
+            return;
+        }
+        setMessage(message, mode === "preview" ? "Checking CSV..." : "Uploading CSV...");
+        upload.disabled = true;
+        try {
+            const response = await apiFetch(`/station-instruments/import?mode=${mode}`, {
+                method: "POST", headers: {"Content-Type": "text/csv"}, body: await file.arrayBuffer()
+            });
+            if (!response.ok) throw new Error(await getErrorMessage(response, "Unable to import CSV"));
+            const result = await response.json();
+            const summary = `${result.total} rows checked: ${result.new} new, ${result.skipped} already present.`;
+            if (mode === "preview") {
+                stationInstrumentPreviewedFile = file;
+                upload.disabled = result.new === 0;
+                setMessage(message, summary, "success");
+            } else {
+                stationInstrumentPreviewedFile = null;
+                fileInput.value = "";
+                setMessage(message, `${result.created} station instruments imported. ${summary}`, "success");
+                await loadStationInstruments();
+            }
+        } catch (error) {
+            stationInstrumentPreviewedFile = null;
+            setMessage(message, error.message, "error");
+        }
+    }
+    document.getElementById("stationInstrumentPreview").addEventListener("click", () => importCsv("preview"));
+    upload.addEventListener("click", () => importCsv("create"));
+}

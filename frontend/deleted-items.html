@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deleted items | Station Operations</title>
+    <link rel="stylesheet" href="css/app.css?v=20261004searchable">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div><p class="eyebrow">Operations</p><h1>Station Operations</h1></div>
+            <nav aria-label="Primary navigation"><a href="index.html">Home</a></nav>
+            <div class="user-menu">
+                <span><strong data-user-name></strong><small data-user-department></small></span>
+                <button class="header-button" type="button" data-logout>Sign out</button>
+            </div>
+        </div>
+    </header>
+    <main>
+        <section>
+            <div class="section-heading">
+                <div><p class="eyebrow">Administration</p><h2>Deleted items</h2></div>
+                <div class="deleted-export-actions">
+                    <button type="button" class="secondary-button" id="deletedExportCsv">Export CSV</button>
+                    <button type="button" class="secondary-button" id="deletedExportPdf">Export PDF</button>
+                </div>
+            </div>
+            <div class="deleted-filter-grid">
+                <div class="field"><label for="deletedSearch">Search</label><input id="deletedSearch" type="search" placeholder="Item, original ID, or username"></div>
+                <div class="field"><label for="deletedType">Type</label><select id="deletedType"><option value="">All types</option></select></div>
+                <div class="field"><label for="deletedDistrict">District</label><select id="deletedDistrict"><option value="">All districts</option></select></div>
+                <div class="field"><label for="deletedStatus">Status</label><select id="deletedStatus"><option value="deleted">Awaiting restore</option><option value="restored">Restored</option><option value="all">All</option></select></div>
+                <div class="field"><label for="deletedFrom">Deleted from</label><input id="deletedFrom" type="date"></div>
+                <div class="field"><label for="deletedTo">Deleted to</label><input id="deletedTo" type="date"></div>
+                <div class="field"><label for="deletedPageSize">Rows per page</label><select id="deletedPageSize"><option>25</option><option>50</option><option>100</option></select></div>
+                <div class="deleted-filter-actions"><button type="button" id="deletedApply">Apply filters</button><button type="button" class="secondary-button" id="deletedReset">Reset</button></div>
+            </div>
+            <p id="deletedMessage" role="status"></p>
+            <div class="table-wrap">
+                <table id="deletedItemsTable">
+                    <thead><tr>
+                        <th data-sort="entity_type">Type</th>
+                        <th data-sort="title">Item</th>
+                        <th>Original ID</th>
+                        <th data-sort="district">District</th>
+                        <th data-sort="deleted_by_username">Deleted by</th>
+                        <th data-sort="deleted_at" aria-sort="descending">Deleted at</th>
+                        <th data-sort="row_count">Backup rows</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr></thead>
+                    <tbody id="deletedItemsRows"></tbody>
+                </table>
+            </div>
+            <div class="pagination-controls">
+                <span id="deletedCount">0 items</span>
+                <div><button type="button" class="secondary-button" id="deletedPrevious">Previous</button>
+                <span id="deletedPageLabel">Page 1</span>
+                <button type="button" class="secondary-button" id="deletedNext">Next</button></div>
+            </div>
+        </section>
+    </main>
+    <script src="js/config.js"></script>
+    <script src="js/api.js?v=20261004searchable"></script>
+    <script src="js/deleted-items.js?v=20261004historytable"></script>
+</body>
+</html>

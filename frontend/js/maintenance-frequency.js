@@ -5,22 +5,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     panel.hidden = false;
     const yearSelect = document.getElementById("frequencyFiscalYear");
     const categorySelect = document.getElementById("frequencyCategory");
+    let configuredTargets = [];
     const today = new Date();
     const currentYear = today.getFullYear() - (today.getMonth() < 6 ? 1 : 0);
     for (let year = currentYear - 2; year <= currentYear + 2; year++) {
         yearSelect.appendChild(new Option(`${year}/${year + 1}`, year));
     }
     yearSelect.value = currentYear;
-    const stationsResponse = await apiFetch("/stations");
-    if (stationsResponse.ok) {
-        const stations = await stationsResponse.json();
-        [...new Set(stations.map(station => station.station_category).filter(Boolean))].sort()
-            .forEach(category => categorySelect.appendChild(new Option(category, category)));
+    const categoriesResponse = await apiFetch("/station-categories");
+    if (categoriesResponse.ok) {
+        const categories = await categoriesResponse.json();
+        categories.forEach(category => categorySelect.appendChild(new Option(category.name, category.name)));
     }
     async function loadTargets() {
         const response = await apiFetch(`/maintenance-frequencies?fiscal_start_year=${yearSelect.value}`);
         if (!response.ok) return;
         const items = await response.json();
+        configuredTargets = items;
         const body = document.getElementById("frequencyRows");
         body.replaceChildren();
         if (!items.length) {
@@ -64,7 +65,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         event.preventDefault();
         const message = document.getElementById("frequencyMessage");
         const response = await apiFetch("/maintenance-frequencies", {
-            method: "PUT", headers: {"Content-Type": "application/json"},
+            method: "PUT", requiresEditReason: configuredTargets.some(item =>
+                item.station_category === categorySelect.value &&
+                item.fiscal_start_year === Number(yearSelect.value)),
+            headers: {"Content-Type": "application/json"},
             body: JSON.stringify({fiscal_start_year: Number(yearSelect.value),
                 station_category: categorySelect.value,
                 cadence: document.getElementById("frequencyCadence").value,

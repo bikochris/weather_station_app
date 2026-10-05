@@ -229,9 +229,22 @@ document.addEventListener("DOMContentLoaded", async () => {
             notes: row.querySelector(".request-note").value.trim() || null
         }));
         const editing = editingRequestId !== null;
+        let requiresEditReason = editing;
+        if (!editing) {
+            const month = document.getElementById("requestMonth").value;
+            const previous = await apiFetch(`/data-requests?${new URLSearchParams({month_from: month, month_to: month})}`);
+            if (!previous.ok) {
+                setMessage(message, await getErrorMessage(previous, "Unable to check existing requests"), "error");
+                return;
+            }
+            const existing = (await previous.json()).items;
+            requiresEditReason = categories.some(category => existing.some(item =>
+                item.request_month === month && item.category.toLowerCase() === category.category.toLowerCase()));
+        }
         setMessage(message, editing ? "Saving changes..." : "Saving monthly categories...");
         const response = await apiFetch(editing ? `/data-requests/${editingRequestId}` : "/data-requests/batch", {
             method: editing ? "PUT" : "POST",
+            requiresEditReason,
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify(editing ? {
                 request_month: document.getElementById("requestMonth").value,

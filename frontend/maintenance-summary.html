@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Maintenance Summary | Station Operations</title>
-    <link rel="stylesheet" href="css/app.css?v=20261001activity">
+    <link rel="stylesheet" href="css/app.css?v=20261004searchable">
 </head>
 <body>
     <header class="app-header"><div class="header-inner">
@@ -15,7 +15,7 @@
     <main class="dashboard-layout">
         <div class="dashboard-content"><section>
             <div class="section-heading"><div><p class="eyebrow">Field work</p><h2>Maintenance summary</h2></div>
-                <div class="action-group"><button class="secondary-button" id="exportMaintenanceCsv" type="button">Export CSV</button><button class="secondary-button" id="exportMaintenancePdf" type="button">Export PDF</button></div>
+                <div class="action-group"><label class="export-history-option"><input id="maintenanceSummaryIncludeHistory" type="checkbox">Include edit history (separate CSV)</label><button class="secondary-button" id="exportMaintenanceCsv" type="button">Export CSV</button><button class="secondary-button" id="exportMaintenancePdf" type="button">Export PDF</button></div>
             </div>
             <div class="filter-bar analytics-filter">
                 <div class="field"><label for="filterDistrict">District</label><select id="filterDistrict"></select></div>
@@ -37,6 +37,6 @@
             <div class="metric-item"><span>Not configured</span><strong id="metricUnconfigured">0</strong></div>
         </div></aside>
     </main>
-    <script src="js/config.js"></script><script src="js/api.js?v=20261001activity"></script><script src="js/analytics-pages.js?v=20260930maintainedrate1"></script>
+    <script src="js/config.js"></script><script src="js/api.js?v=20261004searchable"></script><script src="js/analytics-pages.js?v=20261004searchable"></script>
 </body>
 </html>

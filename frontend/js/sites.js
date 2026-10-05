@@ -28,13 +28,14 @@ function appendSiteStations(row, site) {
 
 async function loadSites() {
     const table = document.getElementById("siteTable");
-    showTableMessage(table, 10, "Loading sites...");
+    showTableMessage(table, 11, "Loading sites...");
     const parameters = collectionParameters(siteCollection, {
-        district: document.getElementById("districtFilter")?.value || ""
+        district: document.getElementById("districtFilter")?.value || "",
+        status: document.getElementById("siteStatusFilter").value
     });
     const response = await apiFetch(`/sites?${parameters}`);
     if (!response.ok) {
-        showTableMessage(table, 10, await getErrorMessage(response, "Unable to load sites"));
+        showTableMessage(table, 11, await getErrorMessage(response, "Unable to load sites"));
         return;
     }
     const result = await response.json();
@@ -42,7 +43,7 @@ async function loadSites() {
     renderPagination("sitePagination", result, siteCollection, loadSites);
     table.replaceChildren();
     if (!result.items.length) {
-        showTableMessage(table, 10, "No sites match the current search.");
+        showTableMessage(table, 11, "No sites match the current filters.");
         return;
     }
     result.items.forEach((site) => {
@@ -56,6 +57,7 @@ async function loadSites() {
         appendCell(row, site.district);
         appendCell(row, site.sector);
         appendCell(row, site.station_count);
+        appendCell(row, site.status_summary);
         appendSiteStations(row, site);
         table.appendChild(row);
     });
@@ -71,12 +73,23 @@ document.addEventListener("DOMContentLoaded", async () => {
         () => { siteCollection.page = 1; loadSites(); }
     );
     document.getElementById("refreshSites").addEventListener("click", loadSites);
+    document.getElementById("siteStatusFilter").addEventListener("change", () => {
+        siteCollection.page = 1;
+        loadSites();
+    });
     bindCollectionControls({
         state: siteCollection,
         reload: loadSites,
         searchId: "siteSearch",
         pageSizeId: "sitePageSize",
-        tableSelector: ".site-table"
+        tableSelector: ".site-table",
+        exportBasePath: "/sites",
+        csvButtonId: "siteExportCsv",
+        pdfButtonId: "siteExportPdf",
+        getExtraParameters: () => ({
+            district: document.getElementById("districtFilter")?.value || "",
+            status: document.getElementById("siteStatusFilter").value
+        })
     });
     await loadSites();
 });

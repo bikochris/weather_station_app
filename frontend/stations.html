@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stations | Station Operations</title>
-    <link rel="stylesheet" href="css/app.css?v=20261001activity">
+    <link rel="stylesheet" href="css/app.css?v=20261004searchable">
 </head>
 <body>
     <header class="app-header">
@@ -24,7 +24,7 @@
                 <a href="volunteer-data.html">Volunteer data</a>
                 <a href="reporting-status.html">Reporting</a>
                 <a href="data-requests.html">Requests</a>
-                <a href="kpi.html">KPI</a>
+                <a href="kpi.html">Dashboard</a>
                 <a href="search.html">Search</a>
                 <a class="user-directory-access" href="users.html" hidden>Users</a>
             </nav>
@@ -91,13 +91,6 @@
                     <label for="stationCategory">Station category</label>
                     <select id="stationCategory" required>
                         <option value="">Select a category</option>
-                        <option value="Upper air station">Upper air station</option>
-                        <option value="Weather radar">Weather radar</option>
-                        <option value="Automatic Weather stations">Automatic Weather stations</option>
-                        <option value="Automatic Raingauge">Automatic Raingauge</option>
-                        <option value="Principal stations">Principal stations</option>
-                        <option value="Climatic stations">Climatic stations</option>
-                        <option value="Rainfall station">Rainfall station</option>
                     </select>
                 </div>
 
@@ -150,6 +143,27 @@
             </div>
         </section>
 
+        <section id="stationCategoryManager" hidden>
+            <div class="section-heading">
+                <div><p class="eyebrow">Station registry</p><h2>Station categories</h2></div>
+            </div>
+            <form id="stationCategoryForm" class="form-grid">
+                <input type="hidden" id="stationCategoryEditId">
+                <div class="field">
+                    <label for="stationCategoryName">Category name</label>
+                    <input id="stationCategoryName" type="text" maxlength="60" required>
+                </div>
+                <div class="form-actions">
+                    <button id="saveStationCategory" type="submit">Add category</button>
+                    <button id="cancelStationCategoryEdit" class="secondary-button" type="button" hidden>Cancel</button>
+                </div>
+                <p id="stationCategoryMessage" class="message span-2" aria-live="polite"></p>
+            </form>
+            <div class="table-wrap">
+                <table><thead><tr><th>Category</th><th>Manage</th></tr></thead><tbody id="stationCategoryRows"></tbody></table>
+            </div>
+        </section>
+
         <section>
             <div class="section-heading history-heading">
                 <div>
@@ -169,13 +183,6 @@
                         <label for="stationCategoryFilter">Station category</label>
                         <select id="stationCategoryFilter">
                             <option value="">All categories</option>
-                            <option value="Upper air station">Upper air station</option>
-                            <option value="Weather radar">Weather radar</option>
-                            <option value="Automatic Weather stations">Automatic Weather stations</option>
-                            <option value="Automatic Raingauge">Automatic Raingauge</option>
-                            <option value="Principal stations">Principal stations</option>
-                            <option value="Climatic stations">Climatic stations</option>
-                            <option value="Rainfall station">Rainfall station</option>
                         </select>
                     </div>
                     <div class="field filter-field">
@@ -259,7 +266,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20261001activity"></script>
-    <script src="js/stations.js?v=20260930audit2"></script>
+    <script src="js/api.js?v=20261004searchable"></script>
+    <script src="js/stations.js?v=20261004searchable"></script>
 </body>
 </html>

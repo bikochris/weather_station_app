@@ -1,4 +1,5 @@
 let instrumentRecords = [];
+let availableStationCategories = [];
 const instrumentCollection = createCollectionState("instrument_name", "asc");
 
 
@@ -120,7 +121,7 @@ async function loadInstruments() {
 function downloadInstrumentTemplate() {
     const csv = [
         "instrument_name,parameters_it_takes,category,station_categories,description",
-        'Temperature Sensor,"Air temperature",Temperature,"Automatic Weather stations|Principal stations","Measures air temperature"'
+        `Temperature Sensor,"Air temperature",Temperature,"${availableStationCategories.slice(0, 2).join("|")}","Measures air temperature"`
     ].join("\r\n");
     const url = URL.createObjectURL(new Blob([csv], {type: "text/csv;charset=utf-8"}));
     const link = document.createElement("a");
@@ -162,6 +163,7 @@ async function uploadInstruments() {
         setMessage(message, "Uploading...");
         const response = await apiFetch("/instruments/import?mode=upsert", {
             method: "POST",
+            requiresEditReason: counts.existing > 0,
             headers: {"Content-Type": "text/csv;charset=utf-8"},
             body: csvText
         });
@@ -190,6 +192,25 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
     }
     document.getElementById("instrumentEditor").hidden = !isITUser();
+    try {
+        const categoriesResponse = await apiFetch("/station-categories");
+        if (!categoriesResponse.ok) throw new Error(await getErrorMessage(categoriesResponse, "Unable to load station categories"));
+        const categories = await categoriesResponse.json();
+        availableStationCategories = categories.map(category => category.name);
+        const container = document.getElementById("instrumentStationCategories");
+        container.replaceChildren();
+        categories.forEach(category => {
+            const label = document.createElement("label");
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.name = "stationCategories";
+            checkbox.value = category.name;
+            label.append(checkbox, document.createTextNode(` ${category.name}`));
+            container.append(label);
+        });
+    } catch (error) {
+        setMessage(document.getElementById("formMessage"), error.message, "error");
+    }
     const form = document.getElementById("instrumentForm");
     const message = document.getElementById("formMessage");
 

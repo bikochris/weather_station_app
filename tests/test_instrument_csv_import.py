@@ -14,7 +14,7 @@ class InstrumentCsvImportTests(unittest.TestCase):
         )
         items, merged = parse_instrument_import(csv_text)
         self.assertEqual((len(items), merged), (2, 2))
-        self.assertEqual(items[0].station_categories, ["Automatic Weather stations", "Automatic Raingauge"])
+        self.assertEqual(items[0].station_categories, ["Automatic Weather station", "Automatic Rain Gauge"])
         self.assertEqual(items[1].parameters_taken, "Max/Min temperature; Dry temperature")
 
     def test_export_headers_and_inactive_status_round_trip(self):
@@ -24,7 +24,7 @@ class InstrumentCsvImportTests(unittest.TestCase):
         )
         items, merged = parse_instrument_import(csv_text)
         self.assertEqual(merged, 0)
-        self.assertEqual(items[0].station_categories, ["Principal stations", "Climatic stations"])
+        self.assertEqual(items[0].station_categories, ["Principal Station", "Climatic Station"])
         self.assertFalse(items[0].is_active)
 
 

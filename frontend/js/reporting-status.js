@@ -5,38 +5,35 @@ let reportingHistorySortBy = "changed_at";
 let reportingHistorySortOrder = "desc";
 let openReportingMonth = null;
 
-const reportingHistoryLabels = {
-    expected_stations: "Expected", operational_stations: "Operational",
-    under_maintenance_stations: "Under maintenance", suspended_stations: "Suspended",
-    reported_stations: "Reported", notes: "Notes", recorded_by_username: "Recorded by",
-    filename: "File", file_size: "File size", uploaded_by_username: "Uploaded by",
-    non_reported_file: "Non-reported file"
-};
-
-function historyValue(value) {
-    if (value == null || value === "") return "-";
-    if (typeof value === "object") return JSON.stringify(value);
-    return String(value);
-}
-
 function renderReportingChange(item, cell, expanded = false) {
     const before = item.before_data || {};
     const after = item.after_data || {};
-    const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])]
-        .filter(key => !["reporting_status_id", "report_month"].includes(key));
+    const keys = historyVisibleKeys(before, after);
     const changed = keys.filter(key => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
-    if (!changed.length) { cell.textContent = "Saved without field changes"; return; }
     const details = document.createElement("details");
     details.open = expanded;
     const summary = document.createElement("summary");
-    summary.textContent = `${changed.length} change${changed.length === 1 ? "" : "s"}`;
-    const list = document.createElement("ul");
-    changed.forEach(key => {
-        const line = document.createElement("li");
-        line.textContent = `${reportingHistoryLabels[key] || key}: ${historyValue(before[key])} → ${historyValue(after[key])}`;
-        list.append(line);
-    });
-    details.append(summary, list); cell.append(details);
+    summary.textContent = `${changed.length} changed field${changed.length === 1 ? "" : "s"} · full saved row`;
+    details.append(summary);
+    const mainTable = document.getElementById("reportingTable").closest("table");
+    const sample = mainTable.querySelector(".reporting-record-row");
+    const columns = historyColumnsForTable(mainTable, "reporting_status",
+        sample?.cells.length || (canManageReporting ? 12 : 11));
+    renderRecordHistoryTable(details, [item], "reporting_status", columns);
+    cell.append(details);
+}
+
+async function downloadReportingHistory(month = "") {
+    const params = new URLSearchParams();
+    if (month) params.set("report_month", month);
+    const response = await apiFetch(`/reporting-status/history/export?${params}`);
+    if (!response.ok) throw new Error(await getErrorMessage(response, "Unable to export reporting history"));
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `reporting-edit-history${month ? `-${month}` : ""}.csv`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 async function loadInlineReportingHistory(detailRow, month, page = 1) {
@@ -62,18 +59,21 @@ async function loadInlineReportingHistory(detailRow, month, page = 1) {
             const count = document.createElement("p");
             count.className = "reporting-history-count";
             count.textContent = `${result.total} recorded change${result.total === 1 ? "" : "s"}`;
-            content.append(count);
+            const download = document.createElement("button");
+            download.type = "button";
+            download.className = "secondary-button record-history-download";
+            download.textContent = "Download history CSV";
+            download.onclick = async () => {
+                try { await downloadReportingHistory(month); }
+                catch (error) { window.alert(error.message); }
+            };
+            content.append(count, download);
         }
-        result.items.forEach(item => {
-            const entry = document.createElement("div");
-            entry.className = "reporting-history-entry";
-            const meta = document.createElement("strong");
-            meta.textContent = `${new Date(item.changed_at).toLocaleString()}  ·  ${item.action}  ·  ${item.changed_by_username}`;
-            const changes = document.createElement("div");
-            renderReportingChange(item, changes, true);
-            entry.append(meta, changes);
-            content.append(entry);
-        });
+        const mainTable = document.getElementById("reportingTable").closest("table");
+        const sample = mainTable.querySelector(".reporting-record-row");
+        const columns = historyColumnsForTable(mainTable, "reporting_status",
+            sample?.cells.length || (canManageReporting ? 12 : 11));
+        renderRecordHistoryTable(content, result.items, "reporting_status", columns);
         if (page * result.page_size < result.total) {
             const more = document.createElement("button");
             more.type = "button";
@@ -342,9 +342,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         const message = document.getElementById("reportingMessage");
         const month = document.getElementById("reportingMonth").value;
         const file = document.getElementById("nonReportedFile").files[0];
+        const previous = reportingRecords.find(item => item.report_month === month);
+        const requiresEditReason = Boolean(previous || (file && previous?.non_reported_file));
+        const editReason = requiresEditReason ? await requestEditReason() : null;
+        if (requiresEditReason && !editReason) return;
         setMessage(message, "Saving...");
         const response = await apiFetch("/reporting-status", {
             method: "POST",
+            editReason,
+            requiresEditReason: false,
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify({
                 report_month: month,
@@ -359,6 +365,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (file) {
             const upload = await apiFetch(`/reporting-status/non-reported-file?report_month=${encodeURIComponent(month)}&filename=${encodeURIComponent(file.name)}`, {
                 method: "POST",
+                editReason,
+                requiresEditReason: false,
                 headers: {"Content-Type": file.type || "application/octet-stream"},
                 body: file
             });
@@ -379,6 +387,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("reportingHistoryMonth").addEventListener("change", () => {
         reportingHistoryPage = 1;
         loadReportingHistory();
+    });
+    const historyExport = document.createElement("button");
+    historyExport.type = "button";
+    historyExport.className = "secondary-button";
+    historyExport.textContent = "Download history CSV";
+    document.getElementById("clearReportingHistoryMonth").after(historyExport);
+    historyExport.addEventListener("click", async () => {
+        try { await downloadReportingHistory(document.getElementById("reportingHistoryMonth").value); }
+        catch (error) { window.alert(error.message); }
     });
     document.getElementById("clearReportingHistoryMonth").addEventListener("click", () => {
         document.getElementById("reportingHistoryMonth").value = "";

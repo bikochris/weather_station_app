@@ -1,5 +1,54 @@
 let stationRecords = [];
+let stationCategories = [];
 const stationCollection = createCollectionState("station_name");
+
+
+async function loadStationCategories(previousName = "", updatedName = "") {
+    const response = await apiFetch("/station-categories");
+    if (!response.ok) throw new Error(await getErrorMessage(response, "Unable to load station categories"));
+    stationCategories = await response.json();
+    const editor = document.getElementById("stationCategory");
+    const filter = document.getElementById("stationCategoryFilter");
+    const selectedEditor = editor.value === previousName ? updatedName : editor.value;
+    const selectedFilter = filter.value.split("|")
+        .map(value => value === previousName ? updatedName : value).join("|");
+    editor.replaceChildren(new Option("Select a category", ""));
+    filter.replaceChildren(new Option("All categories", ""));
+    stationCategories.forEach(category => {
+        editor.append(new Option(category.name, category.name));
+        filter.append(new Option(category.name, category.name));
+    });
+    editor.value = selectedEditor;
+    filter.value = selectedFilter;
+    const rows = document.getElementById("stationCategoryRows");
+    rows.replaceChildren();
+    stationCategories.forEach(category => {
+        const row = rows.insertRow();
+        row.insertCell().textContent = category.name;
+        const action = row.insertCell();
+        const edit = document.createElement("button");
+        edit.type = "button";
+        edit.className = "secondary-button compact-button";
+        edit.textContent = "Edit";
+        edit.onclick = () => {
+            document.getElementById("stationCategoryEditId").value = category.category_id;
+            document.getElementById("stationCategoryName").value = category.name;
+            document.getElementById("saveStationCategory").textContent = "Save changes";
+            document.getElementById("cancelStationCategoryEdit").hidden = false;
+            document.getElementById("stationCategoryName").focus();
+        };
+        action.append(edit);
+    });
+    attachRecordHistoryRows(rows, "station_categories", stationCategories, category => category.category_id);
+}
+
+
+function resetCategoryForm() {
+    document.getElementById("stationCategoryForm").reset();
+    document.getElementById("stationCategoryEditId").value = "";
+    document.getElementById("saveStationCategory").textContent = "Add category";
+    document.getElementById("cancelStationCategoryEdit").hidden = true;
+}
 
 
 function renderStationStatistics(summary) {
@@ -173,7 +222,7 @@ function downloadStationTemplate() {
         "Kigali City",
         "Nyarugenge",
         "Nyarugenge",
-        "Automatic Weather stations",
+        stationCategories[0]?.name || "",
         "Operational",
         "Primary station",
         "Corrective maintenance by next quarter"
@@ -221,6 +270,7 @@ async function uploadStations() {
         setMessage(message, "Uploading stations...");
         const response = await apiFetch("/stations/import?mode=upsert", {
             method: "POST",
+            requiresEditReason: counts.existing > 0,
             headers: {"Content-Type": "text/csv; charset=utf-8"},
             body: csvText
         });
@@ -241,6 +291,34 @@ document.addEventListener("DOMContentLoaded", async () => {
     initializeShell();
     if (!await requireSession()) return;
     document.getElementById("stationEditor").hidden = !isITUser();
+    document.getElementById("stationCategoryManager").hidden = !isITUser();
+    try {
+        await loadStationCategories();
+    } catch (error) {
+        setMessage(document.getElementById("stationCategoryMessage"), error.message, "error");
+    }
+    document.getElementById("cancelStationCategoryEdit").onclick = resetCategoryForm;
+    document.getElementById("stationCategoryForm").onsubmit = async event => {
+        event.preventDefault();
+        const editId = document.getElementById("stationCategoryEditId").value;
+        const name = document.getElementById("stationCategoryName").value.trim();
+        const message = document.getElementById("stationCategoryMessage");
+        const previousName = stationCategories.find(category => String(category.category_id) === editId)?.name || "";
+        try {
+            const response = await apiFetch(editId ? `/station-categories/${editId}` : "/station-categories", {
+                method: editId ? "PUT" : "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({name})
+            });
+            if (!response.ok) throw new Error(await getErrorMessage(response, "Unable to save category"));
+            resetCategoryForm();
+            await loadStationCategories(previousName, name);
+            await loadStations();
+            setMessage(message, editId ? "Category renamed across station records." : "Category added.", "success");
+        } catch (error) {
+            setMessage(message, error.message, "error");
+        }
+    };
     try {
         const response = await apiFetch("/stations");
         if (response.ok) setupDistrictFilter(

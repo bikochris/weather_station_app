@@ -40,13 +40,13 @@ function refreshVolunteerLocationFilters(changed) {
         volunteerPage("filterStation").value = "";
     }
     const province = volunteerPage("filterProvince").value;
-    const inProvince = volunteerStations.filter(station => !province || station.province === province);
+    const inProvince = volunteerStations.filter(station => matchesSelectedFilter(station.province, province));
     fillVolunteerOptions("filterDistrict", "All districts", inProvince.map(station => station.district));
     const district = volunteerPage("filterDistrict").value;
-    const inDistrict = inProvince.filter(station => !district || station.district === district);
+    const inDistrict = inProvince.filter(station => matchesSelectedFilter(station.district, district));
     fillVolunteerOptions("filterSector", "All sectors", inDistrict.map(station => station.sector));
     const sector = volunteerPage("filterSector").value;
-    const inSector = inDistrict.filter(station => !sector || station.sector === sector);
+    const inSector = inDistrict.filter(station => matchesSelectedFilter(station.sector, sector));
     const select = volunteerPage("filterStation"), previous = select.value;
     select.replaceChildren(new Option("All stations", ""));
     inSector.forEach(station => select.append(new Option(

@@ -27,6 +27,9 @@ class FakeCursor:
     def fetchall(self):
         return [(7, "ST-1", "Automatic Weather stations")]
 
+    def fetchone(self):
+        return (0,)
+
     def close(self):
         pass
 
@@ -57,6 +60,8 @@ class StationCsvImportTests(unittest.IsolatedAsyncioTestCase):
         connection = FakeConnection()
         with patch("backend.main.get_connection", return_value=connection), patch(
             "backend.main.ensure_application_tables"
+        ), patch(
+            "backend.main.validate_station_categories"
         ):
             result = await import_stations(FakeRequest(), mode="preview", user={"user_id": 1, "username": "tester"})
         self.assertEqual(result, {"total": 1, "new": 0, "existing": 1})
@@ -66,6 +71,8 @@ class StationCsvImportTests(unittest.IsolatedAsyncioTestCase):
         connection = FakeConnection()
         with patch("backend.main.get_connection", return_value=connection), patch(
             "backend.main.ensure_application_tables"
+        ), patch(
+            "backend.main.validate_station_categories"
         ), patch("backend.main.audit_snapshot", return_value={"station_id": 7}), patch(
             "backend.main.record_entity_edit"
         ):
@@ -75,6 +82,7 @@ class StationCsvImportTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(connection.committed)
         updates = [(sql, params) for sql, params in connection.query.statements if "UPDATE stations SET" in sql]
         self.assertEqual(len(updates), 1)
+        self.assertIn("Automatic Weather station", updates[0][1][0])
         self.assertEqual(updates[0][1][0][-1], 7)
 
 

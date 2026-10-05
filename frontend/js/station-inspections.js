@@ -596,8 +596,9 @@ document.addEventListener("DOMContentLoaded", async () => {
                 return;
             }
         }
+        const uploadedPhoto = Boolean(stationPhoto);
         resetInspectionForm();
-        setMessage(message, stationPhoto ? `${result.message}. Station photo uploaded.` : result.message, "success");
+        setMessage(message, uploadedPhoto ? `${result.message}. Station photo uploaded.` : result.message, "success");
         await loadInspections();
     });
 
@@ -676,7 +677,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
 
     const notificationRecord = Number(new URLSearchParams(window.location.search).get("record"));
-    if (notificationRecord) {
+    if (notificationRecord && navigator.onLine) {
         const response = await apiFetch(`/station-inspections?inspection_id=${notificationRecord}&page=1&page_size=10`);
         if (response.ok) {
             const result = await response.json();

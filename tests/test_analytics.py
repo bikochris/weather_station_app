@@ -14,9 +14,12 @@ from backend.main import (
 
 class CombinedDataCountTests(unittest.TestCase):
     def setUp(self):
+        validation = patch("backend.main.validate_station_categories")
+        validation.start()
+        self.addCleanup(validation.stop)
         self.item = CombinedDataCount.model_validate({
             "record_month": "2026-09",
-            "station_categories": ["Rainfall station", "Principal stations"],
+            "station_categories": ["Rainfall Station", "Principal Station"],
             "record_count": 234,
         })
 
@@ -30,12 +33,12 @@ class CombinedDataCountTests(unittest.TestCase):
         insert_call = next(call for call in connection.cursor.return_value.execute.call_args_list
                            if "INSERT INTO monthly_combined_data_counts" in call.args[0])
         values = insert_call.args[1]
-        self.assertEqual(values[:3], ("Principal stations|Rainfall station", "2026-09-01", 234))
+        self.assertEqual(values[:3], ("Principal Station|Rainfall Station", "2026-09-01", 234))
         connection.commit.assert_called_once()
 
     @patch("backend.main.get_connection")
     def test_duplicate_category_is_rejected_before_database_access(self, get_connection):
-        self.item.station_categories.append("Rainfall station")
+        self.item.station_categories.append("Rainfall Station")
         with self.assertRaises(HTTPException) as error:
             save_combined_data_count(self.item, {"user_id": 1, "username": "tester"})
         self.assertEqual(error.exception.status_code, 400)
@@ -45,7 +48,7 @@ class CombinedDataCountTests(unittest.TestCase):
     @patch("backend.main.get_connection")
     def test_overlap_with_single_category_is_rejected(self, get_connection, _ensure):
         connection = get_connection.return_value
-        connection.cursor.return_value.fetchall.side_effect = [[("Rainfall station",)], []]
+        connection.cursor.return_value.fetchall.side_effect = [[("Rainfall Station",)], []]
         with self.assertRaises(HTTPException) as error:
             save_combined_data_count(self.item, {"user_id": 1, "username": "tester"})
         self.assertEqual(error.exception.status_code, 409)
@@ -57,20 +60,20 @@ class CombinedDataCountTests(unittest.TestCase):
     def test_filtered_summary_combines_categories_by_month(self, get_connection, _ensure):
         connection = get_connection.return_value
         connection.cursor.return_value.fetchall.side_effect = [[], [
-            {"data_count_id": 1, "category_key": "Principal stations|Rainfall station",
+            {"data_count_id": 1, "category_key": "Principal Station|Rainfall Station",
              "record_month": "2026-09", "record_count": 234},
         ]]
-        result = get_data_counts(station_categories="Rainfall station", user={})
+        result = get_data_counts(station_categories="Rainfall Station", user={})
         self.assertEqual(result["summary"]["by_month"], {"2026-09": 234})
         self.assertEqual(result["summary"]["records"], 234)
         self.assertEqual(result["summary"]["categories"], 2)
-        self.assertEqual(result["items"][0]["station_categories"], ["Principal stations", "Rainfall station"])
+        self.assertEqual(result["items"][0]["station_categories"], ["Principal Station", "Rainfall Station"])
 
     @patch("backend.main.ensure_application_tables")
     @patch("backend.main.get_connection")
     def test_monthly_and_july_to_june_fiscal_totals(self, get_connection, _ensure):
         rows = [
-            {"station_category": "Rainfall station", "record_month": month, "record_count": count}
+            {"station_category": "Rainfall Station", "record_month": month, "record_count": count}
             for month, count in [("2026-07", 10), ("2026-10", 20), ("2027-01", 30), ("2027-04", 40),
                                  ("2027-06", 50), ("2027-07", 60)]
         ]

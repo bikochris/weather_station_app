@@ -376,6 +376,7 @@ function appendMaintenanceActions(row, record) {
 
 
 function appendInstrumentHistory(row, record, instrument, columnCount) {
+    const historyColumns = historyColumnsForRow(row, "maintenance");
     const instrumentCell = row.cells[3];
     const toggle = document.createElement("button");
     toggle.type = "button";
@@ -409,6 +410,8 @@ function appendInstrumentHistory(row, record, instrument, columnCount) {
             const heading = document.createElement("h4");
             heading.textContent = `${instrument.instrument_name} at ${record.station_name} · ${history.total} visit${history.total === 1 ? "" : "s"}`;
             content.append(heading);
+            if (history.items.length) content.append(recordHistoryDownloadButton(
+                "maintenance", history.items.map(item => item.maintenance_id), historyColumns));
             history.items.forEach(item => {
                 const entry = document.createElement("div");
                 entry.className = "instrument-history-entry";
@@ -427,26 +430,23 @@ function appendInstrumentHistory(row, record, instrument, columnCount) {
                     const summary = document.createElement("summary");
                     summary.textContent = `${item.changes.length} tracked edit${item.changes.length === 1 ? "" : "s"}`;
                     changes.append(summary);
-                    item.changes.forEach(change => {
-                        const edit = document.createElement("div");
-                        edit.className = "instrument-history-change";
-                        const actor = document.createElement("strong");
-                        actor.textContent = `${new Date(change.changed_at).toLocaleString()} · ${change.changed_by_username}`;
-                        edit.append(actor);
-                        for (const [key, label] of [["issue", "Issue"], ["action_done", "Action done"],
-                            ["recommendation", "Recommendation"]]) {
-                            if ((change.before?.[key] || "") === (change.after?.[key] || "")) continue;
-                            const line = document.createElement("div");
-                            line.textContent = `${label}: ${change.before?.[key] || "-"} → ${change.after?.[key] || "-"}`;
-                            edit.append(line);
-                        }
-                        Object.entries(change.shared_changes).forEach(([key, values]) => {
-                            const line = document.createElement("div");
-                            line.textContent = `${key.replaceAll("_", " ")}: ${values.before || "-"} → ${values.after || "-"}`;
-                            edit.append(line);
-                        });
-                        changes.append(edit);
-                    });
+                    const instrumentSnapshot = (shared, detail) => {
+                        const {instrument_details, ...record} = shared || {};
+                        return {maintenance_id: item.maintenance_id,
+                            instrument_id: instrument.instrument_id,
+                            instrument_name: instrument.instrument_name,
+                            ...record,
+                            issue: detail?.issue || null,
+                            action_done: detail?.action_done || null,
+                            recommendation: detail?.recommendation || null};
+                    };
+                    renderRecordHistoryTable(changes, item.changes.map(change => ({
+                            changed_at: change.changed_at,
+                            changed_by_username: change.changed_by_username,
+                            edit_reason: change.edit_reason,
+                            before_data: instrumentSnapshot(change.before_full, change.before),
+                            after_data: instrumentSnapshot(change.after_full, change.after)
+                        })), "maintenance", historyColumns);
                     entry.append(changes);
                 }
                 content.append(entry);

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sites | Station Operations</title>
-    <link rel="stylesheet" href="css/app.css?v=20261001activity">
+    <link rel="stylesheet" href="css/app.css?v=20261004searchable">
 </head>
 <body>
     <header class="app-header">
@@ -24,7 +24,7 @@
                 <a href="volunteer-data.html">Volunteer data</a>
                 <a href="reporting-status.html">Reporting</a>
                 <a href="data-requests.html">Requests</a>
-                <a href="kpi.html">KPI</a>
+                <a href="kpi.html">Dashboard</a>
                 <a href="search.html">Search</a>
                 <a class="user-directory-access" href="users.html" hidden>Users</a>
             </nav>
@@ -51,6 +51,16 @@
                         <input type="search" id="siteSearch" placeholder="Site, station, district, sector or category">
                     </div>
                     <div class="field">
+                        <label for="siteStatusFilter">Contains station status</label>
+                        <select id="siteStatusFilter">
+                            <option value="">All statuses</option>
+                            <option value="Operational">Operational</option>
+                            <option value="Under maintenance">Under maintenance</option>
+                            <option value="Suspended">Suspended</option>
+                            <option value="Closed">Closed</option>
+                        </select>
+                    </div>
+                    <div class="field">
                         <label for="sitePageSize">Rows per page</label>
                         <select id="sitePageSize">
                             <option value="10">10</option>
@@ -59,6 +69,8 @@
                             <option value="100">100</option>
                         </select>
                     </div>
+                    <button class="secondary-button" id="siteExportCsv" type="button">Export CSV</button>
+                    <button class="secondary-button" id="siteExportPdf" type="button">Export PDF</button>
                 </div>
                 <div class="table-wrap">
                     <table class="site-table" data-server-sorted="true">
@@ -73,6 +85,7 @@
                                 <th data-sort="district">District</th>
                                 <th data-sort="sector">Sector</th>
                                 <th data-sort="station_count">Station count</th>
+                                <th data-sort="status_summary">Station status</th>
                                 <th data-sort="stations">Stations at site</th>
                             </tr>
                         </thead>
@@ -98,7 +111,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20261001activity"></script>
-    <script src="js/sites.js?v=20260929b"></script>
+    <script src="js/api.js?v=20261004searchable"></script>
+    <script src="js/sites.js?v=20261004status"></script>
 </body>
 </html>

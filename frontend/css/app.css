@@ -549,6 +549,85 @@ button:hover {
     min-width: 260px;
 }
 
+.multi-filter {
+    position: relative;
+    min-width: 0;
+    width: 100%;
+}
+
+.multi-filter summary {
+    min-height: 42px;
+    padding: 10px 36px 10px 12px;
+    border: 1px solid #afc0cd;
+    border-radius: 4px;
+    background: #fff;
+    color: #173951;
+    cursor: pointer;
+    list-style: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.multi-filter summary::-webkit-details-marker { display: none; }
+.multi-filter summary::after {
+    content: "";
+    position: absolute;
+    right: 12px;
+    top: 16px;
+    border: 5px solid transparent;
+    border-top-color: #173951;
+}
+.multi-filter[open] summary { border-color: #17857d; }
+.multi-filter-menu {
+    position: absolute;
+    z-index: 40;
+    top: calc(100% + 4px);
+    left: 0;
+    width: max(100%, 240px);
+    max-width: min(420px, 85vw);
+    padding: 6px;
+    border: 1px solid #afc0cd;
+    border-radius: 4px;
+    background: #fff;
+    box-shadow: 0 8px 24px #16344a26;
+}
+.multi-filter-search {
+    width: 100%;
+    margin-bottom: 6px;
+}
+.multi-filter-choices {
+    max-height: 260px;
+    overflow-y: auto;
+}
+.field .multi-filter-choices label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px;
+    margin: 0;
+    font-weight: 400;
+    cursor: pointer;
+}
+.multi-filter-choices label:hover,
+.multi-filter-choices label.selected { background: #e9f5f3; }
+.multi-filter-choices input[type="checkbox"] {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    min-height: 16px;
+    padding: 0;
+    margin: 0;
+}
+.multi-filter-empty { margin: 8px; color: #607487; }
+.multi-filter-clear {
+    border: 0;
+    background: transparent;
+    color: #176c69;
+    padding: 7px;
+    cursor: pointer;
+}
+
 .month-range-field {
     min-width: 165px;
 }
@@ -1062,7 +1141,55 @@ table {
 }
 
 .station-instrument-table {
-    min-width: 2350px;
+    min-width: 2680px;
+}
+
+.sensing-connections {
+    min-width: 0;
+    padding: 18px;
+}
+
+.sensing-connections .form-grid {
+    max-width: none;
+}
+
+.wiring-editor {
+    max-width: 520px;
+    margin-top: 18px;
+}
+
+.wiring-editor h3 {
+    margin: 0 0 8px;
+    font-size: 15px;
+}
+
+.wiring-editor table,
+.wiring-detail table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.wiring-editor th,
+.wiring-editor td,
+.wiring-detail th,
+.wiring-detail td {
+    padding: 5px 8px;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+}
+
+.wiring-editor th:first-child,
+.wiring-editor td:first-child {
+    width: 85px;
+}
+
+.wiring-editor input {
+    width: 100%;
+    min-height: 36px;
+}
+
+.wiring-detail {
+    min-width: 135px;
 }
 
 .status.open {
@@ -1744,11 +1871,46 @@ button:disabled {
 .record-history-toggle:focus-visible { outline: 2px solid #137f79; outline-offset: 2px; }
 .record-history-detail[hidden] { display: none; }
 .record-history-detail > td { background: #f5f9fa; padding: 0; }
-.record-history-content { padding: 15px 20px; max-width: 900px; }
+.record-history-content { padding: 15px 20px; max-width: none; }
 .record-history-entry { border-bottom: 1px solid var(--line); padding: 10px 0; }
 .record-history-entry > strong { display: block; margin-bottom: 5px; }
+.record-history-reason { display: block; margin: 2px 0 8px; color: var(--muted); overflow-wrap: anywhere; }
+.edit-reason-dialog { width: min(440px, calc(100% - 32px)); border: 1px solid var(--line); border-radius: 8px; padding: 24px; color: #17212b; background: #fff; box-shadow: 0 20px 50px #142f4560; }
+.edit-reason-dialog::backdrop { background: #102d40aa; }
+.edit-reason-dialog h2 { margin: 0 0 18px; font-size: 1.25rem; }
+.edit-reason-dialog label { display: grid; gap: 8px; font-weight: 600; }
+.edit-reason-dialog textarea { width: 100%; min-height: 100px; resize: vertical; }
+.edit-reason-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 .record-history-entry ul { margin: 0; padding-left: 20px; overflow-wrap: anywhere; }
 .record-history-more { margin-top: 12px; }
+.record-history-table-wrap { width: min(100%, calc(100vw - 100px)); overflow-x: auto; margin-top: 8px; }
+.record-history-table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 12px; }
+.record-history-table th,
+.record-history-table td { min-width: 110px; max-width: 220px; padding: 9px 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; white-space: normal; overflow-wrap: anywhere; }
+.record-history-table th { background: #e8f0f2; color: var(--ink); }
+.record-history-table td { background: #fff; }
+.record-history-table td.history-value-changed { background: #d9f4ed; box-shadow: inset 0 3px #168778; font-weight: 700; }
+.record-history-table td.history-value-changed small { display: block; margin-top: 5px; color: #45636a; font-weight: 400; }
+.record-history-download { margin: 0 0 12px; }
+.deleted-filter-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 20px 0; }
+.deleted-filter-actions, .deleted-export-actions, .pagination-controls, .pagination-controls > div { display: flex; align-items: end; gap: 8px; }
+.deleted-filter-actions { padding-bottom: 2px; }
+.pagination-controls { justify-content: space-between; align-items: center; margin-top: 14px; }
+#deletedItemsTable th[data-sort] { cursor: pointer; white-space: nowrap; }
+#deletedItemsTable th[data-sort]::after { content: " ↕"; color: #637b86; }
+#deletedItemsTable th[aria-sort="ascending"]::after { content: " ↑"; }
+#deletedItemsTable th[aria-sort="descending"]::after { content: " ↓"; }
+.deleted-status-restored { color: #13735c; font-weight: 700; }
+.deleted-status-pending { color: #9c6420; font-weight: 700; }
+.deleted-item-actions { white-space: nowrap; }
+.deleted-item-actions button + button { margin-left: 6px; }
+@media (max-width: 900px) { .deleted-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .deleted-filter-grid { grid-template-columns: minmax(0, 1fr); } .pagination-controls { align-items: flex-start; flex-direction: column; } .deleted-export-actions { flex-wrap: wrap; } }
+.export-history-option { display: inline-flex; align-items: center; gap: 7px; margin-right: 8px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.export-history-option input { min-height: 0; width: 16px; height: 16px; margin: 0; }
+@media (max-width: 640px) {
+    .export-history-option { width: 100%; white-space: normal; }
+}
 .data-graph { padding: 20px 0 24px; border-top: 1px solid var(--line); }
 .data-graph h3 { margin: 0 0 16px; font-size: 16px; }
 .data-graph .horizontal-chart { max-height: 360px; overflow-y: auto; }
@@ -2504,6 +2666,11 @@ main.welcome-main {
 .route-users {
     --route-accent: #835340;
     --route-soft: #f4ebe7;
+}
+
+.route-deleted-items {
+    --route-accent: #376b5e;
+    --route-soft: #e9f3ef;
 }
 
 .route-icon {
@@ -3401,6 +3568,60 @@ main.welcome-main {
 }
 
 .user-menu .notification-item small { color: #526875; }
+
+.page-help-dialog {
+    width: min(560px, calc(100vw - 32px));
+    max-height: min(80vh, 680px);
+    overflow: auto;
+    padding: 28px;
+    border: 1px solid #b8c6d1;
+    border-radius: 7px;
+    background: #fff;
+    color: #17212b;
+    box-shadow: 0 24px 60px rgba(9, 33, 48, 0.25);
+}
+
+.page-help-dialog::backdrop {
+    background: rgba(8, 28, 40, 0.58);
+}
+
+.page-help-dialog h2 {
+    margin-bottom: 14px;
+    font-size: 21px;
+}
+
+.page-help-dialog p {
+    line-height: 1.6;
+}
+
+.page-help-dialog button {
+    margin-top: 8px;
+}
+
+.auth-panel {
+    position: relative;
+}
+
+.auth-help-button {
+    position: absolute;
+    top: 20px;
+    right: 22px;
+    padding: 6px 10px;
+    border: 1px solid #b8c6d1;
+    border-radius: 4px;
+    background: #fff;
+    color: #173f63;
+    cursor: pointer;
+}
+
+.auth-help-button:hover {
+    background: #eef5f6;
+}
+
+@media (max-width: 760px) {
+    .page-help-dialog { padding: 22px; }
+    .user-menu .page-help-button { flex: 0 0 auto; }
+}
 .notification-item:hover,
 .notification-item:focus-visible { background: #e4f1f2; color: #123843; }
 

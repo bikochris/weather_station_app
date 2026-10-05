@@ -26,7 +26,7 @@ function fillStations(id, district = "", allLabel = "All stations") {
     const select = document.getElementById(id);
     const previous = select.value;
     select.replaceChildren(new Option(allLabel, ""));
-    analyticsStations.filter(station => !district || station.district === district)
+    analyticsStations.filter(station => matchesSelectedFilter(station.district, district))
         .forEach(station => select.appendChild(new Option(
             `${station.station_code} - ${station.station_name}`, station.station_id
         )));
@@ -297,7 +297,29 @@ async function exportMaintenanceSummary(format) {
         link.href = url;
         link.download = `maintenance-summary-${fiscalYear}-${Number(fiscalYear) + 1}${quarter ? `-Q${quarter}` : ""}.${format}`;
         link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 0);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        if (document.getElementById("maintenanceSummaryIncludeHistory").checked) {
+            const summaryResponse = await apiFetch(`/maintenance-summary?${maintenanceSummaryParameters()}`);
+            if (!summaryResponse.ok) throw new Error(await getErrorMessage(summaryResponse, "Unable to load summary stations for history"));
+            const summary = await summaryResponse.json();
+            const stationIds = new Set(summary.items.map(item => Number(item.station_id)));
+            const periods = {
+                "1": [`${fiscalYear}-07-01`, `${fiscalYear}-09-30`],
+                "2": [`${fiscalYear}-10-01`, `${fiscalYear}-12-31`],
+                "3": [`${Number(fiscalYear) + 1}-01-01`, `${Number(fiscalYear) + 1}-03-31`],
+                "4": [`${Number(fiscalYear) + 1}-04-01`, `${Number(fiscalYear) + 1}-06-30`]
+            };
+            const [dateFrom, dateTo] = periods[quarter] ||
+                [`${fiscalYear}-07-01`, `${Number(fiscalYear) + 1}-06-30`];
+            const ids = await filteredHistoryRecordIds("/maintenance", "maintenance",
+                {search: "", sortBy: "maintenance_date", sortOrder: "desc"},
+                {date_from: dateFrom, date_to: dateTo,
+                    district: document.getElementById("filterDistrict").value,
+                    station_id: document.getElementById("filterStation").value},
+                item => stationIds.has(Number(item.station_id)));
+            if (ids.length) await downloadRecordHistoryCsv("maintenance", ids);
+            else window.alert("No maintenance visits match this summary, so there is no edit history to download.");
+        }
     } catch (error) { window.alert(error.message); }
 }
 
@@ -316,7 +338,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             const writer = isITUser() || DATA_OPERATIONS_ROLES.has(currentUser.department);
             document.getElementById("dataCountEditor").hidden = !writer;
             document.getElementById("countActionsHeader").hidden = !writer;
-            analyticsCategories = [...new Set(analyticsStations.map(station => station.station_category).filter(Boolean))].sort();
+            analyticsCategories = (await jsonRequest("/station-categories")).map(category => category.name);
             analyticsCategories.forEach(category => {
                 const entryLabel = document.createElement("label");
                 const entryInput = document.createElement("input"); entryInput.type = "checkbox"; entryInput.value = category;
@@ -352,7 +374,17 @@ document.addEventListener("DOMContentLoaded", async () => {
                         : "/data-counts";
                     if (editingDataCount?.entry_type === "combined" && !combined)
                         throw new Error("To make this a single-category entry, delete it and create a new count.");
+                    let requiresEditReason = Boolean(editingDataCount);
+                    if (!combined && !requiresEditReason) {
+                        const existing = await jsonRequest(`/data-counts?${new URLSearchParams({
+                            month_from: entry.record_month, month_to: entry.record_month
+                        })}`);
+                        requiresEditReason = existing.items.some(item =>
+                            item.entry_type === "single" && item.station_category === categories[0]
+                                && item.record_month === entry.record_month);
+                    }
                     const result = await jsonRequest(path, {method: editingDataCount?.entry_type === "combined" ? "PUT" : "POST",
+                        requiresEditReason,
                         headers: {"Content-Type": "application/json"},
                         body: JSON.stringify(combined ? {...entry, station_categories: categories} : {...entry, station_category: categories[0]})});
                     message.textContent = `Count saved: ${entry.record_count.toLocaleString()} record${entry.record_count === 1 ? "" : "s"} for ${categories.join(" + ")}.`;

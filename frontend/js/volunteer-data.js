@@ -1,4 +1,5 @@
 let volunteerPermissions = {};
+let volunteerMonths = [];
 
 function fileLabel(file, fallback) {
     if (!file) return document.createTextNode(fallback);
@@ -24,6 +25,7 @@ async function loadVolunteerData() {
     const response = await apiFetch("/volunteer-data");
     if (!response.ok) throw new Error(await getErrorMessage(response, "Unable to load volunteer data"));
     const result = await response.json(); volunteerPermissions = result.permissions;
+    volunteerMonths = result.items;
     const hasActions = Boolean(result.permissions.edit || result.permissions.delete);
     document.getElementById("volunteerActionsHeading").hidden = !hasActions;
     const canUpload = result.permissions.upload_qc || result.permissions.upload_filtered || result.permissions.upload_filled;
@@ -71,10 +73,12 @@ async function loadVolunteerData() {
     setMetric("volunteerMonthsMetric", result.items.length); setMetric("completePackagesMetric", complete); setMetric("uploadedFilesMetric", files); setMetric("supervisorCommentsMetric", comments);
 }
 
-async function uploadFile(month, kind, input) {
+async function uploadFile(month, kind, input, editReason = null) {
     const file = input.files[0]; if (!file) return false;
     const query = new URLSearchParams({report_month: month, file_kind: kind, filename: file.name});
-    const response = await apiFetch(`/volunteer-data/files?${query}`, {method: "POST", headers: {"Content-Type": file.type || "application/octet-stream"}, body: file});
+    const response = await apiFetch(`/volunteer-data/files?${query}`, {method: "POST",
+        requiresEditReason: false, editReason,
+        headers: {"Content-Type": file.type || "application/octet-stream"}, body: file});
     if (!response.ok) throw new Error(await getErrorMessage(response, `Unable to upload ${file.name}`));
     return true;
 }
@@ -87,10 +91,19 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("commentMonth").value = new Date().toISOString().slice(0, 7);
     document.getElementById("volunteerUploadForm").addEventListener("submit", async (event) => {
         event.preventDefault(); setMessage(uploadMessage, "Uploading...");
-        try { const month = document.getElementById("reportMonth").value; const uploaded = await Promise.all([
-            volunteerPermissions.upload_qc ? uploadFile(month, "monthly_qc", document.getElementById("monthlyQcFile")) : false,
-            volunteerPermissions.upload_filtered ? uploadFile(month, "filtered_data", document.getElementById("filteredDataFile")) : false,
-            volunteerPermissions.upload_filled ? uploadFile(month, "filled_data", document.getElementById("filledDataFile")) : false
+        try { const month = document.getElementById("reportMonth").value;
+            const fields = [["monthly_qc", "monthlyQcFile", volunteerPermissions.upload_qc],
+                ["filtered_data", "filteredDataFile", volunteerPermissions.upload_filtered],
+                ["filled_data", "filledDataFile", volunteerPermissions.upload_filled]];
+            const previous = volunteerMonths.find(item => item.report_month === month);
+            const replacing = fields.some(([kind, id, allowed]) =>
+                allowed && document.getElementById(id).files[0] && previous?.files?.[kind]);
+            const editReason = replacing ? await requestEditReason() : null;
+            if (replacing && !editReason) { setMessage(uploadMessage, "Change cancelled."); return; }
+            const uploaded = await Promise.all([
+            volunteerPermissions.upload_qc ? uploadFile(month, "monthly_qc", document.getElementById("monthlyQcFile"), editReason) : false,
+            volunteerPermissions.upload_filtered ? uploadFile(month, "filtered_data", document.getElementById("filteredDataFile"), editReason) : false,
+            volunteerPermissions.upload_filled ? uploadFile(month, "filled_data", document.getElementById("filledDataFile"), editReason) : false
         ]); if (!uploaded.some(Boolean)) throw new Error("Select at least one file."); event.target.reset(); document.getElementById("reportMonth").value = month; setMessage(uploadMessage, "Monthly files saved.", "success"); await loadVolunteerData(); }
         catch (error) { setMessage(uploadMessage, error.message, "error"); }
     });

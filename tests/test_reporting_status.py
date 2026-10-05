@@ -99,12 +99,28 @@ class ReportingStatusTests(unittest.TestCase):
             {"reporting_status_id": 4, "report_month": "2026-09", "reported_stations": 9},
         ]
         save_reporting_status(MonthlyReportingStatus(report_month="2026-09", reported_stations=9),
-                              {"user_id": 1, "username": "tester"})
+                              {"user_id": 1, "username": "tester", "edit_reason": "Corrected monthly total"})
         calls = connection.cursor.return_value.execute.call_args_list
         audit = next(call.args[1] for call in calls if "INSERT INTO monthly_reporting_changes" in call.args[0])
         self.assertEqual(audit[2], "Updated")
         self.assertEqual(json.loads(audit[3])["reported_stations"], 6)
         self.assertEqual(json.loads(audit[4])["reported_stations"], 9)
+        self.assertEqual(audit[7], "Corrected monthly total")
+
+    @patch("backend.main.ensure_application_tables")
+    @patch("backend.main.get_connection")
+    def test_edit_requires_reason(self, get_connection, _ensure):
+        connection = get_connection.return_value
+        connection.cursor.return_value.fetchone.side_effect = [
+            {"operational_stations": 8, "under_maintenance_stations": 2, "suspended_stations": 3},
+            {"reporting_status_id": 4, "report_month": "2026-09", "reported_stations": 6},
+            {"reporting_status_id": 4, "report_month": "2026-09", "reported_stations": 9},
+        ]
+        with self.assertRaises(HTTPException) as error:
+            save_reporting_status(MonthlyReportingStatus(report_month="2026-09", reported_stations=9),
+                                  {"user_id": 1, "username": "tester"})
+        self.assertEqual(error.exception.status_code, 422)
+        connection.rollback.assert_called_once()
 
     @patch("backend.main.ensure_application_tables")
     @patch("backend.main.get_connection")
@@ -119,9 +135,10 @@ class ReportingStatusTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["before_data"]["reported_stations"], 6)
         self.assertIn("ORDER BY action ASC", cursor.execute.call_args_list[-1].args[0])
 
+    @patch("backend.main.archive_deleted_item")
     @patch("backend.main.ensure_application_tables")
     @patch("backend.main.get_connection")
-    def test_delete_keeps_an_audit_snapshot(self, get_connection, _ensure):
+    def test_delete_keeps_an_audit_snapshot(self, get_connection, _ensure, archive):
         connection = get_connection.return_value
         cursor = connection.cursor.return_value
         cursor.fetchone.side_effect = [
@@ -130,6 +147,8 @@ class ReportingStatusTests(unittest.TestCase):
             None,
         ]
         delete_reporting_status(4, {"user_id": 1, "username": "tester"})
+        archive.assert_called_once_with(connection, "reporting_status", 4,
+                                        {"user_id": 1, "username": "tester"})
         audit = next(call.args[1] for call in cursor.execute.call_args_list
                      if "INSERT INTO monthly_reporting_changes" in call.args[0])
         self.assertEqual(audit[2], "Deleted")
@@ -147,7 +166,7 @@ class ReportingStatusTests(unittest.TestCase):
         request.headers = {"content-type": "text/csv"}
         asyncio.run(upload_non_reported_station_file(
             request, report_month="2026-09", filename="new.csv",
-            user={"user_id": 1, "username": "tester"},
+            user={"user_id": 1, "username": "tester", "edit_reason": "Revised station list"},
         ))
         audit = next(call.args[1] for call in cursor.execute.call_args_list
                      if "INSERT INTO monthly_reporting_changes" in call.args[0])

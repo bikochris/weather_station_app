@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Station Instruments | Station Operations</title>
-    <link rel="stylesheet" href="css/app.css?v=20261001activity">
+    <link rel="stylesheet" href="css/app.css?v=20261004searchable">
 </head>
 <body>
     <header class="app-header">
@@ -24,7 +24,7 @@
                 <a href="volunteer-data.html">Volunteer data</a>
                 <a href="reporting-status.html">Reporting</a>
                 <a href="data-requests.html">Requests</a>
-                <a href="kpi.html">KPI</a>
+                <a href="kpi.html">Dashboard</a>
                 <a href="search.html">Search</a>
                 <a class="user-directory-access" href="users.html" hidden>Users</a>
             </nav>
@@ -101,12 +101,40 @@
                     <label for="stationInstrumentComment">Comment <span class="muted">(optional)</span></label>
                     <textarea id="stationInstrumentComment" maxlength="2000" placeholder="Condition, calibration, replacement or service notes"></textarea>
                 </div>
+                <fieldset id="sensingConnectionFields" class="span-2 sensing-connections" hidden>
+                    <legend>Sensing connections</legend>
+                    <div class="form-grid">
+                        <div class="field">
+                            <label for="dataLoggerPorts">Data logger ports</label>
+                            <input id="dataLoggerPorts" type="text" maxlength="255" placeholder="e.g. AI1, AI2">
+                        </div>
+                        <div class="field">
+                            <label for="stationInstrumentAlgorithm">Algorithm</label>
+                            <textarea id="stationInstrumentAlgorithm" maxlength="2000" placeholder="Calculation or logger program reference"></textarea>
+                        </div>
+                    </div>
+                    <div class="wiring-editor">
+                        <h3>Wiring</h3>
+                        <table><thead><tr><th>Terminal</th><th>Wire color</th></tr></thead>
+                            <tbody id="wiringEditorRows"></tbody></table>
+                    </div>
+                </fieldset>
                 <div class="form-actions span-2">
                     <button type="submit" id="stationInstrumentSubmit">Add station instrument</button>
                     <button class="secondary-button" type="button" id="cancelStationInstrumentEdit" hidden>Cancel</button>
                 </div>
                 <p id="stationInstrumentMessage" class="message span-2" aria-live="polite"></p>
             </form>
+        </section>
+
+        <section id="stationInstrumentImport" hidden>
+            <div class="section-heading"><div><p class="eyebrow">Bulk entry</p><h2>Import station instruments</h2></div>
+                <button class="secondary-button" id="stationInstrumentTemplate" type="button">CSV template</button></div>
+            <div class="field"><label for="stationInstrumentCsv">CSV file</label><input id="stationInstrumentCsv" type="file" accept=".csv,text/csv"></div>
+            <p class="muted">Use station IDs and instrument names from the catalog. Existing matching records are skipped.</p>
+            <div class="form-actions"><button class="secondary-button" id="stationInstrumentPreview" type="button">Preview import</button>
+                <button id="stationInstrumentUpload" type="button" disabled>Upload CSV</button></div>
+            <p id="stationInstrumentImportMessage" class="message" aria-live="polite"></p>
         </section>
 
         <section>
@@ -172,6 +200,9 @@
                             <th data-sort="recommended_replacement_date">Recommended replacement</th>
                             <th data-sort="status">Status</th>
                             <th data-sort="comment">Comment</th>
+                            <th data-sort="data_logger_ports">Logger ports</th>
+                            <th data-sort="algorithm">Algorithm</th>
+                            <th>Wiring</th>
                             <th data-sort="recorded_by">Recorded by</th>
                             <th data-sort="recorded_at">Recorded at</th>
                             <th data-sort="updated_by">Updated by</th>
@@ -180,7 +211,7 @@
                         </tr>
                     </thead>
                     <tbody id="stationInstrumentTable">
-                        <tr><td colspan="19">Loading station instruments...</td></tr>
+                        <tr><td colspan="22">Loading station instruments...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -213,7 +244,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20261001activity"></script>
-    <script src="js/station-instruments.js?v=20260930audit2"></script>
+    <script src="js/api.js?v=20261004searchable"></script>
+    <script src="js/station-instruments.js?v=20261003firstrecord"></script>
 </body>
 </html>

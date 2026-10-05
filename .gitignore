@@ -1,4 +1,6 @@
 .env
+.venv/
+.venv-service/
 __pycache__/
 *.py[cod]
-*.[mM][dD]
+logs/

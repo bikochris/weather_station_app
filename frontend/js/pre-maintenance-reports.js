@@ -16,13 +16,13 @@ function reportStationNames(report) {
 }
 
 function filteredPreMaintenanceReports() {
-    const stationId = Number(document.getElementById("stationFilter").value);
+    const stationIds = document.getElementById("stationFilter").value;
     const dateFrom = document.getElementById("maintenanceDateFrom").value;
     const dateTo = document.getElementById("maintenanceDateTo").value;
     const search = preMaintenanceCollection.search.toLowerCase();
     return preMaintenanceReports.filter((report) => {
-        const stationMatch = !stationId || report.stations.some((station) =>
-            station.station_id === stationId
+        const stationMatch = !stationIds || report.stations.some((station) =>
+            matchesSelectedFilter(station.station_id, stationIds)
         );
         const dateMatch = (!dateFrom || report.period_end >= dateFrom)
             && (!dateTo || report.period_start <= dateTo);

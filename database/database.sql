@@ -56,8 +56,25 @@ CREATE TABLE IF NOT EXISTS record_edit_history (
     before_data JSON NOT NULL,
     after_data JSON NOT NULL,
     changed_by_username VARCHAR(50) NOT NULL,
+    edit_reason VARCHAR(500) NULL,
     changed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_record_edit_history (entity_type, entity_id, changed_at)
+);
+
+CREATE TABLE IF NOT EXISTS deleted_items (
+    deleted_item_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    entity_type VARCHAR(60) NOT NULL,
+    entity_id VARCHAR(100) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    district VARCHAR(1000) NULL,
+    deleted_by_username VARCHAR(50) NOT NULL,
+    deleted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    restored_by_username VARCHAR(50) NULL,
+    restored_at TIMESTAMP NULL,
+    row_count INT NOT NULL,
+    payload LONGBLOB NOT NULL,
+    INDEX idx_deleted_items_time (deleted_at, deleted_item_id),
+    INDEX idx_deleted_items_type (entity_type, restored_at)
 );
 
 CREATE TABLE IF NOT EXISTS user_sessions (
@@ -132,6 +149,7 @@ CREATE TABLE IF NOT EXISTS monthly_reporting_changes (
     after_data JSON NULL,
     changed_by_user_id INT NULL,
     changed_by_username VARCHAR(50) NOT NULL,
+    edit_reason VARCHAR(500) NULL,
     changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_reporting_change_time (changed_at, change_id),
     INDEX idx_reporting_change_month (report_month, change_id),
@@ -363,6 +381,12 @@ CREATE TABLE IF NOT EXISTS monthly_combined_data_counts (
 CREATE TABLE IF NOT EXISTS app_migration_markers (
     migration_key VARCHAR(100) PRIMARY KEY,
     applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS station_categories (
+    category_id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(60) NOT NULL UNIQUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS category_maintenance_targets (
@@ -753,6 +777,12 @@ CREATE TABLE IF NOT EXISTS station_instruments (
 
     comment TEXT,
 
+    data_logger_ports VARCHAR(255) NULL,
+
+    algorithm TEXT NULL,
+
+    wiring_colors JSON NULL,
+
     created_by_user_id INT,
 
     recorded_by_username VARCHAR(50),
@@ -822,7 +852,7 @@ VALUES
     'Kigali City',
     'Kicukiro',
     'Kanombe',
-    'Automatic Weather stations',
+    'Automatic Weather station',
     'Operational',
     'Airport weather station'
 );
