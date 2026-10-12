@@ -224,6 +224,10 @@ async function requireSession() {
         "Data Quality Control Specialist": null,
         "Division Manager": null
     };
+    Object.values(allowedPages).forEach(pages => {
+        pages?.add("documents.html");
+        pages?.add("agenda.html");
+    });
     const currentPage = window.location.pathname.split("/").pop() || "index.html";
     if (ADMIN_ONLY_PAGES.has(currentPage) && !isITUser()) {
         window.location.href = "index.html";
@@ -372,6 +376,16 @@ function initializeShell() {
             });
         }
     }
+    if (navigation) {
+        for (const [href, label] of [["documents.html", "Documents"], ["agenda.html", "Agenda"]]) {
+            let link = navigation.querySelector(`a[href="${href}"]`);
+            if (!link) {
+                link = document.createElement("a"); link.href = href; link.textContent = label;
+                navigation.append(link);
+            }
+            if (window.location.pathname.endsWith(href)) link.classList.add("active");
+        }
+    }
     document.querySelectorAll("[data-logout]").forEach((button) => {
         button.addEventListener("click", logout);
     });
@@ -379,6 +393,8 @@ function initializeShell() {
 
 
 const PAGE_HELP = {
+    "documents.html": ["Documents", "Upload a file with its title, document date, and description. Search and filter the library, download original files, or export the register. You can edit or delete your own uploads; Admin can manage every document. Replacement files increase the document version. Open a row to see its edit history."],
+    "agenda.html": ["Agenda", "Record an agenda item, due date, priority, status, progress, and tracking notes. Overdue items are red and items due within seven days are amber. Update your own items as work progresses; Admin can manage every item. Filter, sort, export, or open a row to view the reasons and details of earlier edits."],
     "login.html": ["Sign in", "Enter the username and password assigned to your account, then select Sign in. If this is your first sign-in, follow the prompt to replace your temporary password. Contact an administrator if you cannot access your account."],
     "index.html": ["Home", "Select a workspace tile or use the navigation to open the area you need. The tiles and navigation reflect the pages available to your account."],
     "stations.html": ["Stations", "Use the filters to find stations by location, category, or status. Open a row to view its edit history. Authorized users can add or edit a station, import records from the CSV template, and export the filtered list."],
@@ -611,6 +627,7 @@ function setupDistrictFilter(container, stations, onChange) {
 
 function notificationTarget(notification) {
     const pages = {
+        documents: "documents.html", agenda: "agenda.html",
         stations: "stations.html", instruments: "instruments.html", users: "users.html",
         maintenance: "maintenance.html", maintenance_report: "maintenance.html#maintenanceReports",
         pre_maintenance_report: "pre-maintenance-reports.html", station_visitors: "station-visitors.html",
@@ -1203,6 +1220,10 @@ function historySnapshotValue(entityType, key, value) {
 
 
 const historyColumnAliases = {
+    documents: {"id": "document_id", "date": "document_date", "file": "original_filename",
+        "type": "file_type", "size (bytes)": "file_size", "created by": "created_by_username", "updated": "updated_at"},
+    agenda: {"id": "agenda_id", "agenda item": "title", "progress (%)": "progress",
+        "created by": "created_by_username", "updated": "updated_at"},
     stations: {"station id": "station_code", "station": "station_name",
         "station status": "status", "registered at": "created_at", "recorded by": "recorded_by_username"},
     instruments: {"instrument": "instrument_name", "parameters it takes": "parameters_taken",
@@ -1476,6 +1497,7 @@ function attachRecordHistoryRows(tbody, entityType, items, idForItem) {
 
 async function filteredHistoryRecordIds(basePath, entityType, state, extra, matches = () => true) {
     const idField = {
+        documents: "document_id", agenda: "agenda_id",
         stations: "station_id", instruments: "instrument_id",
         maintenance: "maintenance_id", station_instruments: "station_instrument_id",
         suspected_data: "suspected_data_id", users: "user_id",

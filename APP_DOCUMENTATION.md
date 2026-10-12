@@ -1,6 +1,6 @@
 # Station Operations: Complete Application Guide
 
-This document describes the application as implemented in this repository on 2 October 2026. It is a guide to the code, not a substitute for a production security review. `README.md` is the short setup guide; `DEPLOYMENT.md` covers hosting. Keep this document updated when the application changes.
+This document describes the application as implemented in this repository on 12 October 2026. It is a guide to the code, not a substitute for a production security review. `README.md` is the short setup guide; `DEPLOYMENT.md` covers hosting. Keep this document updated when the application changes.
 
 ## 1. What the application does
 
@@ -9,6 +9,16 @@ Station Operations is a browser-based system for managing an observation-station
 The application is not an offline spreadsheet. A browser page can load while an API call fails; the API process and database must both be reachable for sign-in and data operations.
 
 ## 2. Architecture and request flow
+
+### Documents and Agenda
+
+Documents and Agenda are available to every signed-in user. Everyone can view and create entries; only the creator or Admin can edit or delete an entry. Admin can restore deleted entries, including document bytes and edit history, through Deleted items.
+
+- **Documents:** enter title, document date, description, and a file. Supported files include PDF, Excel/CSV, Word, presentations, ZIP/7z/RAR, common images, and text. Files are limited to 20 MB and downloaded as attachments. Editing metadata does not require another upload; replacing a file increases its version. History records metadata changes, not copies of previous file contents.
+- **Agenda:** enter an item, due date, description, priority, status, percentage complete, and tracking notes. Status is Open, In progress, Completed, or Cancelled. Completed items are always 100%; Open items are 0%. Active items past their due date are overdue; those due within seven days are marked due soon. These indicators are calculated when the register loads, not scheduled reminder messages.
+- **Registers:** search, combine filter selections, select date ranges, show only your entries, sort column headings, and download CSV/PDF registers with optional tabular edit history. Original document files are downloaded separately. Edits require a reason; initial creation does not.
+
+API routes are GET/POST `/documents` and `/agenda`, PUT/DELETE `/documents/{id}` and `/agenda/{id}`, GET `/documents/{id}/download`, and GET `/documents/export` or `/agenda/export` with `format=csv` or `format=pdf`. Document uploads use a raw request body with metadata query parameters; Agenda uses JSON. All routes require an authenticated session. The new tables are `shared_documents` and `agenda_items`; existing installations create them through the normal additive schema checks.
 
 ```text
 Browser: /app/*.html
@@ -155,6 +165,7 @@ Paths below are relative to the repository root. The descriptions state each fil
 | `__init__.py` | Marks `backend` as an importable Python package. |
 | `main.py` | FastAPI app: static mount, Pydantic models, schema compatibility, authentication/permission dependencies, all operational routes, exports, notifications, search, and KPI. This is the main server module. |
 | `database.py` | Loads root `.env`, opens MariaDB/MySQL connections, and wraps them for activity logging. |
+| `workspace.py` | Documents and Agenda schema, upload validation and limits, ownership rules, progress validation, and due-date tracking. |
 | `activity.py` | Intercepts committed operational writes, records activity metadata, and creates notification recipients within the transaction. |
 | `security.py` | Password hashing/checking and secure session-token creation/hash functions. |
 | `migrate_database.py` | Copies the configured schema into a new named schema after checks; does not remove the original. |
@@ -194,6 +205,8 @@ Every HTML file is an actual application page; its page-specific behavior is mos
 | `station-volunteers.html` | Personal station-volunteer register, location lookup, filters, and exports. |
 | `volunteer-data.html` | Monthly volunteer QC/filtered/filled file submissions and review comments. |
 | `discussions.html` | Discussion creation, participants, messages, notifications, and closing. |
+| `documents.html` | Shared document uploads with title, date, description, file downloads, replacement versions, filters, exports, and history. |
+| `agenda.html` | Agenda items with due dates, priority, progress, tracking notes, and overdue indicators. |
 | `activity.html` | Admin-only, paginated operational activity log. |
 | `users.html` | Admin-only account creation/editing, roles, station assignments, and directory. |
 | `kpi.html` | Admin-only activity and pending-work metrics. |
@@ -223,6 +236,7 @@ Every HTML file is an actual application page; its page-specific behavior is mos
 | `station-volunteers.js` | Personal volunteer entry, station-derived location, filters, sorting/paging, history and downloads. |
 | `volunteer-data.js` | Monthly file upload/download and HQ comments. |
 | `discussions.js` | Discussion participants, messages, close action and listing. |
+| `workspace-pages.js` | Shared Documents/Agenda forms, authenticated uploads/downloads, filters, sorting, pagination, exports, ownership controls, and edit history. |
 | `activity.js` | Admin activity table with paging/refresh. |
 | `users.js` | Admin user directory and station assignment forms. |
 | `kpi.js` | KPI month selection and metric rendering. |

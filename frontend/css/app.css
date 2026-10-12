@@ -632,6 +632,19 @@ button:hover {
     min-width: 165px;
 }
 
+.workspace-filters { margin-bottom: 18px; }
+.workspace-filters .field { flex: 1 1 170px; min-width: 0; }
+.workspace-filters .checkbox-row { flex: 0 0 auto; margin-bottom: 8px; }
+#workspaceTable td { max-width: 320px; overflow-wrap: anywhere; white-space: normal; }
+#workspaceTable .table-actions { white-space: nowrap; }
+#workspaceTable progress { display: block; width: 100px; height: 8px; margin-top: 7px; accent-color: #168175; }
+.agenda-timing { font-weight: 700; }
+.agenda-overdue { color: #a3202a; background: #fff0f1; }
+.agenda-due-soon { color: #805409; background: #fff6d9; }
+.agenda-completed { color: #12644d; background: #e9f7ef; }
+.agenda-on-track { color: #23556b; background: #edf5f9; }
+.agenda-cancelled { color: #5f6871; background: #f1f3f4; }
+
 .table-wrap {
     overflow-x: auto;
     border: 1px solid #d5dee6;
@@ -3633,3 +3646,19 @@ main.welcome-main {
 .notification-panel .notification-list { min-height: 0; overflow-y: auto; }
 .notification-panel .notification-heading,
 .notification-panel .notification-controls { flex-shrink: 0; }
+
+body[data-workspace] #workspaceTable { min-width: 1300px; }
+body[data-workspace] #workspaceTable th,
+body[data-workspace] #workspaceTable td { min-width: 100px; }
+body[data-workspace] #workspaceTable td:first-child { min-width: 90px; }
+
+@media (max-width: 1100px) {
+    body[data-workspace] main.dashboard-layout { grid-template-columns: minmax(0, 1fr); }
+    body[data-workspace] .dashboard-sidebar { position: static; }
+}
+
+@media (max-width: 760px) {
+    body[data-workspace] .workspace-filters .field { flex: 0 0 auto; width: 100%; }
+    body[data-workspace] .table-tools { display: flex; flex-wrap: wrap; gap: 12px; }
+    body[data-workspace] .table-tools button { width: auto; flex: 0 0 auto; }
+}

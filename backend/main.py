@@ -6,7 +6,7 @@ import os
 from datetime import date, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,6 +18,9 @@ from pydantic import BaseModel, Field, ValidationError
 from typing import Literal
 
 try:
+    from .workspace import (WORKSPACE_SCHEMA, AgendaItem, DocumentMetadata, agenda_timing,
+                            document_file_details, read_document_upload, require_workspace_owner,
+                            workspace_owner)
     from .activity import ACTIVITY_SCHEMA, ActivityMiddleware, set_activity_actor, suspend_activity
     from .deleted_items import DELETED_ITEMS_SCHEMA, DELETED_SPECS, archive_deleted_item, download_deleted_item, get_deleted_item_history, restore_deleted_item
     from .database import get_connection
@@ -28,6 +31,9 @@ try:
         verify_password,
     )
 except ImportError:
+    from workspace import (WORKSPACE_SCHEMA, AgendaItem, DocumentMetadata, agenda_timing,
+                           document_file_details, read_document_upload, require_workspace_owner,
+                           workspace_owner)
     from activity import ACTIVITY_SCHEMA, ActivityMiddleware, set_activity_actor, suspend_activity
     from deleted_items import DELETED_ITEMS_SCHEMA, DELETED_SPECS, archive_deleted_item, download_deleted_item, get_deleted_item_history, restore_deleted_item
     from database import get_connection
@@ -1137,6 +1143,8 @@ def ensure_application_tables(connection):
             )
             """
         )
+        for statement in WORKSPACE_SCHEMA:
+            cursor.execute(statement)
         cursor.execute("""CREATE TABLE IF NOT EXISTS record_edit_history (
             history_id BIGINT AUTO_INCREMENT PRIMARY KEY,
             entity_type VARCHAR(50) NOT NULL,
@@ -2306,6 +2314,8 @@ def require_reporting_view(user=Depends(require_password_change_complete)):
 
 
 AUDITED_RECORDS = {
+    "documents": ("shared_documents", "document_id"),
+    "agenda": ("agenda_items", "agenda_id"),
     "station_categories": ("station_categories", "category_id"),
     "stations": ("stations", "station_id"),
     "users": ("users", "user_id"),
@@ -2616,12 +2626,19 @@ def audit_snapshot(connection, entity_type, entity_id):
             cursor.execute("""SELECT * FROM category_maintenance_targets
                 WHERE fiscal_start_year = %s AND station_category = %s""",
                 (int(fiscal_year), category))
+        elif entity_type == "documents":
+            cursor.execute("""SELECT document_id, title, document_date, description,
+                original_filename, file_type, file_size, version, created_by_user_id,
+                created_by_username, updated_by_username, created_at, updated_at
+                FROM shared_documents WHERE document_id = %s""", (entity_id,))
         else:
             cursor.execute(f"SELECT * FROM `{table}` WHERE `{key}` = %s", (entity_id,))
         snapshot = cursor.fetchone()
         if snapshot is None:
             return None
-        if entity_type == "users":
+        if entity_type == "agenda":
+            snapshot["timing"] = agenda_timing(snapshot)
+        elif entity_type == "users":
             allowed = {"user_id", "full_name", "username", "email", "department",
                        "must_change_password", "is_active", "created_at"}
             snapshot = {key: value for key, value in snapshot.items() if key in allowed}
@@ -2694,7 +2711,7 @@ def get_record_history(entity_type: str, entity_id: str,
             for field in ("before_data", "after_data"):
                 if isinstance(item[field], (str, bytes)):
                     item[field] = json.loads(item[field])
-        if role in ASSIGNED_STATION_ROLES:
+        if role in ASSIGNED_STATION_ROLES and entity_type not in {"documents", "agenda"}:
             cursor.execute("SELECT station_id FROM user_station_assignments WHERE user_id = %s", (user["user_id"],))
             allowed = {row["station_id"] for row in cursor.fetchall()}
             current = audit_snapshot(connection, entity_type, entity_id)
@@ -2734,7 +2751,7 @@ def export_record_history(request: RecordHistoryExport,
             for field in ("before_data", "after_data"):
                 if isinstance(entry[field], (str, bytes)):
                     entry[field] = json.loads(entry[field])
-        if user["department"] in ASSIGNED_STATION_ROLES:
+        if user["department"] in ASSIGNED_STATION_ROLES and entity_type not in {"documents", "agenda"}:
             cursor.execute("SELECT station_id FROM user_station_assignments WHERE user_id = %s", (user["user_id"],))
             allowed = {row["station_id"] for row in cursor.fetchall()}
             current_allowed = set()
@@ -9507,3 +9524,262 @@ def search_database(
     finally:
         if "cursor" in locals(): cursor.close()
         if "connection" in locals() and connection.is_connected(): connection.close()
+
+
+def workspace_records(entity, user, search=None, status=None, priority=None, file_type=None,
+                      timing=None, mine=False, date_from=None, date_to=None,
+                      sort_by="updated_at", sort_order="desc"):
+    table, id_column = AUDITED_RECORDS[entity]
+    columns = (["document_id", "title", "document_date", "description", "original_filename",
+                "file_type", "file_size", "version"] if entity == "documents" else
+               ["agenda_id", "title", "description", "due_date", "status", "priority", "progress", "tracking_notes"])
+    columns += ["created_by_user_id", "created_by_username", "updated_by_username", "created_at", "updated_at"]
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        conditions, params = [], []
+        if mine:
+            conditions.append("created_by_user_id = %s")
+            params.append(user["user_id"])
+        if entity == "agenda":
+            add_filter_condition(conditions, params, "status", status)
+            add_filter_condition(conditions, params, "priority", priority)
+        else:
+            add_filter_condition(conditions, params, "file_type", file_type)
+        query = f"SELECT {', '.join(columns)} FROM {table}"
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += f" ORDER BY {id_column} DESC"
+        cursor.execute(query, tuple(params))
+        items = cursor.fetchall()
+        for item in items:
+            item["can_edit"] = workspace_owner(user, item)
+            if entity == "agenda":
+                item["timing"] = agenda_timing(item)
+        if entity == "agenda":
+            items = [item for item in items if matches_filter(item["timing"], timing)]
+        date_column = "document_date" if entity == "documents" else "due_date"
+        sort_fields = {column: column for column in columns if column != "created_by_user_id"}
+        if entity == "agenda":
+            sort_fields["timing"] = "timing"
+        items = filter_sort_collection(items, search,
+            ["title", "description", "created_by_username", "original_filename", "tracking_notes"],
+            sort_by, sort_order, sort_fields,
+            date_from, date_to, date_column)
+        if entity == "documents":
+            summary = {"total": len(items), "bytes": sum(item["file_size"] for item in items),
+                       "mine": sum(item["created_by_user_id"] == user["user_id"] for item in items)}
+        else:
+            summary = {"total": len(items),
+                       "completed": sum(item["status"] == "Completed" for item in items),
+                       "overdue": sum(item["timing"] == "Overdue" for item in items),
+                       "due_soon": sum(item["timing"] == "Due soon" for item in items)}
+        return items, summary
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.get("/documents")
+@app.get("/agenda")
+def get_workspace_entries(request: Request,
+    page: int | None = Query(default=None, ge=1),
+    page_size: int = Query(default=25, ge=10, le=100),
+    search: str | None = Query(default=None, max_length=200),
+    status: str | None = None, priority: str | None = None, file_type: str | None = None,
+    timing: str | None = None, mine: bool = False,
+    date_from: date | None = None, date_to: date | None = None,
+    sort_by: str = "updated_at", sort_order: Literal["asc", "desc"] = "desc",
+    user=Depends(require_password_change_complete)):
+    entity = request.url.path.strip("/")
+    items, summary = workspace_records(entity, user, search, status, priority, file_type,
+        timing, mine, date_from, date_to, sort_by, sort_order)
+    return paginate_collection(items, page, page_size, summary)
+
+
+@app.get("/documents/export")
+@app.get("/agenda/export")
+def export_workspace_entries(request: Request, format: Literal["csv", "pdf"],
+    search: str | None = Query(default=None, max_length=200),
+    status: str | None = None, priority: str | None = None, file_type: str | None = None,
+    timing: str | None = None, mine: bool = False,
+    date_from: date | None = None, date_to: date | None = None,
+    sort_by: str = "updated_at", sort_order: Literal["asc", "desc"] = "desc",
+    user=Depends(require_password_change_complete)):
+    entity = request.url.path.strip("/").split("/")[0]
+    items, _summary = workspace_records(entity, user, search, status, priority, file_type,
+        timing, mine, date_from, date_to, sort_by, sort_order)
+    if entity == "documents":
+        headers = ["ID", "Title", "Date", "Description", "File", "Type", "Size (bytes)", "Version", "Created by", "Updated"]
+        columns = ["document_id", "title", "document_date", "description", "original_filename",
+                   "file_type", "file_size", "version", "created_by_username", "updated_at"]
+    else:
+        headers = ["ID", "Agenda item", "Description", "Due date", "Status", "Priority", "Progress (%)", "Tracking notes", "Timing", "Created by", "Updated"]
+        columns = ["agenda_id", "title", "description", "due_date", "status", "priority", "progress",
+                   "tracking_notes", "timing", "created_by_username", "updated_at"]
+    rows = [[item.get(column) for column in columns] for item in items]
+    if format == "csv":
+        return csv_download(f"{entity}.csv", headers, rows)
+    return pdf_download(f"{entity}.pdf", entity.title(), headers, rows, user["username"])
+
+
+async def save_workspace_document(request, metadata, filename, user, document_id=None):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        before = None
+        if document_id is not None:
+            cursor.execute("SELECT created_by_user_id FROM shared_documents WHERE document_id = %s FOR UPDATE", (document_id,))
+            existing = cursor.fetchone()
+            if existing is None:
+                raise HTTPException(status_code=404, detail="Document not found")
+            require_workspace_owner(user, existing)
+            before = audit_snapshot(connection, "documents", document_id)
+        file_values = None
+        if filename:
+            clean, file_type, content_type = document_file_details(filename)
+            content = await read_document_upload(request)
+            file_values = (clean, file_type, content_type, len(content), content)
+        elif document_id is None:
+            raise HTTPException(status_code=400, detail="Choose a document file")
+        values = (metadata.title, metadata.document_date, metadata.description.strip())
+        if document_id is None:
+            cursor.execute("""INSERT INTO shared_documents (title, document_date, description,
+                original_filename, file_type, content_type, file_size, file_data,
+                created_by_user_id, created_by_username, updated_by_username)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (*values, *file_values, user["user_id"], user["username"], user["username"]))
+            document_id = cursor.lastrowid
+        else:
+            file_sql = ", original_filename = %s, file_type = %s, content_type = %s, file_size = %s, file_data = %s, version = version + 1" if file_values else ""
+            cursor.execute("UPDATE shared_documents SET title = %s, document_date = %s, description = %s, updated_by_username = %s" +
+                file_sql + " WHERE document_id = %s",
+                (*values, user["username"], *(file_values or ()), document_id))
+            record_entity_edit(connection, "documents", document_id, before,
+                audit_snapshot(connection, "documents", document_id), user)
+        connection.commit()
+        return {"document_id": document_id, "message": "Document saved"}
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.post("/documents", status_code=201)
+async def upload_shared_document(request: Request,
+    title: str = Query(min_length=1, max_length=200), document_date: date = Query(),
+    filename: str = Query(min_length=1, max_length=255),
+    description: str = Query(default="", max_length=5000),
+    user=Depends(require_password_change_complete)):
+    try:
+        metadata = DocumentMetadata(title=title, document_date=document_date, description=description)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail="Enter a valid document title and date") from exc
+    return await save_workspace_document(request, metadata, filename, user)
+
+
+@app.put("/documents/{document_id}")
+async def edit_shared_document(document_id: int, request: Request,
+    title: str = Query(min_length=1, max_length=200), document_date: date = Query(),
+    description: str = Query(default="", max_length=5000),
+    filename: str | None = Query(default=None, max_length=255),
+    user=Depends(require_password_change_complete)):
+    try:
+        metadata = DocumentMetadata(title=title, document_date=document_date, description=description)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail="Enter a valid document title and date") from exc
+    return await save_workspace_document(request, metadata, filename, user, document_id)
+
+
+@app.get("/documents/{document_id}/download")
+def download_shared_document(document_id: int, user=Depends(require_password_change_complete)):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT original_filename, content_type, file_data FROM shared_documents WHERE document_id = %s", (document_id,))
+        item = cursor.fetchone()
+        if item is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return Response(content=item["file_data"], media_type=item["content_type"], headers={
+            "Content-Disposition": "attachment; filename*=UTF-8''" + quote(item["original_filename"], safe=""),
+            "X-Content-Type-Options": "nosniff"})
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+def save_agenda_item(item, user, agenda_id=None):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        before = None
+        if agenda_id is not None:
+            cursor.execute("SELECT created_by_user_id FROM agenda_items WHERE agenda_id = %s FOR UPDATE", (agenda_id,))
+            existing = cursor.fetchone()
+            if existing is None:
+                raise HTTPException(status_code=404, detail="Agenda item not found")
+            require_workspace_owner(user, existing)
+            before = audit_snapshot(connection, "agenda", agenda_id)
+        values = (item.title, item.description.strip(), item.due_date, item.status,
+                  item.priority, item.progress, item.tracking_notes.strip())
+        if agenda_id is None:
+            cursor.execute("""INSERT INTO agenda_items (title, description, due_date, status,
+                priority, progress, tracking_notes, created_by_user_id, created_by_username,
+                updated_by_username) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (*values, user["user_id"], user["username"], user["username"]))
+            agenda_id = cursor.lastrowid
+        else:
+            cursor.execute("""UPDATE agenda_items SET title = %s, description = %s, due_date = %s,
+                status = %s, priority = %s, progress = %s, tracking_notes = %s,
+                updated_by_username = %s WHERE agenda_id = %s""", (*values, user["username"], agenda_id))
+            record_entity_edit(connection, "agenda", agenda_id, before,
+                audit_snapshot(connection, "agenda", agenda_id), user)
+        connection.commit()
+        return {"agenda_id": agenda_id, "message": "Agenda item saved"}
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.post("/agenda", status_code=201)
+def create_agenda_item(item: AgendaItem, user=Depends(require_password_change_complete)):
+    return save_agenda_item(item, user)
+
+
+@app.put("/agenda/{agenda_id}")
+def edit_agenda_item(agenda_id: int, item: AgendaItem, user=Depends(require_password_change_complete)):
+    return save_agenda_item(item, user, agenda_id)
+
+
+@app.delete("/documents/{record_id}", status_code=204)
+@app.delete("/agenda/{record_id}", status_code=204)
+def delete_workspace_entry(record_id: int, request: Request, user=Depends(require_password_change_complete)):
+    entity = request.url.path.strip("/").split("/")[0]
+    table, key = AUDITED_RECORDS[entity]
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(f"SELECT created_by_user_id FROM {table} WHERE {key} = %s FOR UPDATE", (record_id,))
+        item = cursor.fetchone()
+        if item is None:
+            raise HTTPException(status_code=404, detail="Entry not found")
+        require_workspace_owner(user, item)
+        archive_deleted_item(connection, entity, record_id, user)
+        cursor.execute(f"DELETE FROM {table} WHERE {key} = %s", (record_id,))
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()

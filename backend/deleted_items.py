@@ -14,6 +14,8 @@ from mysql.connector import IntegrityError
 
 
 DELETED_SPECS = {
+    "documents": ("shared_documents", "document_id"),
+    "agenda": ("agenda_items", "agenda_id"),
     "stations": ("stations", "station_id"),
     "users": ("users", "user_id"),
     "instruments": ("instruments", "instrument_id"),
@@ -81,7 +83,7 @@ def _add_rows(blocks, cursor, table, key, value):
 
 
 def _record_title(row, entity_type, entity_id):
-    for key in ("station_name", "instrument_name", "full_name", "volunteer_name",
+    for key in ("title", "station_name", "instrument_name", "full_name", "volunteer_name",
                 "original_filename", "name", "station_code", "category", "report_month"):
         if row.get(key):
             return str(row[key])[:255]

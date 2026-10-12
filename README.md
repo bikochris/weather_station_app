@@ -1,7 +1,7 @@
 # Station Operations
 
 Station registry, maintenance planning, inspections, equipment inventory, reporting,
-and team discussions for an observation network.
+team discussions, shared documents, and agenda tracking for an observation network.
 
 For the full user, administrator, API, database, and file-by-file guide, see
 [`APP_DOCUMENTATION.md`](APP_DOCUMENTATION.md).

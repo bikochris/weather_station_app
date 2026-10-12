@@ -828,6 +828,44 @@ CREATE TABLE IF NOT EXISTS instrument_alert_deliveries (
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS shared_documents (
+        document_id INT AUTO_INCREMENT PRIMARY KEY,
+        title VARCHAR(200) NOT NULL,
+        document_date DATE NOT NULL,
+        description TEXT NULL,
+        original_filename VARCHAR(255) NOT NULL,
+        file_type VARCHAR(30) NOT NULL,
+        content_type VARCHAR(100) NOT NULL,
+        file_size INT NOT NULL,
+        file_data LONGBLOB NOT NULL,
+        version INT NOT NULL DEFAULT 1,
+        created_by_user_id INT NULL,
+        created_by_username VARCHAR(50) NOT NULL,
+        updated_by_username VARCHAR(50) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (created_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL,
+        INDEX idx_documents_date (document_date, document_id)
+    );
+
+CREATE TABLE IF NOT EXISTS agenda_items (
+        agenda_id INT AUTO_INCREMENT PRIMARY KEY,
+        title VARCHAR(200) NOT NULL,
+        description TEXT NULL,
+        due_date DATE NOT NULL,
+        status VARCHAR(30) NOT NULL DEFAULT 'Open',
+        priority VARCHAR(20) NOT NULL DEFAULT 'Normal',
+        progress INT NOT NULL DEFAULT 0,
+        tracking_notes TEXT NULL,
+        created_by_user_id INT NULL,
+        created_by_username VARCHAR(50) NOT NULL,
+        updated_by_username VARCHAR(50) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (created_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL,
+        INDEX idx_agenda_due_status (due_date, status)
+    );
+
 INSERT INTO stations
 (
     station_code,

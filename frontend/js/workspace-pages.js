@@ -1,0 +1,237 @@
+const workspaceEntity = document.body.dataset.workspace;
+const workspaceDocuments = workspaceEntity === "documents";
+const workspaceId = workspaceDocuments ? "document_id" : "agenda_id";
+const workspaceState = createCollectionState(workspaceDocuments ? "document_date" : "due_date");
+workspaceState.sortOrder = workspaceDocuments ? "desc" : "asc";
+let workspaceEditing = null;
+let workspacePages = 1;
+let workspaceRequestSequence = 0;
+const workspaceField = id => document.getElementById(id);
+
+function workspaceToday() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+function syncAgendaProgress() {
+    const status = workspaceField("entryStatus");
+    const progress = Number(workspaceField("entryProgress").value);
+    if (status.value === "Cancelled") return;
+    if (progress === 100) status.value = "Completed";
+    else if (progress > 0 || status.value === "Completed") status.value = "In progress";
+}
+
+function workspaceFilters() {
+    const values = {date_from: workspaceField("dateFrom").value, date_to: workspaceField("dateTo").value,
+        mine: workspaceField("mineOnly").checked ? "true" : ""};
+    if (workspaceDocuments) values.file_type = workspaceField("fileTypeFilter").value;
+    else {
+        values.status = workspaceField("statusFilter").value;
+        values.priority = workspaceField("priorityFilter").value;
+        values.timing = workspaceField("timingFilter").value;
+    }
+    return values;
+}
+
+async function workspaceRequest(path, options) {
+    const response = await apiFetch(path, options);
+    if (!response.ok) throw new Error(await getErrorMessage(response, "Unable to complete the request"));
+    return response.status === 204 ? null : response.json();
+}
+
+function resetWorkspaceEditor() {
+    workspaceEditing = null;
+    workspaceField("workspaceForm").reset();
+    workspaceField("entryDate").value = workspaceToday();
+    workspaceField("editorHeading").textContent = workspaceDocuments ? "Upload document" : "Add agenda item";
+    workspaceField("saveEntry").textContent = workspaceDocuments ? "Upload document" : "Save agenda item";
+    workspaceField("cancelEntry").hidden = true;
+    if (workspaceDocuments) {
+        workspaceField("entryFile").required = true;
+        workspaceField("fileLabel").textContent = "Document file";
+        workspaceField("fileHint").textContent = "PDF, Office files, ZIP and other archives, images, or text. Maximum 20 MB.";
+    }
+}
+
+function editWorkspaceEntry(item) {
+    resetWorkspaceEditor();
+    workspaceEditing = item[workspaceId];
+    workspaceField("entryTitle").value = item.title;
+    workspaceField("entryDescription").value = item.description || "";
+    workspaceField("entryDate").value = item[workspaceDocuments ? "document_date" : "due_date"];
+    workspaceField("editorHeading").textContent = workspaceDocuments ? "Edit document" : "Update agenda item";
+    workspaceField("saveEntry").textContent = "Save changes";
+    workspaceField("cancelEntry").hidden = false;
+    workspaceField("workspaceMessage").textContent = "";
+    if (workspaceDocuments) {
+        workspaceField("entryFile").required = false;
+        workspaceField("fileLabel").textContent = "Replacement file (optional)";
+        workspaceField("fileHint").textContent = `Current file: ${item.original_filename}. Maximum 20 MB.`;
+    } else {
+        workspaceField("entryStatus").value = item.status;
+        workspaceField("entryPriority").value = item.priority;
+        workspaceField("entryProgress").value = item.progress;
+        workspaceField("entryTracking").value = item.tracking_notes || "";
+    }
+    workspaceField("workspaceEditor").scrollIntoView({behavior: "smooth"});
+    workspaceField("entryTitle").focus({preventScroll: true});
+}
+
+async function downloadWorkspaceDocument(item) {
+    try {
+        const response = await apiFetch(`/documents/${item.document_id}/download`);
+        if (!response.ok) throw new Error(await getErrorMessage(response, "Unable to download document"));
+        const url = URL.createObjectURL(await response.blob());
+        const link = document.createElement("a"); link.href = url; link.download = item.original_filename;
+        link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) { window.alert(error.message); }
+}
+
+function workspaceActions(row, item) {
+    const cell = row.insertCell();
+    const group = document.createElement("div"); group.className = "table-actions";
+    if (workspaceDocuments) {
+        const download = document.createElement("button"); download.type = "button";
+        download.className = "secondary-button compact-button"; download.textContent = "Download";
+        download.onclick = () => downloadWorkspaceDocument(item); group.append(download);
+    }
+    if (item.can_edit) {
+        const edit = document.createElement("button"); edit.type = "button";
+        edit.className = "secondary-button compact-button"; edit.textContent = "Edit";
+        edit.onclick = () => editWorkspaceEntry(item);
+        const remove = document.createElement("button"); remove.type = "button";
+        remove.className = "danger-button compact-button"; remove.textContent = "Delete";
+        remove.onclick = async () => {
+            if (!confirm(`Delete "${item.title}"? Admin can restore it from Deleted items.`)) return;
+            try {
+                await workspaceRequest(`/${workspaceEntity}/${item[workspaceId]}`, {method: "DELETE"});
+                if (workspaceEditing === item[workspaceId]) resetWorkspaceEditor();
+                await loadWorkspaceEntries();
+            } catch (error) { window.alert(error.message); }
+        };
+        group.append(edit, remove);
+    }
+    cell.append(group);
+}
+
+async function loadWorkspaceEntries() {
+    const sequence = ++workspaceRequestSequence;
+    const body = workspaceField("workspaceRows");
+    const count = workspaceDocuments ? 11 : 12;
+    showTableMessage(body, count, "Loading...");
+    try {
+        const query = buildQuery({page: workspaceState.page, page_size: workspaceState.pageSize,
+            search: workspaceState.search, sort_by: workspaceState.sortBy, sort_order: workspaceState.sortOrder,
+            ...workspaceFilters()});
+        const result = await workspaceRequest(`/${workspaceEntity}?${query}`);
+        if (sequence !== workspaceRequestSequence) return;
+        workspaceState.page = result.page; workspacePages = result.pages;
+        body.replaceChildren();
+        const summary = result.summary;
+        workspaceField("metricTotal").textContent = summary.total.toLocaleString();
+        if (workspaceDocuments) {
+            workspaceField("metricMine").textContent = summary.mine.toLocaleString();
+            workspaceField("metricBytes").textContent = `${(summary.bytes / 1024 / 1024).toLocaleString(undefined, {maximumFractionDigits: 1})} MB`;
+        } else {
+            workspaceField("metricCompleted").textContent = summary.completed.toLocaleString();
+            workspaceField("metricOverdue").textContent = summary.overdue.toLocaleString();
+            workspaceField("metricDueSoon").textContent = summary.due_soon.toLocaleString();
+        }
+        if (!result.items.length) showTableMessage(body, count, "No entries match these filters.");
+        result.items.forEach(item => {
+            const row = body.insertRow();
+            const values = workspaceDocuments ? [item.document_id, item.title, item.document_date,
+                item.description, item.original_filename, item.file_type, item.file_size, item.version,
+                item.created_by_username, item.updated_at] : [item.agenda_id, item.title, item.description,
+                item.due_date, item.status, item.priority, item.progress, item.tracking_notes, item.timing,
+                item.created_by_username, item.updated_at];
+            values.forEach(value => appendCell(row, value || (value === 0 ? "0" : "-")));
+            if (!workspaceDocuments) {
+                const timing = row.cells[8];
+                timing.classList.add("agenda-timing", `agenda-${item.timing.toLowerCase().replaceAll(" ", "-")}`);
+                const progress = document.createElement("progress"); progress.max = 100; progress.value = item.progress;
+                progress.setAttribute("aria-label", `${item.title}: ${item.progress}% complete`);
+                row.cells[6].append(progress);
+            }
+            workspaceActions(row, item);
+        });
+        attachRecordHistoryRows(body, workspaceEntity, result.items, item => item[workspaceId]);
+        workspaceField("pageSummary").textContent = result.total ?
+            `${(result.page - 1) * result.page_size + 1}-${Math.min(result.page * result.page_size, result.total)} of ${result.total}` : "0 entries";
+        workspaceField("pageLabel").textContent = `Page ${result.page} of ${result.pages}`;
+        workspaceField("previousPage").disabled = result.page <= 1;
+        workspaceField("nextPage").disabled = result.page >= result.pages;
+    } catch (error) {
+        if (sequence === workspaceRequestSequence) {
+            showTableMessage(body, count, error.message);
+            workspaceField("previousPage").disabled = true;
+            workspaceField("nextPage").disabled = true;
+        }
+    }
+}
+
+async function saveWorkspaceEntry(event) {
+    event.preventDefault();
+    const button = workspaceField("saveEntry"); button.disabled = true;
+    setMessage(workspaceField("workspaceMessage"), "Saving...");
+    try {
+        const values = {title: workspaceField("entryTitle").value.trim(),
+            description: workspaceField("entryDescription").value.trim()};
+        const method = workspaceEditing ? "PUT" : "POST";
+        let path = `/${workspaceEntity}${workspaceEditing ? `/${workspaceEditing}` : ""}`;
+        let options;
+        if (workspaceDocuments) {
+            const file = workspaceField("entryFile").files[0];
+            if (file && file.size > 20 * 1024 * 1024) throw new Error("The maximum document size is 20 MB");
+            values.document_date = workspaceField("entryDate").value;
+            if (file) values.filename = file.name;
+            path += `?${new URLSearchParams(values)}`;
+            options = {method, headers: {"Content-Type": "application/octet-stream"}, body: file || null};
+        } else {
+            syncAgendaProgress();
+            Object.assign(values, {due_date: workspaceField("entryDate").value,
+                status: workspaceField("entryStatus").value, priority: workspaceField("entryPriority").value,
+                progress: Number(workspaceField("entryProgress").value), tracking_notes: workspaceField("entryTracking").value.trim()});
+            options = {method, headers: {"Content-Type": "application/json"}, body: JSON.stringify(values)};
+        }
+        await workspaceRequest(path, options);
+        resetWorkspaceEditor();
+        setMessage(workspaceField("workspaceMessage"), workspaceDocuments ? "Document saved." : "Agenda item saved.", "success");
+        await loadWorkspaceEntries();
+    } catch (error) { setMessage(workspaceField("workspaceMessage"), error.message, "error"); }
+    finally { button.disabled = false; }
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+    initializeShell();
+    if (!await requireSession()) return;
+    resetWorkspaceEditor();
+    workspaceField("workspaceForm").onsubmit = saveWorkspaceEntry;
+    workspaceField("cancelEntry").onclick = () => { resetWorkspaceEditor(); workspaceField("workspaceMessage").textContent = ""; };
+    const apply = () => { workspaceState.page = 1; loadWorkspaceEntries(); };
+    bindCollectionControls({state: workspaceState, reload: loadWorkspaceEntries,
+        searchId: "entrySearch", pageSizeId: "entryPageSize", tableSelector: "#workspaceTable",
+        getExtraParameters: workspaceFilters});
+    workspaceField("applyFilters").onclick = apply;
+    workspaceField("resetFilters").onclick = () => {
+        workspaceField("entrySearch").value = ""; workspaceState.search = "";
+        workspaceField("dateFrom").value = ""; workspaceField("dateTo").value = "";
+        workspaceField("mineOnly").checked = false;
+        for (const id of workspaceDocuments ? ["fileTypeFilter"] : ["statusFilter", "priorityFilter", "timingFilter"]) workspaceField(id).value = "";
+        apply();
+    };
+    workspaceField("previousPage").onclick = () => { if (workspaceState.page > 1) { workspaceState.page--; loadWorkspaceEntries(); } };
+    workspaceField("nextPage").onclick = () => { if (workspaceState.page < workspacePages) { workspaceState.page++; loadWorkspaceEntries(); } };
+    for (const format of ["csv", "pdf"]) workspaceField(format === "csv" ? "exportCsv" : "exportPdf").onclick = () =>
+        downloadCollectionExport(`/${workspaceEntity}`, format, workspaceState, workspaceFilters(),
+            workspaceField("includeHistory").checked ? workspaceEntity : null,
+            historyColumnsForTable(workspaceField("workspaceTable"), workspaceEntity));
+    if (!workspaceDocuments) {
+        workspaceField("entryProgress").addEventListener("input", syncAgendaProgress);
+        workspaceField("entryStatus").onchange = () => {
+            if (workspaceField("entryStatus").value === "Completed") workspaceField("entryProgress").value = 100;
+            if (workspaceField("entryStatus").value === "Open") workspaceField("entryProgress").value = 0;
+        };
+    }
+    await loadWorkspaceEntries();
+});
