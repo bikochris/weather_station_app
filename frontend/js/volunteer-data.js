@@ -51,7 +51,7 @@ async function loadVolunteerData() {
                     document.getElementById("reportMonth").value = item.report_month;
                     document.getElementById("commentMonth").value = item.report_month;
                     const target = !document.getElementById("volunteerUploader").hidden ? document.getElementById("volunteerUploader") : document.getElementById("supervisorCommentSection");
-                    target.scrollIntoView({behavior: "smooth"});
+                    revealPagePanel(target, {behavior: "smooth"});
                 }); group.appendChild(edit);
             }
             if (result.permissions.delete) {

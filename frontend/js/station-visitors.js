@@ -35,7 +35,7 @@ async function loadVisitorCategories() {
         const row = document.createElement("div"); row.className = "visitor-category-item";
         const name = document.createElement("strong"); name.textContent = item.name;
         const edit = document.createElement("button"); edit.className = "secondary-button"; edit.textContent = "Edit";
-        edit.onclick = () => { editingCategoryId = item.category_id; visitorField("newVisitorCategory").value = item.name; visitorField("newVisitorCategory").focus(); };
+        edit.onclick = () => { editingCategoryId = item.category_id; visitorField("newVisitorCategory").value = item.name; revealPagePanel(visitorField("newVisitorCategory")); visitorField("newVisitorCategory").focus(); };
         const remove = document.createElement("button"); remove.className = "danger-button"; remove.textContent = "Delete";
         remove.onclick = async () => {
             if (!confirm(`Delete visitor category ${item.name}?`)) return;

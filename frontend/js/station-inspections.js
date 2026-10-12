@@ -160,7 +160,7 @@ function editInspection(record) {
     document.getElementById("inspectionPhoto").required = false;
     document.getElementById("inspectionSubmit").textContent = "Save inspection changes";
     document.getElementById("cancelInspectionEdit").hidden = false;
-    document.getElementById("inspectionForm").scrollIntoView({behavior: "smooth"});
+    revealPagePanel(document.getElementById("inspectionForm"), {behavior: "smooth"});
 }
 
 
@@ -432,7 +432,7 @@ function openInspectionWorkspace(record) {
     document.getElementById("inspectionUpdatedAt").textContent = new Date(record.updated_at).toLocaleString();
     renderInspectionSequence(record);
     renderInspectionPhoto(record);
-    document.getElementById("inspectionWorkspace").scrollIntoView({behavior: "smooth", block: "start"});
+    revealPagePanel(document.getElementById("inspectionWorkspace"), {behavior: "smooth", block: "start"});
 }
 
 

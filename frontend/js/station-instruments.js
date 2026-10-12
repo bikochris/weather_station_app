@@ -202,7 +202,7 @@ function editStationInstrument(recordId) {
     });
     document.getElementById("stationInstrumentSubmit").textContent = "Save changes";
     document.getElementById("cancelStationInstrumentEdit").hidden = false;
-    document.getElementById("stationInstrumentForm").scrollIntoView({behavior: "smooth"});
+    revealPagePanel(document.getElementById("stationInstrumentForm"), {behavior: "smooth"});
 }
 
 

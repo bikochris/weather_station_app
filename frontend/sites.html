@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sites | Station Operations</title>
-    <link rel="stylesheet" href="css/app.css?v=20261012workspace">
+    <link rel="stylesheet" href="css/app.css?v=20261012largetiles">
 </head>
-<body>
+<body class="sites-page">
     <header class="app-header">
         <div class="header-inner">
             <div>
@@ -45,9 +45,15 @@
                     </div>
                     <button class="secondary-button" id="refreshSites" type="button">Refresh</button>
                 </div>
+                <form id="siteLocationSearch" class="form-grid site-location-search">
+                    <div class="field"><label for="originLatitude">Search latitude</label><input id="originLatitude" type="number" step="any" min="-90" max="90" placeholder="e.g. -1.95" required></div>
+                    <div class="field"><label for="originLongitude">Search longitude</label><input id="originLongitude" type="number" step="any" min="-180" max="180" placeholder="e.g. 30.06" required></div>
+                    <div class="form-actions span-2"><button type="submit">Find nearest sites</button><button id="clearSiteLocation" type="button" class="secondary-button">Clear location</button></div>
+                    <p id="siteLocationMessage" class="message span-2" role="status"></p>
+                </form>
                 <div class="table-tools">
                     <div class="field search-field">
-                        <label for="siteSearch">Search sites</label>
+                        <label for="siteSearch">Search stations or sites</label>
                         <input type="search" id="siteSearch" placeholder="Site, station, district, sector or category">
                     </div>
                     <div class="field">
@@ -78,6 +84,7 @@
                             <tr>
                                 <th data-sort="site_code">Site ID</th>
                                 <th data-sort="site_name">Site</th>
+                                <th data-sort="distance_km">Distance (km)</th>
                                 <th data-sort="latitude">Latitude</th>
                                 <th data-sort="longitude">Longitude</th>
                                 <th data-sort="altitude">Altitude</th>
@@ -111,7 +118,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20261012workspace"></script>
-    <script src="js/sites.js?v=20261004status"></script>
+    <script src="js/api.js?v=20261012largetiles"></script>
+    <script src="js/sites.js?v=20261012panels"></script>
 </body>
 </html>

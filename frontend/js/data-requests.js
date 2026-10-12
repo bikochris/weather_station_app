@@ -118,7 +118,7 @@ function editDataRequest(id) {
     document.getElementById("saveRequests").textContent = "Save changes";
     document.getElementById("cancelRequestEdit").hidden = false;
     document.getElementById("addRequestCategory").hidden = true;
-    document.getElementById("requestEditor").scrollIntoView({behavior: "smooth"});
+    revealPagePanel(document.getElementById("requestEditor"), {behavior: "smooth"});
 }
 
 async function deleteDataRequest(id) {

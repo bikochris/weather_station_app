@@ -10,6 +10,24 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 WORKSPACE_SCHEMA = (
+    """CREATE TABLE IF NOT EXISTS ideas (
+        idea_id INT AUTO_INCREMENT PRIMARY KEY,
+        category VARCHAR(100) NOT NULL DEFAULT 'General',
+        title VARCHAR(200) NOT NULL,
+        description TEXT NULL,
+        idea_date DATE NOT NULL,
+        status VARCHAR(30) NOT NULL DEFAULT 'Proposed',
+        priority VARCHAR(20) NOT NULL DEFAULT 'Normal',
+        expected_benefit TEXT NULL,
+        next_steps TEXT NULL,
+        created_by_user_id INT NULL,
+        created_by_username VARCHAR(50) NOT NULL,
+        updated_by_username VARCHAR(50) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (created_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL,
+        INDEX idx_ideas_date_status (idea_date, status)
+    )""",
     """CREATE TABLE IF NOT EXISTS shared_documents (
         document_id INT AUTO_INCREMENT PRIMARY KEY,
         title VARCHAR(200) NOT NULL,
@@ -70,6 +88,31 @@ class DocumentMetadata(BaseModel):
     def clean_title(cls, value):
         if not value.strip():
             raise ValueError("Enter a title")
+        return value.strip()
+
+
+class IdeaItem(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    category: str = Field(default="General", min_length=1, max_length=100)
+    description: str = Field(default="", max_length=5000)
+    idea_date: date
+    status: Literal["Proposed", "Under review", "Accepted", "Implemented", "Not pursued"] = "Proposed"
+    priority: Literal["Low", "Normal", "High", "Urgent"] = "Normal"
+    expected_benefit: str = Field(default="", max_length=5000)
+    next_steps: str = Field(default="", max_length=5000)
+
+    @field_validator("category")
+    @classmethod
+    def clean_category(cls, value):
+        if not value.strip() or "|" in value:
+            raise ValueError("Enter a category without the | character")
+        return value.strip()
+
+    @field_validator("title")
+    @classmethod
+    def clean_title(cls, value):
+        if not value.strip():
+            raise ValueError("Enter an idea title")
         return value.strip()
 
 

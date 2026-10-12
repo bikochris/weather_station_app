@@ -341,7 +341,7 @@ function editMaintenance(maintenanceId) {
     document.getElementById("technicians").value = record.technicians;
     document.getElementById("maintenanceSubmit").textContent = "Save changes";
     document.getElementById("cancelMaintenanceEdit").hidden = false;
-    document.getElementById("maintenanceForm").scrollIntoView({behavior: "smooth"});
+    revealPagePanel(document.getElementById("maintenanceForm"), {behavior: "smooth"});
 }
 
 

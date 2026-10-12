@@ -1,7 +1,46 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from backend.main import export_sites, get_sites
+from fastapi import HTTPException
+from backend.main import export_sites, get_sites, site_distance_km
+
+
+class SiteDistanceTests(unittest.TestCase):
+    def test_distance_zero_known_arc_and_missing_coordinates(self):
+        self.assertEqual(site_distance_km(-2, 30, -2, 30), 0)
+        self.assertAlmostEqual(site_distance_km(0, 0, 0, 1), 111.195, places=2)
+        self.assertAlmostEqual(site_distance_km(0, 179, 0, -179), 222.39, places=2)
+        self.assertIsNone(site_distance_km(0, 0, None, 30))
+        self.assertIsNone(site_distance_km(0, 0, 100, 30))
+
+    def test_both_coordinates_required_and_ranges_checked(self):
+        for latitude, longitude in [(1, None), (None, 30), (91, 0), (0, 181), (float("nan"), 0)]:
+            with self.assertRaises(HTTPException) as error:
+                get_sites(latitude=latitude, longitude=longitude)
+            self.assertEqual(error.exception.status_code, 422)
+
+    @patch("backend.main.ensure_application_tables")
+    @patch("backend.main.get_connection")
+    def test_nearest_sort_before_pagination_and_unknown_last(self, connect, _ensure):
+        stations = []
+        for index, latitude in enumerate([5, None, 2, 0, 1]):
+            stations.append({"station_id": index + 1, "station_code": str(index),
+                "station_name": f"Site {index}", "latitude": latitude, "longitude": 30,
+                "altitude": 1500, "province": "Eastern", "district": "Bugesera", "sector": "Test",
+                "station_category": "Principal Station", "status": "Operational"})
+        connect.return_value.cursor.return_value.fetchall.return_value = stations
+        user = {"department": "Observation Officer", "user_id": 7}
+        arguments = dict(page=None, page_size=25, search=None, sort_by="distance_km",
+                         sort_order="asc", user=user, latitude=0, longitude=30)
+        sites = get_sites(**arguments)
+        self.assertEqual([item["latitude"] for item in sites], [0, 1, 2, 5, None])
+        query, parameters = connect.return_value.cursor.return_value.execute.call_args.args
+        self.assertIn("user_station_assignments", query)
+        self.assertEqual(parameters, (7,))
+        arguments.update(page=1, page_size=2)
+        self.assertEqual([item["latitude"] for item in get_sites(**arguments)["items"]], [0, 1])
+        arguments.update(page=None, sort_order="desc")
+        self.assertEqual([item["latitude"] for item in get_sites(**arguments)], [5, 2, 1, 0, None])
 
 
 class SiteExportTests(unittest.TestCase):

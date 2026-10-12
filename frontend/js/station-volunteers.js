@@ -83,7 +83,7 @@ function editVolunteer(item) {
     volunteerPage("volunteerFormHeading").textContent = "Edit volunteer";
     volunteerPage("saveVolunteer").textContent = "Save changes";
     volunteerPage("cancelVolunteer").hidden = false;
-    volunteerPage("volunteerEditor").scrollIntoView({behavior: "smooth"});
+    revealPagePanel(volunteerPage("volunteerEditor"), {behavior: "smooth"});
 }
 
 async function loadStationVolunteers() {

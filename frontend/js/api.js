@@ -227,6 +227,7 @@ async function requireSession() {
     Object.values(allowedPages).forEach(pages => {
         pages?.add("documents.html");
         pages?.add("agenda.html");
+        pages?.add("ideas.html");
     });
     const currentPage = window.location.pathname.split("/").pop() || "index.html";
     if (ADMIN_ONLY_PAGES.has(currentPage) && !isITUser()) {
@@ -316,6 +317,133 @@ async function logout() {
 }
 
 
+function revealPagePanel(element, options = {behavior: "smooth", block: "start"}) {
+    if (!element) return;
+    let ancestor = element.closest("details.page-field-panel, details.page-section-panel");
+    while (ancestor) {
+        ancestor.open = true;
+        ancestor = ancestor.parentElement?.closest("details.page-field-panel, details.page-section-panel");
+    }
+    element.querySelectorAll("details.page-field-panel").forEach(panel => {
+        if (!panel.hidden) panel.open = true;
+    });
+    element.scrollIntoView(options);
+}
+
+
+function initializeCollapsibleFields() {
+    const main = document.querySelector("main");
+    const pageName = window.location.pathname.split("/").pop() || "index.html";
+    if (!main || pageName === "index.html" || document.body.classList.contains("auth-page")) return;
+    document.body.classList.add("section-menu-page");
+    const icons = {
+        "stations.html": "radio-tower", "sites.html": "map-pinned", "maintenance.html": "wrench",
+        "maintenance-summary.html": "wrench", "station-inspections.html": "clipboard-check",
+        "pre-maintenance-reports.html": "clipboard-check", "documents.html": "inbox",
+        "agenda.html": "clipboard-check", "ideas.html": "messages-square", "discussions.html": "messages-square",
+        "users.html": "users-round", "station-visitors.html": "users-round", "station-volunteers.html": "users-round",
+        "instruments.html": "package-search", "station-instruments.html": "package-search",
+        "instrument-status-summary.html": "gauge", "suspected-data.html": "shield-check",
+        "data-counts.html": "chart-no-axes-combined", "data-requests.html": "inbox",
+        "reporting-status.html": "chart-no-axes-combined", "search.html": "search"
+    };
+    const selector = "form, .filter-bar, .table-tools, .table-toolbar, .import-tools, .deleted-filter-grid, .section-heading > .field, .section-heading > .action-group:has(input)";
+    function sectionDescription(label, target) {
+        if (/frequency|schedule|configuration|categor/i.test(label)) return "Maintenance schedules, categories, and operational settings.";
+        if (/report|upload|document/i.test(label)) return "Reports, supporting files, and their associated station records.";
+        if (/history|review/i.test(label)) return "Recorded activities, previous changes, and team decisions.";
+        if (/deleted|backup/i.test(label)) return "Deleted records and their retained history.";
+        if (target.querySelector("form")) return "Record details, dates, and supporting information.";
+        const descriptions = {
+            "stations.html": "Station locations, classifications, and operating status.",
+            "sites.html": "Site locations, nearby sites, and their associated stations.",
+            "maintenance.html": "Station interventions, instrument servicing, and technical work.",
+            "maintenance-summary.html": "Fiscal-period targets and completed station maintenance.",
+            "station-inspections.html": "Station findings, inspection evidence, and team responses.",
+            "station-instruments.html": "Installed instruments, logger connections, and calibration dates.",
+            "instruments.html": "Instrument models, categories, and measurement parameters.",
+            "agenda.html": "Planned work, due dates, priorities, and progress.",
+            "ideas.html": "Ideas, expected benefits, and proposed next steps.",
+            "discussions.html": "Team conversations, participants, and shared decisions.",
+            "users.html": "Application accounts, assigned stations, and access roles.",
+            "station-visitors.html": "Visit dates, institutions, missions, and visitor numbers.",
+            "station-volunteers.html": "Station volunteers, contact details, and payment accounts.",
+            "data-counts.html": "Monthly data records grouped by station category.",
+            "data-requests.html": "Data requests, requester categories, and fiscal-period totals."
+        };
+        return descriptions[pageName] || "Registered records, their current details, and recent updates.";
+    }
+    function wrapFields(target) {
+        if (!target.closest("main") || target.closest("dialog, .page-field-panel")
+            || !target.querySelector("input:not([type=hidden]), select, textarea")) return;
+        const panel = document.createElement("details");
+        panel.className = "page-field-panel";
+        panel.hidden = target.hidden;
+        const summary = document.createElement("summary");
+        const heading = target.querySelector("h2, h3") || target.closest("section")?.querySelector("h2, h3");
+        summary.textContent = target.matches("form, .import-tools")
+            ? (target.getAttribute("aria-label") || heading?.textContent || "Entry fields")
+            : target.matches(".table-tools") ? "Search, filters and downloads" : "Filters";
+        target.before(panel);
+        panel.append(summary, target);
+        new MutationObserver(() => { panel.hidden = target.hidden; })
+            .observe(target, {attributes: true, attributeFilter: ["hidden"]});
+    }
+    function scan(root) {
+        if (root.matches?.(selector)) wrapFields(root);
+        root.querySelectorAll?.(selector).forEach(wrapFields);
+        if (root.matches?.("section")) wrapSection(root);
+        root.querySelectorAll?.("section").forEach(wrapSection);
+    }
+    function wrapSection(target) {
+        if (!target.closest("main") || target.closest("dialog, .page-section-panel")) return;
+        if (target.matches(".data-graphs") || target.querySelector(".horizontal-chart, .bar-chart, canvas")
+            || (target.querySelector(".metric-grid") && !target.querySelector("form, table"))) {
+            target.classList.add("always-visible-statistics");
+            return;
+        }
+        const panel = document.createElement("details");
+        panel.className = "page-section-panel";
+        panel.hidden = target.hidden;
+        const summary = document.createElement("summary");
+        const heading = target.querySelector("h2, h3, h1");
+        const title = document.createElement("span");
+        title.className = "section-tile-title";
+        const copy = document.createElement("span");
+        copy.className = "section-tile-copy";
+        const description = document.createElement("span");
+        description.className = "section-tile-description";
+        const icon = document.createElement("img");
+        icon.className = "section-tile-icon";
+        icon.alt = "";
+        const label = target.getAttribute("aria-label") || heading?.textContent || "Page section";
+        icon.src = `assets/icons/${/report|upload|document/i.test(label) ? "inbox" : /history|review/i.test(label) ? "clipboard-check" : icons[pageName] || "clipboard-check"}.svg`;
+        title.textContent = label;
+        description.textContent = sectionDescription(label, target);
+        copy.append(title, description);
+        summary.append(icon, copy);
+        target.before(panel);
+        panel.append(summary, target);
+        const sync = () => {
+            panel.hidden = target.hidden;
+            title.textContent = target.getAttribute("aria-label") || heading?.textContent || "Page section";
+            description.textContent = sectionDescription(title.textContent, target);
+        };
+        new MutationObserver(sync).observe(target, {attributes: true, attributeFilter: ["hidden", "aria-label"]});
+        if (heading) new MutationObserver(sync).observe(heading, {childList: true, characterData: true, subtree: true});
+    }
+    scan(main);
+    new MutationObserver(records => records.forEach(record => {
+        record.addedNodes.forEach(node => { if (node.nodeType === 1) scan(node); });
+    })).observe(main, {childList: true, subtree: true});
+    main.addEventListener("invalid", event => {
+        revealPagePanel(event.target);
+    }, true);
+}
+
+document.addEventListener("DOMContentLoaded", initializeCollapsibleFields);
+
+
 function initializeShell() {
     const navigation = document.querySelector(".app-header nav");
     if (navigation) {
@@ -377,7 +505,7 @@ function initializeShell() {
         }
     }
     if (navigation) {
-        for (const [href, label] of [["documents.html", "Documents"], ["agenda.html", "Agenda"]]) {
+        for (const [href, label] of [["documents.html", "Documents"], ["agenda.html", "Agenda"], ["ideas.html", "Ideas"]]) {
             let link = navigation.querySelector(`a[href="${href}"]`);
             if (!link) {
                 link = document.createElement("a"); link.href = href; link.textContent = label;
@@ -393,6 +521,7 @@ function initializeShell() {
 
 
 const PAGE_HELP = {
+    "ideas.html": ["Ideas", "Record a title, idea date, description, expected benefit, and next steps. Track proposals through review, acceptance, and implementation. Everyone can view and add ideas; only the creator or Admin can edit or delete. Search, combine filters, sort columns, export the register with optional edit history, or expand a row to review changes."],
     "documents.html": ["Documents", "Upload a file with its title, document date, and description. Search and filter the library, download original files, or export the register. You can edit or delete your own uploads; Admin can manage every document. Replacement files increase the document version. Open a row to see its edit history."],
     "agenda.html": ["Agenda", "Record an agenda item, due date, priority, status, progress, and tracking notes. Overdue items are red and items due within seven days are amber. Update your own items as work progresses; Admin can manage every item. Filter, sort, export, or open a row to view the reasons and details of earlier edits."],
     "login.html": ["Sign in", "Enter the username and password assigned to your account, then select Sign in. If this is your first sign-in, follow the prompt to replace your temporary password. Contact an administrator if you cannot access your account."],
@@ -628,6 +757,7 @@ function setupDistrictFilter(container, stations, onChange) {
 function notificationTarget(notification) {
     const pages = {
         documents: "documents.html", agenda: "agenda.html",
+        ideas: "ideas.html",
         stations: "stations.html", instruments: "instruments.html", users: "users.html",
         maintenance: "maintenance.html", maintenance_report: "maintenance.html#maintenanceReports",
         pre_maintenance_report: "pre-maintenance-reports.html", station_visitors: "station-visitors.html",
@@ -1220,6 +1350,7 @@ function historySnapshotValue(entityType, key, value) {
 
 
 const historyColumnAliases = {
+    ideas: {"id": "idea_id", "idea title": "title", "idea category": "category", "created by": "created_by_username", "updated": "updated_at"},
     documents: {"id": "document_id", "date": "document_date", "file": "original_filename",
         "type": "file_type", "size (bytes)": "file_size", "created by": "created_by_username", "updated": "updated_at"},
     agenda: {"id": "agenda_id", "agenda item": "title", "progress (%)": "progress",
@@ -1497,7 +1628,7 @@ function attachRecordHistoryRows(tbody, entityType, items, idForItem) {
 
 async function filteredHistoryRecordIds(basePath, entityType, state, extra, matches = () => true) {
     const idField = {
-        documents: "document_id", agenda: "agenda_id",
+        documents: "document_id", agenda: "agenda_id", ideas: "idea_id",
         stations: "station_id", instruments: "instrument_id",
         maintenance: "maintenance_id", station_instruments: "station_instrument_id",
         suspected_data: "suspected_data_id", users: "user_id",

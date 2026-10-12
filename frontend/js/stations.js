@@ -35,6 +35,7 @@ async function loadStationCategories(previousName = "", updatedName = "") {
             document.getElementById("stationCategoryName").value = category.name;
             document.getElementById("saveStationCategory").textContent = "Save changes";
             document.getElementById("cancelStationCategoryEdit").hidden = false;
+            revealPagePanel(document.getElementById("stationCategoryName"));
             document.getElementById("stationCategoryName").focus();
         };
         action.append(edit);
@@ -99,7 +100,7 @@ function editStation(stationId) {
     document.getElementById("stationAction").value = station.action || "";
     document.getElementById("stationSubmit").textContent = "Save changes";
     document.getElementById("cancelStationEdit").hidden = false;
-    document.getElementById("stationForm").scrollIntoView({behavior: "smooth"});
+    revealPagePanel(document.getElementById("stationForm"), {behavior: "smooth"});
 }
 
 

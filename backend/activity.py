@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS operation_activity (
 RESOURCES = {
     "shared_documents": ("document_id", "Document", "documents", "documents.html"),
     "agenda_items": ("agenda_id", "Agenda item", "agenda", "agenda.html"),
+    "ideas": ("idea_id", "Idea", "ideas", "ideas.html"),
     "users": ("user_id", "User account", "users", "users.html"),
     "user_sessions": ("session_id", "Account session", "account", None),
     "stations": ("station_id", "Station", "stations", "stations.html"),

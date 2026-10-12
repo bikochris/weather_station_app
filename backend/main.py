@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, ValidationError
 from typing import Literal
 
 try:
-    from .workspace import (WORKSPACE_SCHEMA, AgendaItem, DocumentMetadata, agenda_timing,
+    from .workspace import (WORKSPACE_SCHEMA, AgendaItem, DocumentMetadata, IdeaItem, agenda_timing,
                             document_file_details, read_document_upload, require_workspace_owner,
                             workspace_owner)
     from .activity import ACTIVITY_SCHEMA, ActivityMiddleware, set_activity_actor, suspend_activity
@@ -31,7 +31,7 @@ try:
         verify_password,
     )
 except ImportError:
-    from workspace import (WORKSPACE_SCHEMA, AgendaItem, DocumentMetadata, agenda_timing,
+    from workspace import (WORKSPACE_SCHEMA, AgendaItem, DocumentMetadata, IdeaItem, agenda_timing,
                            document_file_details, read_document_upload, require_workspace_owner,
                            workspace_owner)
     from activity import ACTIVITY_SCHEMA, ActivityMiddleware, set_activity_actor, suspend_activity
@@ -1145,6 +1145,7 @@ def ensure_application_tables(connection):
         )
         for statement in WORKSPACE_SCHEMA:
             cursor.execute(statement)
+        ensure_column(cursor, "ideas", "category", "VARCHAR(100) NOT NULL DEFAULT 'General'")
         cursor.execute("""CREATE TABLE IF NOT EXISTS record_edit_history (
             history_id BIGINT AUTO_INCREMENT PRIMARY KEY,
             entity_type VARCHAR(50) NOT NULL,
@@ -2316,6 +2317,7 @@ def require_reporting_view(user=Depends(require_password_change_complete)):
 AUDITED_RECORDS = {
     "documents": ("shared_documents", "document_id"),
     "agenda": ("agenda_items", "agenda_id"),
+    "ideas": ("ideas", "idea_id"),
     "station_categories": ("station_categories", "category_id"),
     "stations": ("stations", "station_id"),
     "users": ("users", "user_id"),
@@ -2711,7 +2713,7 @@ def get_record_history(entity_type: str, entity_id: str,
             for field in ("before_data", "after_data"):
                 if isinstance(item[field], (str, bytes)):
                     item[field] = json.loads(item[field])
-        if role in ASSIGNED_STATION_ROLES and entity_type not in {"documents", "agenda"}:
+        if role in ASSIGNED_STATION_ROLES and entity_type not in {"documents", "agenda", "ideas"}:
             cursor.execute("SELECT station_id FROM user_station_assignments WHERE user_id = %s", (user["user_id"],))
             allowed = {row["station_id"] for row in cursor.fetchall()}
             current = audit_snapshot(connection, entity_type, entity_id)
@@ -2751,7 +2753,7 @@ def export_record_history(request: RecordHistoryExport,
             for field in ("before_data", "after_data"):
                 if isinstance(entry[field], (str, bytes)):
                     entry[field] = json.loads(entry[field])
-        if user["department"] in ASSIGNED_STATION_ROLES and entity_type not in {"documents", "agenda"}:
+        if user["department"] in ASSIGNED_STATION_ROLES and entity_type not in {"documents", "agenda", "ideas"}:
             cursor.execute("SELECT station_id FROM user_station_assignments WHERE user_id = %s", (user["user_id"],))
             allowed = {row["station_id"] for row in cursor.fetchall()}
             current_allowed = set()
@@ -4545,6 +4547,19 @@ def export_stations(
     return pdf_download("stations.pdf", "Station Registry", headers, rows, user["username"])
 
 
+def site_distance_km(latitude, longitude, site_latitude, site_longitude):
+    if site_latitude is None or site_longitude is None:
+        return None
+    if not (-90 <= site_latitude <= 90 and -180 <= site_longitude <= 180):
+        return None
+    lat1, lat2 = math.radians(latitude), math.radians(site_latitude)
+    dlat = lat2 - lat1
+    dlon = math.radians(site_longitude - longitude)
+    # Great-circle distance; clamp rounding error at antipodal coordinates.
+    arc = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    return 6371.0088 * 2 * math.asin(math.sqrt(max(0, min(1, arc))))
+
+
 @app.get("/sites")
 def get_sites(
     page: int | None = Query(default=None, ge=1),
@@ -4555,7 +4570,15 @@ def get_sites(
     user=Depends(require_password_change_complete),
     district: str | None = None,
     status: str | None = None,
+    latitude: float | None = None,
+    longitude: float | None = None,
 ):
+    if (latitude is None) != (longitude is None):
+        raise HTTPException(status_code=422, detail="Enter both latitude and longitude")
+    proximity = latitude is not None
+    if proximity and (not math.isfinite(latitude) or not math.isfinite(longitude)
+                      or not -90 <= latitude <= 90 or not -180 <= longitude <= 180):
+        raise HTTPException(status_code=422, detail="Latitude must be -90 to 90 and longitude -180 to 180")
     try:
         connection = get_connection()
         ensure_application_tables(connection)
@@ -4626,6 +4649,8 @@ def get_sites(
         if status:
             statuses = filter_values(status)
             sites = [site for site in sites if any(site["status_counts"].get(value, 0) for value in statuses)]
+        for site in sites:
+            site["distance_km"] = site_distance_km(latitude, longitude, site["latitude"], site["longitude"]) if proximity else None
         sites = filter_sort_collection(
             sites, search,
             [
@@ -4641,6 +4666,13 @@ def get_sites(
                 "stations": "station_search", "status_summary": "status_summary",
             },
         )
+        if proximity:
+            # Sort before pagination and keep unknown coordinates last in either direction.
+            sites.sort(key=lambda site: (
+                site["distance_km"] is None,
+                -(site["distance_km"] or 0) if sort_by == "distance_km" and sort_order == "desc" else (site["distance_km"] or 0),
+                site["site_name"].casefold(),
+            ))
         summary = {
             "total_sites": len(sites),
             "shared_sites": sum(item["station_count"] > 1 for item in sites),
@@ -4663,17 +4695,24 @@ def export_sites(
     sort_order: Literal["asc", "desc"] = "asc",
     district: str | None = None,
     status: str | None = None,
+    latitude: float | None = None,
+    longitude: float | None = None,
     user=Depends(require_password_change_complete),
 ):
     sites = get_sites(
         page=None, search=search, sort_by=sort_by,
         sort_order=sort_order, district=district, status=status, user=user,
+        latitude=latitude, longitude=longitude,
     )
     headers = ["Site ID", "Site", "Latitude", "Longitude", "Altitude (m)",
                "Province", "District", "Sector", "Station count", "Station status"]
     rows = [[site[key] for key in ("site_code", "site_name", "latitude", "longitude",
              "altitude", "province", "district", "sector", "station_count", "status_summary")]
             for site in sites]
+    if latitude is not None:
+        headers.insert(2, "Distance (km)")
+        for row, site in zip(rows, sites):
+            row.insert(2, round(site["distance_km"], 3) if site.get("distance_km") is not None else "Unknown")
     if format == "csv":
         headers.append("Stations at site")
         for row, site in zip(rows, sites):
@@ -9528,12 +9567,16 @@ def search_database(
 
 def workspace_records(entity, user, search=None, status=None, priority=None, file_type=None,
                       timing=None, mine=False, date_from=None, date_to=None,
-                      sort_by="updated_at", sort_order="desc"):
+                      sort_by="updated_at", sort_order="desc", category=None):
     table, id_column = AUDITED_RECORDS[entity]
     columns = (["document_id", "title", "document_date", "description", "original_filename",
                 "file_type", "file_size", "version"] if entity == "documents" else
                ["agenda_id", "title", "description", "due_date", "status", "priority", "progress", "tracking_notes"])
     columns += ["created_by_user_id", "created_by_username", "updated_by_username", "created_at", "updated_at"]
+    if entity == "ideas":
+        columns = ["idea_id", "title", "category", "description", "idea_date", "status", "priority",
+                   "expected_benefit", "next_steps", "created_by_user_id", "created_by_username",
+                   "updated_by_username", "created_at", "updated_at"]
     connection = get_connection()
     try:
         ensure_application_tables(connection)
@@ -9542,9 +9585,11 @@ def workspace_records(entity, user, search=None, status=None, priority=None, fil
         if mine:
             conditions.append("created_by_user_id = %s")
             params.append(user["user_id"])
-        if entity == "agenda":
+        if entity in {"agenda", "ideas"}:
             add_filter_condition(conditions, params, "status", status)
             add_filter_condition(conditions, params, "priority", priority)
+            if entity == "ideas":
+                add_filter_condition(conditions, params, "category", category)
         else:
             add_filter_condition(conditions, params, "file_type", file_type)
         query = f"SELECT {', '.join(columns)} FROM {table}"
@@ -9560,16 +9605,23 @@ def workspace_records(entity, user, search=None, status=None, priority=None, fil
         if entity == "agenda":
             items = [item for item in items if matches_filter(item["timing"], timing)]
         date_column = "document_date" if entity == "documents" else "due_date"
+        if entity == "ideas":
+            date_column = "idea_date"
         sort_fields = {column: column for column in columns if column != "created_by_user_id"}
         if entity == "agenda":
             sort_fields["timing"] = "timing"
         items = filter_sort_collection(items, search,
-            ["title", "description", "created_by_username", "original_filename", "tracking_notes"],
+            ["title", "description", "category", "created_by_username", "original_filename", "tracking_notes", "expected_benefit", "next_steps"],
             sort_by, sort_order, sort_fields,
             date_from, date_to, date_column)
         if entity == "documents":
             summary = {"total": len(items), "bytes": sum(item["file_size"] for item in items),
                        "mine": sum(item["created_by_user_id"] == user["user_id"] for item in items)}
+        elif entity == "ideas":
+            summary = {"total": len(items),
+                       "proposed": sum(item["status"] == "Proposed" for item in items),
+                       "under_review": sum(item["status"] == "Under review" for item in items),
+                       "implemented": sum(item["status"] == "Implemented" for item in items)}
         else:
             summary = {"total": len(items),
                        "completed": sum(item["status"] == "Completed" for item in items),
@@ -9583,37 +9635,43 @@ def workspace_records(entity, user, search=None, status=None, priority=None, fil
 
 @app.get("/documents")
 @app.get("/agenda")
+@app.get("/ideas")
 def get_workspace_entries(request: Request,
     page: int | None = Query(default=None, ge=1),
     page_size: int = Query(default=25, ge=10, le=100),
     search: str | None = Query(default=None, max_length=200),
     status: str | None = None, priority: str | None = None, file_type: str | None = None,
-    timing: str | None = None, mine: bool = False,
+    timing: str | None = None, mine: bool = False, category: str | None = None,
     date_from: date | None = None, date_to: date | None = None,
     sort_by: str = "updated_at", sort_order: Literal["asc", "desc"] = "desc",
     user=Depends(require_password_change_complete)):
     entity = request.url.path.strip("/")
     items, summary = workspace_records(entity, user, search, status, priority, file_type,
-        timing, mine, date_from, date_to, sort_by, sort_order)
+        timing, mine, date_from, date_to, sort_by, sort_order, category=category)
     return paginate_collection(items, page, page_size, summary)
 
 
 @app.get("/documents/export")
 @app.get("/agenda/export")
+@app.get("/ideas/export")
 def export_workspace_entries(request: Request, format: Literal["csv", "pdf"],
     search: str | None = Query(default=None, max_length=200),
     status: str | None = None, priority: str | None = None, file_type: str | None = None,
-    timing: str | None = None, mine: bool = False,
+    timing: str | None = None, mine: bool = False, category: str | None = None,
     date_from: date | None = None, date_to: date | None = None,
     sort_by: str = "updated_at", sort_order: Literal["asc", "desc"] = "desc",
     user=Depends(require_password_change_complete)):
     entity = request.url.path.strip("/").split("/")[0]
     items, _summary = workspace_records(entity, user, search, status, priority, file_type,
-        timing, mine, date_from, date_to, sort_by, sort_order)
+        timing, mine, date_from, date_to, sort_by, sort_order, category=category)
     if entity == "documents":
         headers = ["ID", "Title", "Date", "Description", "File", "Type", "Size (bytes)", "Version", "Created by", "Updated"]
         columns = ["document_id", "title", "document_date", "description", "original_filename",
                    "file_type", "file_size", "version", "created_by_username", "updated_at"]
+    elif entity == "ideas":
+        headers = ["ID", "Title", "Idea category", "Description", "Idea date", "Status", "Priority", "Expected benefit", "Next steps", "Created by", "Updated"]
+        columns = ["idea_id", "title", "category", "description", "idea_date", "status", "priority",
+                   "expected_benefit", "next_steps", "created_by_username", "updated_at"]
     else:
         headers = ["ID", "Agenda item", "Description", "Due date", "Status", "Priority", "Progress (%)", "Tracking notes", "Timing", "Created by", "Updated"]
         columns = ["agenda_id", "title", "description", "due_date", "status", "priority", "progress",
@@ -9713,6 +9771,66 @@ def download_shared_document(document_id: int, user=Depends(require_password_cha
         connection.close()
 
 
+@app.get("/ideas/categories")
+def get_idea_categories(user=Depends(require_password_change_complete)):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT DISTINCT category FROM ideas ORDER BY category")
+        return [item["category"] for item in cursor.fetchall()]
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+def save_idea(item, user, idea_id=None):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        before = None
+        if idea_id is not None:
+            cursor.execute("SELECT created_by_user_id FROM ideas WHERE idea_id = %s FOR UPDATE", (idea_id,))
+            existing = cursor.fetchone()
+            if existing is None:
+                raise HTTPException(status_code=404, detail="Idea not found")
+            require_workspace_owner(user, existing)
+            before = audit_snapshot(connection, "ideas", idea_id)
+        values = (item.title, item.category, item.description.strip(), item.idea_date, item.status,
+                  item.priority, item.expected_benefit.strip(), item.next_steps.strip())
+        if idea_id is None:
+            cursor.execute("""INSERT INTO ideas (title, category, description, idea_date, status, priority,
+                expected_benefit, next_steps, created_by_user_id, created_by_username, updated_by_username)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (*values, user["user_id"], user["username"], user["username"]))
+            idea_id = cursor.lastrowid
+        else:
+            cursor.execute("""UPDATE ideas SET title = %s, category = %s, description = %s, idea_date = %s,
+                status = %s, priority = %s, expected_benefit = %s, next_steps = %s,
+                updated_by_username = %s WHERE idea_id = %s""", (*values, user["username"], idea_id))
+            record_entity_edit(connection, "ideas", idea_id, before,
+                audit_snapshot(connection, "ideas", idea_id), user)
+        connection.commit()
+        return {"idea_id": idea_id, "message": "Idea saved"}
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.post("/ideas", status_code=201)
+def create_idea(item: IdeaItem, user=Depends(require_password_change_complete)):
+    return save_idea(item, user)
+
+
+@app.put("/ideas/{idea_id}")
+def edit_idea(idea_id: int, item: IdeaItem, user=Depends(require_password_change_complete)):
+    return save_idea(item, user, idea_id)
+
+
 def save_agenda_item(item, user, agenda_id=None):
     connection = get_connection()
     try:
@@ -9762,6 +9880,7 @@ def edit_agenda_item(agenda_id: int, item: AgendaItem, user=Depends(require_pass
 
 @app.delete("/documents/{record_id}", status_code=204)
 @app.delete("/agenda/{record_id}", status_code=204)
+@app.delete("/ideas/{record_id}", status_code=204)
 def delete_workspace_entry(record_id: int, request: Request, user=Depends(require_password_change_complete)):
     entity = request.url.path.strip("/").split("/")[0]
     table, key = AUDITED_RECORDS[entity]

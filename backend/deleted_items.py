@@ -16,6 +16,7 @@ from mysql.connector import IntegrityError
 DELETED_SPECS = {
     "documents": ("shared_documents", "document_id"),
     "agenda": ("agenda_items", "agenda_id"),
+    "ideas": ("ideas", "idea_id"),
     "stations": ("stations", "station_id"),
     "users": ("users", "user_id"),
     "instruments": ("instruments", "instrument_id"),

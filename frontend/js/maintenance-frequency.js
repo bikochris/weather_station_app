@@ -43,7 +43,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 categorySelect.value = item.station_category;
                 document.getElementById("frequencyCadence").value = item.cadence;
                 document.getElementById("frequencyTarget").value = item.target_visits;
-                panel.scrollIntoView({behavior: "smooth"});
+                revealPagePanel(panel, {behavior: "smooth"});
             };
             const remove = document.createElement("button");
             remove.type = "button";

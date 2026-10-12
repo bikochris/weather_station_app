@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Ideas | Station Operations</title>
+    <link rel="stylesheet" href="css/app.css?v=20261012largetiles">
+</head>
+<body data-workspace="ideas">
+    <header class="app-header"><div class="header-inner">
+        <div><p class="eyebrow">Operations</p><h1>Station Operations</h1></div>
+        <nav aria-label="Primary navigation"><a href="index.html">Home</a><a class="active" href="ideas.html">Ideas</a></nav>
+        <div class="user-menu"><span><strong data-user-name></strong><small data-user-department></small></span><button class="header-button" type="button" data-logout>Sign out</button></div>
+    </div></header>
+    <main class="dashboard-layout">
+        <div class="dashboard-content">
+            <section id="workspaceEditor">
+                <div class="section-heading"><div><p class="eyebrow">Suggestions</p><h2 id="editorHeading">Add idea</h2></div></div>
+                <form id="workspaceForm" class="form-grid">
+                    <div class="field span-2"><label for="entryCategory">Idea category</label><input id="entryCategory" list="ideaCategories" maxlength="100" value="General" required><datalist id="ideaCategories"><option value="General"></option></datalist></div>
+                    <div class="field"><label for="entryTitle">Idea title</label><input id="entryTitle" maxlength="200" required></div>
+                    <div class="field"><label for="entryDate">Idea date</label><input id="entryDate" type="date" required></div>
+                    <div class="field span-2"><label for="entryDescription">Description</label><textarea id="entryDescription" maxlength="5000"></textarea></div>
+                    <div class="field"><label for="entryStatus">Status</label><select id="entryStatus"><option>Proposed</option><option>Under review</option><option>Accepted</option><option>Implemented</option><option>Not pursued</option></select></div>
+                    <div class="field"><label for="entryPriority">Priority</label><select id="entryPriority"><option>Low</option><option selected>Normal</option><option>High</option><option>Urgent</option></select></div>
+                    <div class="field span-2"><label for="entryBenefit">Expected benefit</label><textarea id="entryBenefit" maxlength="5000"></textarea></div>
+                    <div class="field span-2"><label for="entryNextSteps">Next steps</label><textarea id="entryNextSteps" maxlength="5000"></textarea></div>
+                    <div class="form-actions span-2"><button id="saveEntry" type="submit">Save idea</button><button id="cancelEntry" type="button" class="secondary-button" hidden>Cancel edit</button></div>
+                    <p id="workspaceMessage" class="message span-2" role="status"></p>
+                </form>
+            </section>
+            <section>
+                <div class="section-heading"><div><p class="eyebrow">Idea register</p><h2>Ideas</h2></div></div>
+                <div class="filter-bar workspace-filters">
+                    <div class="field"><label for="categoryFilter">Idea category</label><select id="categoryFilter"><option value="">All categories</option></select></div>
+                    <div class="field"><label for="entrySearch">Search</label><input id="entrySearch" type="search" placeholder="Idea title, notes or creator"></div>
+                    <div class="field"><label for="statusFilter">Status</label><select id="statusFilter"><option value="">All statuses</option><option>Proposed</option><option>Under review</option><option>Accepted</option><option>Implemented</option><option>Not pursued</option></select></div>
+                    <div class="field"><label for="priorityFilter">Priority</label><select id="priorityFilter"><option value="">All priorities</option><option>Low</option><option>Normal</option><option>High</option><option>Urgent</option></select></div>
+                    <div class="field"><label for="dateFrom">Date from</label><input id="dateFrom" type="date"></div><div class="field"><label for="dateTo">Date to</label><input id="dateTo" type="date"></div>
+                    <label class="checkbox-row"><input id="mineOnly" type="checkbox">My ideas</label>
+                    <button id="applyFilters" type="button" class="secondary-button">Apply</button><button id="resetFilters" type="button" class="secondary-button">Reset</button>
+                </div>
+                <div class="table-tools"><div class="field"><label for="entryPageSize">Rows per page</label><select id="entryPageSize"><option>10</option><option selected>25</option><option>50</option><option>100</option></select></div><button id="exportCsv" class="secondary-button" type="button">Export CSV</button><button id="exportPdf" class="secondary-button" type="button">Export PDF</button><label class="checkbox-row"><input id="includeHistory" type="checkbox">Include edit history</label></div>
+                <div class="table-wrap"><table id="workspaceTable" class="wide-data-table"><thead><tr><th data-sort="idea_id">ID</th><th data-sort="title">Idea title</th><th data-sort="category">Idea category</th><th data-sort="description">Description</th><th data-sort="idea_date">Idea date</th><th data-sort="status">Status</th><th data-sort="priority">Priority</th><th data-sort="expected_benefit">Expected benefit</th><th data-sort="next_steps">Next steps</th><th data-sort="created_by_username">Created by</th><th data-sort="updated_at">Updated</th><th>Actions</th></tr></thead><tbody id="workspaceRows"></tbody></table></div>
+                <div class="pagination-bar"><span id="pageSummary" aria-live="polite"></span><div class="pagination-controls"><button id="previousPage" type="button" class="secondary-button">Previous</button><span id="pageLabel"></span><button id="nextPage" type="button" class="secondary-button">Next</button></div></div>
+            </section>
+        </div>
+        <aside class="dashboard-sidebar"><p class="eyebrow">Selected ideas</p><h2>Ideas overview</h2><div class="metric-grid"><div class="metric-item"><span>Ideas</span><strong id="metricTotal">0</strong></div><div class="metric-item"><span>Proposed</span><strong id="metricProposed">0</strong></div><div class="metric-item"><span>Under review</span><strong id="metricUnderReview">0</strong></div><div class="metric-item"><span>Implemented</span><strong id="metricImplemented">0</strong></div></div></aside>
+    </main>
+    <script src="js/config.js"></script><script src="js/api.js?v=20261012largetiles"></script><script src="js/workspace-pages.js?v=20261012panels"></script>
+</body>
+</html>

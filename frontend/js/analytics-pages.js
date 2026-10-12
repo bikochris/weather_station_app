@@ -147,7 +147,7 @@ async function loadDataCounts() {
                 document.getElementById("entryCount").value = item.record_count;
                 document.getElementById("entryNotes").value = item.notes || "";
                 document.getElementById("cancelCountEdit").hidden = false;
-                document.getElementById("dataCountEditor").scrollIntoView({behavior: "smooth"});
+                revealPagePanel(document.getElementById("dataCountEditor"), {behavior: "smooth"});
             };
             const remove = document.createElement("button");
             remove.className = "danger-button";

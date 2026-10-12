@@ -1,7 +1,8 @@
 const workspaceEntity = document.body.dataset.workspace;
 const workspaceDocuments = workspaceEntity === "documents";
-const workspaceId = workspaceDocuments ? "document_id" : "agenda_id";
-const workspaceState = createCollectionState(workspaceDocuments ? "document_date" : "due_date");
+const workspaceIdeas = workspaceEntity === "ideas";
+const workspaceId = workspaceDocuments ? "document_id" : workspaceIdeas ? "idea_id" : "agenda_id";
+const workspaceState = createCollectionState(workspaceDocuments ? "document_date" : workspaceIdeas ? "idea_date" : "due_date");
 workspaceState.sortOrder = workspaceDocuments ? "desc" : "asc";
 let workspaceEditing = null;
 let workspacePages = 1;
@@ -28,9 +29,21 @@ function workspaceFilters() {
     else {
         values.status = workspaceField("statusFilter").value;
         values.priority = workspaceField("priorityFilter").value;
-        values.timing = workspaceField("timingFilter").value;
+        if (!workspaceIdeas) values.timing = workspaceField("timingFilter").value;
     }
+    if (workspaceIdeas) values.category = workspaceField("categoryFilter").value;
     return values;
+}
+
+async function loadIdeaCategories() {
+    if (!workspaceIdeas) return;
+    const categories = await workspaceRequest("/ideas/categories");
+    const choices = [...new Set(["General", ...categories])];
+    const filter = workspaceField("categoryFilter");
+    const selection = filter.value;
+    filter.replaceChildren(new Option("All categories", ""), ...choices.map(value => new Option(value, value)));
+    filter.value = selection;
+    workspaceField("ideaCategories").replaceChildren(...choices.map(value => new Option(value, value)));
 }
 
 async function workspaceRequest(path, options) {
@@ -45,6 +58,11 @@ function resetWorkspaceEditor() {
     workspaceField("entryDate").value = workspaceToday();
     workspaceField("editorHeading").textContent = workspaceDocuments ? "Upload document" : "Add agenda item";
     workspaceField("saveEntry").textContent = workspaceDocuments ? "Upload document" : "Save agenda item";
+    if (workspaceIdeas) {
+        workspaceField("editorHeading").textContent = "Add idea";
+        workspaceField("saveEntry").textContent = "Save idea";
+        workspaceField("entryCategory").value = "General";
+    }
     workspaceField("cancelEntry").hidden = true;
     if (workspaceDocuments) {
         workspaceField("entryFile").required = true;
@@ -58,8 +76,9 @@ function editWorkspaceEntry(item) {
     workspaceEditing = item[workspaceId];
     workspaceField("entryTitle").value = item.title;
     workspaceField("entryDescription").value = item.description || "";
-    workspaceField("entryDate").value = item[workspaceDocuments ? "document_date" : "due_date"];
+    workspaceField("entryDate").value = item[workspaceDocuments ? "document_date" : workspaceIdeas ? "idea_date" : "due_date"];
     workspaceField("editorHeading").textContent = workspaceDocuments ? "Edit document" : "Update agenda item";
+    if (workspaceIdeas) workspaceField("editorHeading").textContent = "Edit idea";
     workspaceField("saveEntry").textContent = "Save changes";
     workspaceField("cancelEntry").hidden = false;
     workspaceField("workspaceMessage").textContent = "";
@@ -70,10 +89,16 @@ function editWorkspaceEntry(item) {
     } else {
         workspaceField("entryStatus").value = item.status;
         workspaceField("entryPriority").value = item.priority;
-        workspaceField("entryProgress").value = item.progress;
-        workspaceField("entryTracking").value = item.tracking_notes || "";
+        if (workspaceIdeas) {
+            workspaceField("entryCategory").value = item.category || "General";
+            workspaceField("entryBenefit").value = item.expected_benefit || "";
+            workspaceField("entryNextSteps").value = item.next_steps || "";
+        } else {
+            workspaceField("entryProgress").value = item.progress;
+            workspaceField("entryTracking").value = item.tracking_notes || "";
+        }
     }
-    workspaceField("workspaceEditor").scrollIntoView({behavior: "smooth"});
+    revealPagePanel(workspaceField("workspaceEditor"), {behavior: "smooth"});
     workspaceField("entryTitle").focus({preventScroll: true});
 }
 
@@ -132,6 +157,10 @@ async function loadWorkspaceEntries() {
         if (workspaceDocuments) {
             workspaceField("metricMine").textContent = summary.mine.toLocaleString();
             workspaceField("metricBytes").textContent = `${(summary.bytes / 1024 / 1024).toLocaleString(undefined, {maximumFractionDigits: 1})} MB`;
+        } else if (workspaceIdeas) {
+            workspaceField("metricProposed").textContent = summary.proposed.toLocaleString();
+            workspaceField("metricUnderReview").textContent = summary.under_review.toLocaleString();
+            workspaceField("metricImplemented").textContent = summary.implemented.toLocaleString();
         } else {
             workspaceField("metricCompleted").textContent = summary.completed.toLocaleString();
             workspaceField("metricOverdue").textContent = summary.overdue.toLocaleString();
@@ -142,11 +171,13 @@ async function loadWorkspaceEntries() {
             const row = body.insertRow();
             const values = workspaceDocuments ? [item.document_id, item.title, item.document_date,
                 item.description, item.original_filename, item.file_type, item.file_size, item.version,
-                item.created_by_username, item.updated_at] : [item.agenda_id, item.title, item.description,
+                item.created_by_username, item.updated_at] : workspaceIdeas ? [item.idea_id, item.title, item.category,
+                item.description, item.idea_date, item.status, item.priority, item.expected_benefit,
+                item.next_steps, item.created_by_username, item.updated_at] : [item.agenda_id, item.title, item.description,
                 item.due_date, item.status, item.priority, item.progress, item.tracking_notes, item.timing,
                 item.created_by_username, item.updated_at];
             values.forEach(value => appendCell(row, value || (value === 0 ? "0" : "-")));
-            if (!workspaceDocuments) {
+            if (!workspaceDocuments && !workspaceIdeas) {
                 const timing = row.cells[8];
                 timing.classList.add("agenda-timing", `agenda-${item.timing.toLowerCase().replaceAll(" ", "-")}`);
                 const progress = document.createElement("progress"); progress.max = 100; progress.value = item.progress;
@@ -187,6 +218,13 @@ async function saveWorkspaceEntry(event) {
             if (file) values.filename = file.name;
             path += `?${new URLSearchParams(values)}`;
             options = {method, headers: {"Content-Type": "application/octet-stream"}, body: file || null};
+        } else if (workspaceIdeas) {
+            Object.assign(values, {idea_date: workspaceField("entryDate").value,
+                category: workspaceField("entryCategory").value.trim(),
+                status: workspaceField("entryStatus").value, priority: workspaceField("entryPriority").value,
+                expected_benefit: workspaceField("entryBenefit").value.trim(),
+                next_steps: workspaceField("entryNextSteps").value.trim()});
+            options = {method, headers: {"Content-Type": "application/json"}, body: JSON.stringify(values)};
         } else {
             syncAgendaProgress();
             Object.assign(values, {due_date: workspaceField("entryDate").value,
@@ -196,8 +234,9 @@ async function saveWorkspaceEntry(event) {
         }
         await workspaceRequest(path, options);
         resetWorkspaceEditor();
-        setMessage(workspaceField("workspaceMessage"), workspaceDocuments ? "Document saved." : "Agenda item saved.", "success");
+        setMessage(workspaceField("workspaceMessage"), workspaceDocuments ? "Document saved." : workspaceIdeas ? "Idea saved." : "Agenda item saved.", "success");
         await loadWorkspaceEntries();
+        if (workspaceIdeas) await loadIdeaCategories();
     } catch (error) { setMessage(workspaceField("workspaceMessage"), error.message, "error"); }
     finally { button.disabled = false; }
 }
@@ -217,7 +256,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         workspaceField("entrySearch").value = ""; workspaceState.search = "";
         workspaceField("dateFrom").value = ""; workspaceField("dateTo").value = "";
         workspaceField("mineOnly").checked = false;
-        for (const id of workspaceDocuments ? ["fileTypeFilter"] : ["statusFilter", "priorityFilter", "timingFilter"]) workspaceField(id).value = "";
+        if (workspaceIdeas) workspaceField("categoryFilter").value = "";
+        for (const id of workspaceDocuments ? ["fileTypeFilter"] : workspaceIdeas ? ["statusFilter", "priorityFilter"] : ["statusFilter", "priorityFilter", "timingFilter"]) workspaceField(id).value = "";
         apply();
     };
     workspaceField("previousPage").onclick = () => { if (workspaceState.page > 1) { workspaceState.page--; loadWorkspaceEntries(); } };
@@ -226,7 +266,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         downloadCollectionExport(`/${workspaceEntity}`, format, workspaceState, workspaceFilters(),
             workspaceField("includeHistory").checked ? workspaceEntity : null,
             historyColumnsForTable(workspaceField("workspaceTable"), workspaceEntity));
-    if (!workspaceDocuments) {
+    if (!workspaceDocuments && !workspaceIdeas) {
         workspaceField("entryProgress").addEventListener("input", syncAgendaProgress);
         workspaceField("entryStatus").onchange = () => {
             if (workspaceField("entryStatus").value === "Completed") workspaceField("entryProgress").value = 100;
@@ -234,4 +274,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         };
     }
     await loadWorkspaceEntries();
+    if (workspaceIdeas) {
+        try { await loadIdeaCategories(); }
+        catch (error) { setMessage(workspaceField("workspaceMessage"), error.message, "error"); }
+    }
 });

@@ -121,7 +121,7 @@ function reviewFinalResult(recordId, scrollToSection = true) {
     setFinalReviewControlsDisabled(false);
     const section = document.getElementById("finalReviewSection");
     section.hidden = false;
-    if (scrollToSection) section.scrollIntoView({behavior: "smooth"});
+    if (scrollToSection) revealPagePanel(section, {behavior: "smooth"});
 }
 
 
@@ -158,7 +158,7 @@ function reviewSuspectedData(recordId) {
     updateMaintenanceOutcomeFields();
     const section = document.getElementById("resolutionSection");
     section.hidden = false;
-    section.scrollIntoView({behavior: "smooth"});
+    revealPagePanel(section, {behavior: "smooth"});
 }
 
 

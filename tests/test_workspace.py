@@ -5,12 +5,50 @@ from unittest.mock import MagicMock, patch
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from backend.main import audit_snapshot, save_agenda_item, save_workspace_document, workspace_records
-from backend.workspace import (AgendaItem, DocumentMetadata, agenda_timing, document_file_details,
+from backend.main import audit_snapshot, save_agenda_item, save_idea, save_workspace_document, workspace_records
+from backend.workspace import (AgendaItem, DocumentMetadata, IdeaItem, agenda_timing, document_file_details,
                                read_document_upload, require_workspace_owner)
 
 
 class WorkspaceValidationTests(unittest.TestCase):
+    def test_idea_validation(self):
+        idea = IdeaItem(title="  Improve stations  ", idea_date="2026-10-12")
+        self.assertEqual(idea.title, "Improve stations")
+        self.assertEqual(idea.status, "Proposed")
+        self.assertEqual(idea.category, "General")
+        self.assertEqual(IdeaItem(title="Suggestion", idea_date="2026-10-12", category="  Equipment  ").category, "Equipment")
+        for category in ["  ", "Equipment|Data", "x" * 101]:
+            with self.assertRaises(ValidationError):
+                IdeaItem(title="Suggestion", idea_date="2026-10-12", category=category)
+        for fields in [{"title": "  "}, {"status": "Unknown"}]:
+            with self.assertRaises(ValidationError):
+                IdeaItem(**{"title": "Suggestion", "idea_date": "2026-10-12", **fields})
+
+    @patch("backend.main.ensure_application_tables")
+    @patch("backend.main.get_connection")
+    def test_other_users_idea_cannot_be_updated(self, connect, _ensure):
+        cursor = connect.return_value.cursor.return_value
+        cursor.fetchone.return_value = {"created_by_user_id": 5}
+        with self.assertRaises(HTTPException) as error:
+            save_idea(IdeaItem(title="Suggestion", idea_date="2026-10-12"),
+                      {"user_id": 7, "department": "Observation Officer", "username": "tester"}, 1)
+        self.assertEqual(error.exception.status_code, 403)
+        self.assertEqual(cursor.execute.call_count, 1)
+        connect.return_value.rollback.assert_called_once()
+
+    @patch("backend.main.ensure_application_tables")
+    @patch("backend.main.get_connection")
+    def test_idea_multiselect_filters_and_summary(self, connect, _ensure):
+        cursor = connect.return_value.cursor.return_value
+        cursor.fetchall.return_value = []
+        _, summary = workspace_records("ideas", {"user_id": 7, "department": "Admin"},
+                                       status="Proposed|Accepted", priority="High|Normal", category="Equipment|Data")
+        query, params = cursor.execute.call_args.args
+        self.assertIn("status IN (%s, %s)", query)
+        self.assertIn("category IN (%s, %s)", query)
+        self.assertEqual(params, ("Proposed", "Accepted", "High", "Normal", "Equipment", "Data"))
+        self.assertEqual(summary, {"total": 0, "proposed": 0, "under_review": 0, "implemented": 0})
+
     def test_supported_uploads_and_windows_filename(self):
         for filename, group in [("report.PDF", "PDF"), ("data.xlsx", "Spreadsheet"),
                                 ("archive.zip", "Archive"), ("station.png", "Image")]:

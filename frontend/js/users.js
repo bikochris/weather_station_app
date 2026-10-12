@@ -82,7 +82,7 @@ function editUser(userId) {
         "New temporary password (leave blank to keep current)";
     document.getElementById("userSubmit").textContent = "Save changes";
     document.getElementById("cancelUserEdit").hidden = false;
-    document.getElementById("userForm").scrollIntoView({behavior: "smooth"});
+    revealPagePanel(document.getElementById("userForm"), {behavior: "smooth"});
 }
 
 

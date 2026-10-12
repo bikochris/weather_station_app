@@ -34,7 +34,7 @@ function editInstrument(instrumentId) {
     document.getElementById("isActive").checked = Boolean(instrument.is_active);
     document.getElementById("instrumentSubmit").textContent = "Save changes";
     document.getElementById("cancelInstrumentEdit").hidden = false;
-    document.getElementById("instrumentForm").scrollIntoView({behavior: "smooth"});
+    revealPagePanel(document.getElementById("instrumentForm"), {behavior: "smooth"});
 }
 
 

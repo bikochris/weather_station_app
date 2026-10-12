@@ -170,7 +170,7 @@ function editReportingRecord(id) {
     document.getElementById("nonReportedFile").value = "";
     document.getElementById("saveReporting").textContent = "Save changes";
     document.getElementById("cancelReportingEdit").hidden = false;
-    document.getElementById("reportingEditor").scrollIntoView({behavior: "smooth"});
+    revealPagePanel(document.getElementById("reportingEditor"), {behavior: "smooth"});
 }
 
 async function deleteReportingRecord(id) {

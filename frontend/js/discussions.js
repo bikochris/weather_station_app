@@ -145,7 +145,7 @@ function openDiscussion(discussion) {
     document.getElementById("discussionMessageForm").hidden = !isOpen;
     document.getElementById("discussionClosedNotice").hidden = isOpen;
     document.getElementById("closeDiscussion").hidden = !discussion.can_close;
-    document.getElementById("discussionWorkspace").scrollIntoView({behavior: "smooth", block: "start"});
+    revealPagePanel(document.getElementById("discussionWorkspace"), {behavior: "smooth", block: "start"});
 }
 
 async function reloadSelectedDiscussion() {

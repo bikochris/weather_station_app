@@ -828,6 +828,25 @@ CREATE TABLE IF NOT EXISTS instrument_alert_deliveries (
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS ideas (
+    idea_id INT AUTO_INCREMENT PRIMARY KEY,
+    category VARCHAR(100) NOT NULL DEFAULT 'General',
+    title VARCHAR(200) NOT NULL,
+    description TEXT NULL,
+    idea_date DATE NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'Proposed',
+    priority VARCHAR(20) NOT NULL DEFAULT 'Normal',
+    expected_benefit TEXT NULL,
+    next_steps TEXT NULL,
+    created_by_user_id INT NULL,
+    created_by_username VARCHAR(50) NOT NULL,
+    updated_by_username VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (created_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL,
+    INDEX idx_ideas_date_status (idea_date, status)
+);
+
 CREATE TABLE IF NOT EXISTS shared_documents (
         document_id INT AUTO_INCREMENT PRIMARY KEY,
         title VARCHAR(200) NOT NULL,

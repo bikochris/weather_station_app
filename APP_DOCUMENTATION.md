@@ -10,7 +10,21 @@ The application is not an offline spreadsheet. A browser page can load while an 
 
 ## 2. Architecture and request flow
 
-### Documents and Agenda
+### Site Distance Search
+
+On Sites, enter latitude (-90 to 90) and longitude (-180 to 180), then choose Find nearest sites. Matching sites are ordered by straight-line great-circle distance in kilometres, before pagination. Sites with missing/invalid coordinates appear last with Unknown distance. Existing station/site text search, district/status filters, and assigned-station permissions remain in effect. The distance header reverses nearest/farthest order; Clear location restores ordinary sorting. CSV/PDF exports include distances when a search location is active. GET `/sites` and `/sites/export` accept `latitude` and `longitude` together.
+
+### Shared Workspace
+
+Home and sign-in retain their original layout. Statistics panels and charts stay visible. On the other pages, entry forms, reports, and result registers start as collapsed icon tiles styled consistently with Home. Expand a tile to see its section, then expand its field panel when needed. Edit/Review actions reveal the relevant section and editor automatically, and browser validation reveals any field that needs correction. Role-hidden forms and sections remain hidden. Shared implementation: `initializeCollapsibleFields()` and `revealPagePanel()` in `frontend/js/api.js`.
+
+### Ideas
+
+Each idea also has an idea category. Reuse an existing value from the category suggestions or enter a new category. The register supports searchable multi-category filtering; category is included in sorting, exports, and edit history. Existing ideas migrate to General. GET `/ideas/categories` lists categories already used in records.
+
+The Ideas page records an idea title, date, description, priority, expected benefit, and next steps. Statuses are Proposed, Under review, Accepted, Implemented, and Not pursued. Everyone signed in can view and create ideas; the creator or Admin can edit/delete. The page includes multi-select filters, date ranges, search, sorting, CSV/PDF export with optional tabular edit history, and Admin recovery through Deleted items. Edits require a reason. Ideas are stored in the `ideas` table; GET/POST `/ideas`, PUT/DELETE `/ideas/{id}`, and GET `/ideas/export` provide the API. `frontend/ideas.html` uses `frontend/js/workspace-pages.js`; `backend/workspace.py` defines its validation and schema.
+
+### Documents and Agenda Usage
 
 Documents and Agenda are available to every signed-in user. Everyone can view and create entries; only the creator or Admin can edit or delete an entry. Admin can restore deleted entries, including document bytes and edit history, through Deleted items.
 
@@ -207,6 +221,7 @@ Every HTML file is an actual application page; its page-specific behavior is mos
 | `discussions.html` | Discussion creation, participants, messages, notifications, and closing. |
 | `documents.html` | Shared document uploads with title, date, description, file downloads, replacement versions, filters, exports, and history. |
 | `agenda.html` | Agenda items with due dates, priority, progress, tracking notes, and overdue indicators. |
+| `ideas.html` | Idea proposals, date, expected benefit, next steps, status and priority, with searchable register and edit history. |
 | `activity.html` | Admin-only, paginated operational activity log. |
 | `users.html` | Admin-only account creation/editing, roles, station assignments, and directory. |
 | `kpi.html` | Admin-only activity and pending-work metrics. |
