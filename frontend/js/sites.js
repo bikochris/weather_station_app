@@ -37,6 +37,7 @@ function appendSiteStations(row, site) {
 
 async function loadSites() {
     const table = document.getElementById("siteTable");
+    locationMap.setLoading(table);
     showTableMessage(table, 12, "Loading sites...");
     const parameters = collectionParameters(siteCollection, siteParameters());
     const response = await apiFetch(`/sites?${parameters}`);
@@ -45,6 +46,7 @@ async function loadSites() {
         return;
     }
     const result = await response.json();
+    locationMap.bindResults(table, result.items, "Sites", "/sites", parameters);
     renderSiteSummary(result.summary);
     renderPagination("sitePagination", result, siteCollection, loadSites);
     table.replaceChildren();
@@ -55,7 +57,8 @@ async function loadSites() {
     result.items.forEach((site) => {
         const row = document.createElement("tr");
         appendCell(row, site.site_code);
-        appendCell(row, site.site_name);
+        const name = appendCell(row, site.site_name);
+        locationMap.appendButton(name, site);
         const distance = appendCell(row, siteOrigin ? (site.distance_km == null ? "Unknown" : site.distance_km.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})) : "-");
         distance.title = "Straight-line distance, not road distance";
         appendCell(row, site.latitude);

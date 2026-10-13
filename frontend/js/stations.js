@@ -138,6 +138,7 @@ function appendStationActions(row, station) {
 
 async function loadStations() {
     const table = document.getElementById("stationTable");
+    locationMap.setLoading(table);
     const columnCount = isITUser() ? 15 : 14;
     showTableMessage(table, columnCount, "Loading stations...");
 
@@ -155,6 +156,7 @@ async function loadStations() {
         }
         const result = await response.json();
         stationRecords = result.items;
+        locationMap.bindResults(table, stationRecords, "Stations", "/stations", parameters);
         renderStationStatistics(result.summary);
         renderPagination("stationPagination", result, stationCollection, loadStations);
         table.replaceChildren();
@@ -171,7 +173,8 @@ async function loadStations() {
         stationRecords.forEach((station) => {
             const row = document.createElement("tr");
             appendCell(row, station.station_code);
-            appendCell(row, station.station_name);
+            const name = appendCell(row, station.station_name);
+            locationMap.appendButton(name, station);
             appendCell(row, station.latitude);
             appendCell(row, station.longitude);
             appendCell(row, station.altitude);
