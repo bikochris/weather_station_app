@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Station Instruments | Station Operations</title>
-    <link rel="stylesheet" href="css/app.css?v=20261012largetiles">
+    <link rel="stylesheet" href="css/app.css?v=20261014dataupload">
 </head>
 <body>
     <header class="app-header">
@@ -37,6 +37,11 @@
 
     <main class="dashboard-layout">
         <div class="dashboard-content">
+        <section id="categoryDefaultsPanel" hidden>
+            <div class="section-heading"><h2>Category assignments</h2></div>
+            <button id="assignCategoryDefaults" type="button">Assign missing instruments</button>
+            <p id="categoryDefaultsMessage" class="message" aria-live="polite"></p>
+        </section>
         <section id="stationInstrumentEditor">
             <div class="section-heading">
                 <div>
@@ -69,7 +74,7 @@
                 </div>
                 <div class="field">
                     <label for="installationDate">Installation date</label>
-                    <input type="date" id="installationDate" required>
+                    <input type="date" id="installationDate">
                 </div>
                 <div class="field">
                     <label for="calibrationDate">Calibration date <span class="muted">(optional)</span></label>
@@ -95,7 +100,12 @@
                         <option value="Needs Replacement">Needs Replacement</option>
                         <option value="Under Maintenance">Under Maintenance</option>
                         <option value="Inactive">Inactive</option>
+                        <option value="Unavailable">Unavailable</option>
                     </select>
+                </div>
+                <div class="field span-2">
+                    <label for="statusEffectiveDate">Status effective date</label>
+                    <input type="date" id="statusEffectiveDate">
                 </div>
                 <div class="field span-2">
                     <label for="stationInstrumentComment">Comment <span class="muted">(optional)</span></label>
@@ -190,6 +200,7 @@
                             <th data-sort="station_category">Station category</th>
                             <th data-sort="instrument">Instrument</th>
                             <th data-sort="parameters">Parameters</th>
+                            <th data-sort="elements">Element IDs</th>
                             <th data-sort="model">Model</th>
                             <th data-sort="manufacturer">Manufacturer</th>
                             <th data-sort="serial_number">Serial number</th>
@@ -211,7 +222,7 @@
                         </tr>
                     </thead>
                     <tbody id="stationInstrumentTable">
-                        <tr><td colspan="22">Loading station instruments...</td></tr>
+                        <tr><td colspan="23">Loading station instruments...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -244,7 +255,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20261012largetiles"></script>
-    <script src="js/station-instruments.js?v=20261012panels"></script>
+    <script src="js/api.js?v=20261015downtime"></script>
+    <script src="js/station-instruments.js?v=20261015downtime"></script>
 </body>
 </html>

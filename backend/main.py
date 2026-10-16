@@ -3,6 +3,7 @@ import io
 import json
 import math
 import os
+import re
 from datetime import date, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
@@ -14,11 +15,13 @@ from fastapi.responses import RedirectResponse, Response, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from mysql.connector import Error as MySQLError, IntegrityError
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from typing import Literal
 
 try:
-    from .workspace import (WORKSPACE_SCHEMA, AgendaItem, DocumentMetadata, IdeaItem, agenda_timing,
+    from .data_upload_engine import UPLOAD_SCHEMA, default_configuration, apply_observation_defaults
+    from .performance import PERFORMANCE_SCHEMA, PERFORMANCE_REPORT_SCHEMA, PerformanceInput, PerformanceBatch, PerformanceBulkMonth, performance_summary
+    from .workspace import (WORKSPACE_SCHEMA, AgendaItem, DocumentMetadata, DocumentCategoryInput, IdeaItem, agenda_timing,
                             document_file_details, read_document_upload, require_workspace_owner,
                             workspace_owner)
     from .activity import ACTIVITY_SCHEMA, ActivityMiddleware, set_activity_actor, suspend_activity
@@ -31,7 +34,9 @@ try:
         verify_password,
     )
 except ImportError:
-    from workspace import (WORKSPACE_SCHEMA, AgendaItem, DocumentMetadata, IdeaItem, agenda_timing,
+    from data_upload_engine import UPLOAD_SCHEMA, default_configuration, apply_observation_defaults
+    from performance import PERFORMANCE_SCHEMA, PERFORMANCE_REPORT_SCHEMA, PerformanceInput, PerformanceBatch, PerformanceBulkMonth, performance_summary
+    from workspace import (WORKSPACE_SCHEMA, AgendaItem, DocumentMetadata, DocumentCategoryInput, IdeaItem, agenda_timing,
                            document_file_details, read_document_upload, require_workspace_owner,
                            workspace_owner)
     from activity import ACTIVITY_SCHEMA, ActivityMiddleware, set_activity_actor, suspend_activity
@@ -104,6 +109,7 @@ def normalize_station_category(value):
         "climatic station": "Climatic Station",
         "principal stations": "Principal Station",
         "rainfall stations": "Rainfall Station",
+        "rainfall": "Rainfall Station",
         "upper air stations": "Upper Air Station",
         "weather radars": "Weather radar",
     })
@@ -333,11 +339,21 @@ def maintenance_instrument_payload(record):
 class Instrument(BaseModel):
 
     instrument_name: str = Field(min_length=1, max_length=100)
+    registry_number: int | None = Field(default=None, gt=0, le=2147483647)
     parameters_taken: str = Field(min_length=1, max_length=1000)
     category: str = Field(min_length=1, max_length=100)
     station_categories: list[str] = Field(min_length=1)
     description: str | None = Field(default=None, max_length=1000)
     is_active: bool = True
+    element_ids: list[str] = Field(default_factory=list, max_length=200)
+
+    @field_validator("element_ids")
+    @classmethod
+    def validate_element_ids(cls, values):
+        values = [str(value).strip() for value in values]
+        if any(not re.fullmatch(r"[A-Za-z0-9_-]{1,30}", value) for value in values):
+            raise ValueError("Element IDs must contain only letters, numbers, underscores or hyphens")
+        return list(dict.fromkeys(values))
 
 
 class SuspectedDataCreate(BaseModel):
@@ -412,7 +428,7 @@ class StationInstrument(BaseModel):
     model: str | None = Field(default=None, max_length=100)
     manufacturer: str | None = Field(default=None, max_length=100)
     serial_number: str | None = Field(default=None, max_length=100)
-    installation_date: date
+    installation_date: date | None = None
     calibration_date: date | None = None
     replacement_date: date | None = None
     recommended_calibration_date: date | None = None
@@ -423,7 +439,16 @@ class StationInstrument(BaseModel):
         "Needs Replacement",
         "Under Maintenance",
         "Inactive",
+        "Unavailable",
     ]
+    status_effective_date: date | None = None
+
+    @field_validator("status_effective_date")
+    @classmethod
+    def effective_date_not_future(cls, value):
+        if value and value > date.today():
+            raise ValueError("Availability effective date cannot be in the future")
+        return value
     comment: str | None = Field(default=None, max_length=2000)
     data_logger_ports: str | None = Field(default=None, max_length=255)
     algorithm: str | None = Field(default=None, max_length=2000)
@@ -995,7 +1020,7 @@ def station_instrument_csv_headers():
     return ["Station ID", "Instrument", "Model", "Manufacturer", "Serial number",
         "Installation date", "Calibration date", "Replacement date", "Recommended calibration",
         "Recommended replacement", "Status", "Comment", "Data logger ports", "Algorithm",
-        *[f"Wire {number}" for number in range(1, 11)]]
+        *[f"Wire {number}" for number in range(1, 11)], "Status effective date", "Registry Number"]
 
 
 def parse_station_instrument_csv(content):
@@ -1043,7 +1068,29 @@ def insert_station_instrument(cursor, item, user, category):
          item.recommended_calibration_date, item.recommended_replacement_date,
          item.status, item.comment.strip() if item.comment else None,
          ports, algorithm, wiring, user["user_id"], user["username"]))
-    return cursor.lastrowid
+    record_id = cursor.lastrowid
+    cursor.execute("""INSERT INTO station_instrument_availability
+        (station_instrument_id,effective_date,status,recorded_by_username) VALUES (%s,%s,%s,%s)""",
+        (record_id, item.status_effective_date or item.installation_date or date(1900, 1, 1), item.status, user["username"]))
+    return record_id
+
+
+def record_instrument_availability(cursor, record_id, before, item, user):
+    if before["status"] == item.status and not item.status_effective_date:
+        return
+    effective = item.status_effective_date or date.today()
+    if effective > date.today():
+        raise HTTPException(status_code=422, detail="Availability effective date cannot be in the future")
+    if not before.get("availability_periods"):
+        cursor.execute("""INSERT IGNORE INTO station_instrument_availability
+            (station_instrument_id,effective_date,status,recorded_by_username) VALUES (%s,'1900-01-01',%s,%s)""",
+            (record_id, before["status"], user["username"]))
+    cursor.execute("""INSERT INTO station_instrument_availability
+        (station_instrument_id,effective_date,status,recorded_by_username) VALUES (%s,%s,%s,%s)
+        ON DUPLICATE KEY UPDATE status=VALUES(status),recorded_by_username=VALUES(recorded_by_username)""",
+        (record_id, effective, item.status, user["username"]))
+    cursor.execute("SELECT status FROM station_instrument_availability WHERE station_instrument_id=%s ORDER BY effective_date DESC LIMIT 1", (record_id,))
+    cursor.execute("UPDATE station_instruments SET status=%s WHERE station_instrument_id=%s", (cursor.fetchone()[0], record_id))
 
 
 def ensure_department_options(cursor):
@@ -1146,6 +1193,10 @@ def ensure_application_tables(connection):
         for statement in WORKSPACE_SCHEMA:
             cursor.execute(statement)
         ensure_column(cursor, "ideas", "category", "VARCHAR(100) NOT NULL DEFAULT 'General'")
+        ensure_column(cursor, "shared_documents", "category", "VARCHAR(100) NOT NULL DEFAULT 'General'")
+        cursor.execute("INSERT IGNORE INTO document_categories (name) VALUES ('General')")
+        cursor.execute("""INSERT IGNORE INTO document_categories (name)
+            SELECT DISTINCT category FROM shared_documents WHERE TRIM(category) <> ''""")
         cursor.execute("""CREATE TABLE IF NOT EXISTS record_edit_history (
             history_id BIGINT AUTO_INCREMENT PRIMARY KEY,
             entity_type VARCHAR(50) NOT NULL,
@@ -1768,8 +1819,9 @@ def ensure_application_tables(connection):
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS instruments (
-                instrument_id INT AUTO_INCREMENT PRIMARY KEY,
-                instrument_name VARCHAR(100) NOT NULL UNIQUE,
+                registry_number INT PRIMARY KEY,
+                instrument_id INT AUTO_INCREMENT UNIQUE,
+                instrument_name VARCHAR(100) NOT NULL,
                 parameters_taken VARCHAR(1000) NOT NULL,
                 category VARCHAR(100),
                 description VARCHAR(1000),
@@ -1965,6 +2017,16 @@ def ensure_application_tables(connection):
         ensure_column(cursor, "stations", "action", "TEXT NULL")
         ensure_column(cursor, "station_visitors", "institution", "VARCHAR(200) NOT NULL DEFAULT ''")
         ensure_column(cursor, "instruments", "parameters_taken", "VARCHAR(1000) NULL")
+        ensure_column(cursor, "instruments", "element_ids", "JSON NULL")
+        from .instrument_registry import ensure_registry
+        ensure_registry(cursor)
+        cursor.execute("""CREATE TABLE IF NOT EXISTS station_instrument_availability (
+            station_instrument_id INT NOT NULL, effective_date DATE NOT NULL,
+            status VARCHAR(30) NOT NULL, recorded_by_username VARCHAR(50) NOT NULL,
+            PRIMARY KEY (station_instrument_id, effective_date),
+            FOREIGN KEY (station_instrument_id) REFERENCES station_instruments(station_instrument_id)
+                ON DELETE CASCADE)""")
+        cursor.execute("ALTER TABLE station_instruments MODIFY installation_date DATE NULL")
         ensure_column(cursor, "station_instruments", "calibration_date", "DATE NULL")
         ensure_column(cursor, "station_instruments", "replacement_date", "DATE NULL")
         ensure_column(cursor, "station_instruments", "recommended_calibration_date", "DATE NULL")
@@ -2077,6 +2139,13 @@ def ensure_application_tables(connection):
             if extra:
                 cursor.executemany("INSERT IGNORE INTO station_categories (name) VALUES (%s)", [(name,) for name in extra])
             cursor.execute("INSERT INTO app_migration_markers (migration_key) VALUES ('station_category_catalog_v1')")
+        cursor.execute(PERFORMANCE_REPORT_SCHEMA)
+        cursor.execute(PERFORMANCE_SCHEMA)
+        ensure_column(cursor, "station_performance", "report_id", "INT NULL")
+        ensure_foreign_key(cursor, "station_performance", "fk_performance_shared_report",
+            "FOREIGN KEY (report_id) REFERENCES station_performance_reports(report_id)")
+        for statement in UPLOAD_SCHEMA: cursor.execute(statement)
+        cursor.execute("INSERT IGNORE INTO data_upload_config (config_id,version,configuration,updated_by_username) VALUES (1,1,%s,'System')", (json.dumps(apply_observation_defaults(default_configuration())),))
         connection.commit()
     finally:
         cursor.close()
@@ -2315,6 +2384,8 @@ def require_reporting_view(user=Depends(require_password_change_complete)):
 
 
 AUDITED_RECORDS = {
+    "upload_configuration": ("data_upload_config", "config_id"),
+    "station_performance": ("station_performance", "performance_id"),
     "documents": ("shared_documents", "document_id"),
     "agenda": ("agenda_items", "agenda_id"),
     "ideas": ("ideas", "idea_id"),
@@ -2581,7 +2652,7 @@ def authorize_record_history(entity_type, user):
     if entity_type not in AUDITED_RECORDS:
         raise HTTPException(status_code=404, detail="Record history is unavailable")
     role = user["department"]
-    if entity_type in {"users", "visitor_categories", "maintenance_frequencies", "station_categories"} and role != "Admin":
+    if entity_type in {"users", "visitor_categories", "maintenance_frequencies", "station_categories", "upload_configuration"} and role != "Admin":
         raise HTTPException(status_code=403, detail="Administrator access required")
     if entity_type == "instruments" and role not in {"Admin", MAINTENANCE_ROLE, *READ_ONLY_ALL_ROLES}:
         raise HTTPException(status_code=403, detail="Instrument catalog access is not allowed")
@@ -2628,8 +2699,14 @@ def audit_snapshot(connection, entity_type, entity_id):
             cursor.execute("""SELECT * FROM category_maintenance_targets
                 WHERE fiscal_start_year = %s AND station_category = %s""",
                 (int(fiscal_year), category))
+        elif entity_type == "station_performance":
+            cursor.execute("""SELECT p.performance_id, p.station_id, p.report_month, p.score, p.notes,
+                p.original_filename, p.file_size, p.created_by_user_id, p.created_by_username,
+                p.updated_by_username, p.created_at, p.updated_at,
+                s.station_code, s.station_name, s.district FROM station_performance p
+                JOIN stations s ON s.station_id = p.station_id WHERE p.performance_id = %s""", (entity_id,))
         elif entity_type == "documents":
-            cursor.execute("""SELECT document_id, title, document_date, description,
+            cursor.execute("""SELECT document_id, title, category, document_date, description,
                 original_filename, file_type, file_size, version, created_by_user_id,
                 created_by_username, updated_by_username, created_at, updated_at
                 FROM shared_documents WHERE document_id = %s""", (entity_id,))
@@ -2649,6 +2726,14 @@ def audit_snapshot(connection, entity_type, entity_id):
         elif entity_type == "instruments":
             cursor.execute("SELECT station_category FROM instrument_station_categories WHERE instrument_id = %s ORDER BY station_category", (entity_id,))
             snapshot["station_categories"] = [row["station_category"] for row in cursor.fetchall()]
+        elif entity_type == "station_instruments":
+            cursor.execute("SELECT element_ids FROM instruments WHERE instrument_id=%s", (snapshot["instrument_id"],))
+            instrument = cursor.fetchone()
+            snapshot["element_ids"] = json.loads((instrument or {}).get("element_ids") or "[]")
+            cursor.execute("SELECT effective_date,status FROM station_instrument_availability WHERE station_instrument_id=%s ORDER BY effective_date", (entity_id,))
+            snapshot["availability_periods"] = cursor.fetchall()
+            snapshot["status_effective_date"] = (snapshot["availability_periods"][-1]["effective_date"]
+                                                 if snapshot["availability_periods"] else None)
         elif entity_type == "maintenance":
             cursor.execute("""SELECT instrument_id, issue, action_done, recommendation
                 FROM maintenance_record_instruments WHERE maintenance_id = %s ORDER BY instrument_id""",
@@ -5156,8 +5241,10 @@ def get_instruments(
         query = """
             SELECT
                 instruments.instrument_id,
+                instruments.registry_number,
                 instruments.instrument_name,
                 instruments.parameters_taken,
+                instruments.element_ids,
                 instruments.category,
                 instruments.description,
                 instruments.is_active,
@@ -5187,6 +5274,8 @@ def get_instruments(
                     row["station_category"]
                 )
             for instrument in instruments:
+                instrument["element_ids"] = json.loads(instrument.get("element_ids") or "[]")
+                instrument["elements"] = "|".join(instrument["element_ids"])
                 instrument["station_categories"] = category_map.get(
                     instrument["instrument_id"],
                     [],
@@ -5194,9 +5283,9 @@ def get_instruments(
                 instrument["station_category_sort"] = ", ".join(instrument["station_categories"])
         instruments = filter_sort_collection(
             instruments, search,
-            ["instrument_name", "parameters_taken", "category", "description"],
+            ["registry_number", "instrument_name", "parameters_taken", "category", "description", "elements"],
             sort_by, sort_order,
-            {"instrument_id": "instrument_id", "instrument_name": "instrument_name", "parameters_taken": "parameters_taken", "category": "category", "station_categories": "station_category_sort", "description": "description", "status": "is_active", "recorded_by": "recorded_by"},
+            {"instrument_id": "instrument_id", "registry_number": "registry_number", "instrument_name": "instrument_name", "parameters_taken": "parameters_taken", "category": "category", "station_categories": "station_category_sort", "elements": "elements", "description": "description", "status": "is_active", "recorded_by": "recorded_by"},
         )
         return paginate_collection(instruments, page, page_size)
 
@@ -5221,14 +5310,15 @@ def export_instruments(
     user=Depends(require_instrument_catalog_access),
 ):
     items = get_instruments(active_only, None, 100, search, sort_by, sort_order, user)
-    headers = ["Instrument", "Parameters", "Category", "Station categories", "Description", "Status"]
-    rows = [[item["instrument_name"], item["parameters_taken"], item["category"], ", ".join(item["station_categories"]), item["description"], "Active" if item["is_active"] else "Inactive"] for item in items]
+    headers = ["Registry Number", "Instrument", "Parameters", "Category", "Station categories", "Elements", "Description", "Status"]
+    rows = [[item["registry_number"], item["instrument_name"], item["parameters_taken"], item["category"], ", ".join(item["station_categories"]), item["elements"], item["description"], "Active" if item["is_active"] else "Inactive"] for item in items]
     return csv_download("instruments.csv", headers, rows) if format == "csv" else pdf_download("instruments.pdf", "Instrument Catalog", headers, rows, user["username"])
 
 
 @app.post("/instruments", status_code=201)
 def add_instrument(instrument: Instrument, user=Depends(require_it)):
-
+    if instrument.registry_number is None:
+        raise HTTPException(status_code=422, detail="Enter the permanent Registry Number")
     try:
         connection = get_connection()
         ensure_application_tables(connection)
@@ -5238,6 +5328,7 @@ def add_instrument(instrument: Instrument, user=Depends(require_it)):
         cursor.execute(
             """
             INSERT INTO instruments (
+                registry_number,
                 instrument_name,
                 parameters_taken,
                 category,
@@ -5246,9 +5337,10 @@ def add_instrument(instrument: Instrument, user=Depends(require_it)):
                 created_by_user_id,
                 recorded_by_username
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
+                instrument.registry_number,
                 instrument.instrument_name.strip(),
                 instrument.parameters_taken.strip(),
                 instrument.category.strip(),
@@ -5259,6 +5351,8 @@ def add_instrument(instrument: Instrument, user=Depends(require_it)):
             )
         )
         instrument_id = cursor.lastrowid
+        cursor.execute("UPDATE instruments SET element_ids=%s WHERE instrument_id=%s",
+                       (json.dumps(instrument.element_ids), instrument_id))
         replace_instrument_station_categories(
             cursor,
             instrument_id,
@@ -5274,7 +5368,7 @@ def add_instrument(instrument: Instrument, user=Depends(require_it)):
     except IntegrityError as exc:
         raise HTTPException(
             status_code=409,
-            detail="An instrument with this name already exists"
+            detail="Registry Number already exists"
         ) from exc
     except MySQLError as exc:
         raise HTTPException(
@@ -5290,6 +5384,7 @@ def add_instrument(instrument: Instrument, user=Depends(require_it)):
 
 
 def parse_instrument_import(content):
+    from .instrument_registry import import_key
     reader = csv.DictReader(io.StringIO(content))
     if not reader.fieldnames:
         raise HTTPException(status_code=400, detail="CSV file has no header row")
@@ -5305,6 +5400,7 @@ def parse_instrument_import(content):
         raise HTTPException(status_code=400, detail="CSV is missing columns: " + ", ".join(missing))
 
     by_name = {}
+    explicit_status_by_name = {}
     merged_rows = 0
     for row_number, source_row in enumerate(reader, start=2):
         if None in source_row:
@@ -5320,40 +5416,66 @@ def parse_instrument_import(content):
         if raw_status not in {"active", "inactive", "true", "false", "yes", "no", "1", "0"}:
             raise HTTPException(status_code=400, detail=f"CSV row {row_number}: invalid status")
         try:
+            parameter_text = row.get("parameters_it_takes") or row.get("parameters_taken") or row.get("parameters") or ""
+            parameter_text = "|".join(" ".join(part.split()) for part in parameter_text.split("|") if part.strip())
             instrument = Instrument(
-                instrument_name=row.get("instrument_name") or row.get("instrument") or "",
-                parameters_taken=row.get("parameters_it_takes") or row.get("parameters_taken") or row.get("parameters") or "",
+                registry_number=row.get("registry_number") or None,
+                instrument_name=" ".join((row.get("instrument_name") or row.get("instrument") or "").split()),
+                parameters_taken=parameter_text,
                 category=row.get("category") or "",
                 station_categories=list(dict.fromkeys(categories)),
                 description=row.get("description") or None,
                 is_active=raw_status in {"active", "true", "yes", "1"},
+                element_ids=[value.strip() for value in (row.get("elements") or row.get("element_ids") or "").replace(";", "|").replace(",", "|").split("|") if value.strip()],
             )
         except ValidationError as exc:
             first_error = exc.errors()[0]
             field = ".".join(map(str, first_error.get("loc", ())))
             raise HTTPException(status_code=400, detail=f"CSV row {row_number}: {field}: {first_error['msg']}") from exc
-        key = instrument.instrument_name.strip().casefold()
+        if instrument.element_ids and len(instrument.parameters_taken.split("|")) != len(instrument.element_ids):
+            raise HTTPException(status_code=400, detail=f"CSV row {row_number}: {instrument.instrument_name} needs one pipe-separated parameter name for each of its {len(instrument.element_ids)} element IDs")
+        key = import_key(instrument.registry_number, instrument.instrument_name)
         previous = by_name.get(key)
+        has_explicit_status = bool(row.get("status") or row.get("is_active"))
         if previous:
-            if previous.category.casefold() != instrument.category.casefold() or previous.is_active != instrument.is_active:
+            if instrument.registry_number is not None and previous.instrument_name.casefold() != instrument.instrument_name.casefold():
+                raise HTTPException(status_code=400, detail=f"Registry {instrument.registry_number} is repeated with different instrument names")
+            if previous.category.casefold() != instrument.category.casefold() or (previous.is_active != instrument.is_active and has_explicit_status and explicit_status_by_name.get(key)):
                 raise HTTPException(status_code=400, detail=(
                     f"CSV row {row_number}: conflicting category or status for {instrument.instrument_name}"
                 ))
+            if not has_explicit_status:
+                instrument.is_active = previous.is_active
             parameters = list(dict.fromkeys([previous.parameters_taken, instrument.parameters_taken]))
+            merged_parameters = "; ".join(parameters)
+            if previous.element_ids or instrument.element_ids:
+                names_by_id = {}
+                for source in [previous, instrument]:
+                    names = [name.strip() for name in source.parameters_taken.split("|")]
+                    if len(names) != len(source.element_ids) or any(not name for name in names):
+                        raise HTTPException(status_code=400, detail=f"CSV row {row_number}: duplicate instrument rows need one pipe-separated parameter name per element ID")
+                    for code, name in zip(source.element_ids, names):
+                        if code in names_by_id and names_by_id[code].casefold() != name.casefold():
+                            raise HTTPException(status_code=400, detail=f"CSV row {row_number}: conflicting names for element {code}")
+                        names_by_id[code] = name
+                merged_parameters = "|".join(names_by_id.values())
             descriptions = list(dict.fromkeys(filter(None, [previous.description, instrument.description])))
             try:
                 instrument = Instrument(
+                    registry_number=previous.registry_number,
                     instrument_name=previous.instrument_name,
-                    parameters_taken="; ".join(parameters),
+                    parameters_taken=merged_parameters,
                     category=previous.category,
                     station_categories=list(dict.fromkeys(previous.station_categories + instrument.station_categories)),
                     description="; ".join(descriptions) or None,
-                    is_active=previous.is_active,
+                    is_active=instrument.is_active,
+                    element_ids=list(dict.fromkeys(previous.element_ids + instrument.element_ids)),
                 )
             except ValidationError as exc:
                 raise HTTPException(status_code=400, detail=f"CSV row {row_number}: merged instrument exceeds field limits") from exc
             merged_rows += 1
         by_name[key] = instrument
+        explicit_status_by_name[key] = has_explicit_status or explicit_status_by_name.get(key, False)
     if not by_name:
         raise HTTPException(status_code=400, detail="CSV file has no instrument rows")
     return list(by_name.values()), merged_rows
@@ -5363,8 +5485,10 @@ def parse_instrument_import(content):
 async def import_instruments(
     request: Request,
     mode: Literal["create", "upsert", "preview"] = "create",
+    preserve_existing_assignments: bool = False,
     user=Depends(require_it),
 ):
+    from .instrument_registry import import_key, check_registry_change
     try:
         content = (await request.body()).decode("utf-8-sig")
     except UnicodeDecodeError as exc:
@@ -5375,6 +5499,12 @@ async def import_instruments(
     import_headers = {(name or "").strip().lower().replace(" ", "_")
                       for name in next(csv.reader(io.StringIO(content)), [])}
     status_supplied = bool(import_headers.intersection({"status", "is_active"}))
+    explicit_status_names = set()
+    for source in csv.DictReader(io.StringIO(content)):
+        row = {(key or "").strip().lower().replace(" ", "_"): (value or "").strip() for key, value in source.items()}
+        if row.get("status") or row.get("is_active"):
+            explicit_status_names.add(import_key(int(row["registry_number"]) if row.get("registry_number") else None, row.get("instrument_name") or row.get("instrument") or ""))
+    elements_supplied = bool(import_headers.intersection({"elements", "element_ids"}))
 
     try:
         connection = get_connection()
@@ -5384,28 +5514,44 @@ async def import_instruments(
         placeholders = ", ".join(["%s"] * len(instrument_names))
         cursor.execute(
             f"""
-            SELECT instrument_id, instrument_name
+            SELECT instrument_id, instrument_name, registry_number
             FROM instruments
-            WHERE LOWER(instrument_name) IN ({placeholders})
             """,
-            tuple(instrument_names),
         )
-        existing = {row[1].casefold(): (row[0], row[1]) for row in cursor.fetchall()}
-        to_update = [instrument for instrument in instruments if instrument.instrument_name.strip().casefold() in existing]
-        to_insert = [instrument for instrument in instruments if instrument.instrument_name.strip().casefold() not in existing]
+        catalog = cursor.fetchall()
+        by_registry = {row[2]: row for row in catalog if row[2] is not None}
+        existing = {}
+        for instrument in instruments:
+            key = import_key(instrument.registry_number, instrument.instrument_name)
+            target = by_registry.get(instrument.registry_number)
+            if not target:
+                candidates = [row for row in catalog if row[1].casefold() == instrument.instrument_name.casefold()
+                              and (instrument.registry_number is None or row[2] is None)]
+                if len(candidates) > 1:
+                    raise HTTPException(status_code=409, detail=f"Use Registry Number to identify {instrument.instrument_name}")
+                target = candidates[0] if candidates else None
+            if target:
+                existing[key] = target
+            elif instrument.registry_number is None:
+                raise HTTPException(status_code=422, detail=f"Registry Number is required for new instrument {instrument.instrument_name}")
+        to_update = [item for item in instruments if import_key(item.registry_number,item.instrument_name) in existing]
+        to_insert = [item for item in instruments if import_key(item.registry_number,item.instrument_name) not in existing]
+        category_warnings = []
         for instrument in to_update:
-            instrument_id = existing[instrument.instrument_name.strip().casefold()][0]
+            instrument_id = existing[import_key(instrument.registry_number,instrument.instrument_name)][0]
             cursor.execute("""SELECT DISTINCT s.station_category FROM station_instruments si
                 JOIN stations s ON s.station_id = si.station_id
                 WHERE si.instrument_id = %s""", (instrument_id,))
             installed_categories = {row[0] for row in cursor.fetchall()}
             if installed_categories - set(instrument.station_categories):
-                raise HTTPException(status_code=409, detail=(
-                    f"{instrument.instrument_name} is installed at stations outside the imported categories"
-                ))
+                message = f"{instrument.instrument_name}: existing assignments outside new categories will be preserved ({', '.join(sorted(installed_categories - set(instrument.station_categories)))})"
+                category_warnings.append(message)
+                if mode != "preview" and not preserve_existing_assignments:
+                    raise HTTPException(status_code=409, detail=message + ". Preview and confirm preserving those assignments before importing.")
         if mode == "preview":
             return {"total": len(instruments), "new": len(to_insert),
-                    "existing": len(to_update), "merged_rows": merged_rows}
+                    "existing": len(to_update), "merged_rows": merged_rows, "category_warnings": category_warnings,
+                    "registry_supported": True}
         if mode == "create" and to_update:
             raise HTTPException(
                 status_code=409,
@@ -5415,21 +5561,26 @@ async def import_instruments(
                 ),
             )
         for instrument in to_update:
-            instrument_id = existing[instrument.instrument_name.strip().casefold()][0]
+            instrument_id = existing[import_key(instrument.registry_number,instrument.instrument_name)][0]
             before = audit_snapshot(connection, "instruments", instrument_id)
-            cursor.execute("""UPDATE instruments SET parameters_taken=%s, category=%s,
+            check_registry_change(before, instrument.registry_number)
+            cursor.execute("""UPDATE instruments SET instrument_name=%s, registry_number=COALESCE(registry_number,%s),parameters_taken=%s, category=%s,
                 description=COALESCE(%s, description),
                 is_active=CASE WHEN %s THEN %s ELSE is_active END WHERE instrument_id=%s""",
-                (instrument.parameters_taken.strip(), instrument.category.strip(),
+                (instrument.instrument_name.strip(),instrument.registry_number,instrument.parameters_taken.strip(), instrument.category.strip(),
                  instrument.description.strip() if instrument.description else None,
-                 status_supplied, instrument.is_active, instrument_id))
+                 status_supplied and import_key(instrument.registry_number,instrument.instrument_name) in explicit_status_names, instrument.is_active, instrument_id))
             replace_instrument_station_categories(cursor, instrument_id, instrument.station_categories)
+            if elements_supplied:
+                cursor.execute("UPDATE instruments SET element_ids=%s WHERE instrument_id=%s",
+                               (json.dumps(instrument.element_ids), instrument_id))
             record_entity_edit(connection, "instruments", instrument_id, before,
                                audit_snapshot(connection, "instruments", instrument_id), user)
         for instrument in to_insert:
             cursor.execute(
                 """
                 INSERT INTO instruments (
+                    registry_number,
                     instrument_name,
                     parameters_taken,
                     category,
@@ -5438,9 +5589,10 @@ async def import_instruments(
                     created_by_user_id,
                     recorded_by_username
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
+                    instrument.registry_number,
                     instrument.instrument_name.strip(),
                     instrument.parameters_taken.strip(),
                     instrument.category.strip(),
@@ -5450,17 +5602,17 @@ async def import_instruments(
                     user["username"],
                 ),
             )
-            replace_instrument_station_categories(
-                cursor,
-                cursor.lastrowid,
-                instrument.station_categories,
-            )
+            instrument_id = cursor.lastrowid
+            cursor.execute("UPDATE instruments SET element_ids=%s WHERE instrument_id=%s",
+                           (json.dumps(instrument.element_ids), instrument_id))
+            replace_instrument_station_categories(cursor, instrument_id, instrument.station_categories)
         connection.commit()
         return {
             "message": "Instruments imported successfully",
             "imported": len(to_insert),
             "updated": len(to_update),
             "merged_rows": merged_rows,
+            "category_warnings": category_warnings,
         }
     except HTTPException:
         if "connection" in locals() and connection.is_connected():
@@ -5482,6 +5634,7 @@ def update_instrument(
     instrument_id: int,
     instrument: Instrument,
     _admin=Depends(require_it),
+    preserve_existing_assignments: bool = False,
 ):
     try:
         connection = get_connection()
@@ -5489,6 +5642,10 @@ def update_instrument(
         cursor = connection.cursor()
         validate_station_categories(cursor, instrument.station_categories)
         before = audit_snapshot(connection, "instruments", instrument_id)
+        from .instrument_registry import check_registry_change
+        if before is None:
+            raise HTTPException(status_code=404, detail="Instrument not found")
+        check_registry_change(before, instrument.registry_number)
         cursor.execute(
             """
             SELECT DISTINCT stations.station_category
@@ -5502,7 +5659,7 @@ def update_instrument(
         )
         installed_categories = {row[0] for row in cursor.fetchall()}
         missing_categories = installed_categories - set(instrument.station_categories)
-        if missing_categories:
+        if missing_categories and not preserve_existing_assignments:
             raise HTTPException(
                 status_code=409,
                 detail=(
@@ -5514,6 +5671,7 @@ def update_instrument(
             """
             UPDATE instruments
             SET instrument_name = %s,
+                registry_number = COALESCE(registry_number, %s),
                 parameters_taken = %s,
                 category = %s,
                 description = %s,
@@ -5522,6 +5680,7 @@ def update_instrument(
             """,
             (
                 instrument.instrument_name.strip(),
+                instrument.registry_number,
                 instrument.parameters_taken.strip(),
                 instrument.category.strip(),
                 instrument.description.strip() if instrument.description else None,
@@ -5541,6 +5700,9 @@ def update_instrument(
             instrument_id,
             instrument.station_categories,
         )
+        if "element_ids" in instrument.model_fields_set:
+            cursor.execute("UPDATE instruments SET element_ids=%s WHERE instrument_id=%s",
+                           (json.dumps(instrument.element_ids), instrument_id))
         record_entity_edit(connection, "instruments", instrument_id, before,
                            audit_snapshot(connection, "instruments", instrument_id), _admin)
         connection.commit()
@@ -5550,7 +5712,7 @@ def update_instrument(
     except IntegrityError as exc:
         raise HTTPException(
             status_code=409,
-            detail="An instrument with this name already exists",
+            detail="Registry Number already exists",
         ) from exc
     except MySQLError as exc:
         raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
@@ -8157,6 +8319,8 @@ def get_station_instruments(
                 station_instruments.instrument_id,
                 instruments.instrument_name,
                 instruments.parameters_taken,
+                instruments.element_ids,
+                instruments.registry_number AS instrument_registry_number,
                 station_instruments.model,
                 station_instruments.manufacturer,
                 station_instruments.serial_number,
@@ -8166,6 +8330,8 @@ def get_station_instruments(
                 station_instruments.recommended_calibration_date,
                 station_instruments.recommended_replacement_date,
                 station_instruments.status,
+                (SELECT NULLIF(MAX(a.effective_date),'1900-01-01') FROM station_instrument_availability a
+                    WHERE a.station_instrument_id=station_instruments.station_instrument_id) AS status_effective_date,
                 station_instruments.comment,
                 station_instruments.data_logger_ports,
                 station_instruments.algorithm,
@@ -8209,11 +8375,15 @@ def get_station_instruments(
             "station_instruments.station_instrument_id"
         )
         cursor.execute(query, tuple(parameters))
+        records = cursor.fetchall()
+        for item in records:
+            item["element_ids"] = json.loads(item.get("element_ids") or "[]")
+            item["elements"] = "|".join(item["element_ids"])
         items = filter_sort_collection(
-            cursor.fetchall(), search,
-            ["station_code", "station_name", "station_category", "district", "instrument_name", "parameters_taken", "model", "manufacturer", "serial_number", "status", "comment", "data_logger_ports", "algorithm"],
+            records, search,
+            ["station_code", "station_name", "station_category", "district", "instrument_name", "parameters_taken", "elements", "model", "manufacturer", "serial_number", "status", "comment", "data_logger_ports", "algorithm"],
             sort_by, sort_order,
-            {"station": "station_name", "station_category": "station_category", "instrument": "instrument_name", "parameters": "parameters_taken", "model": "model", "manufacturer": "manufacturer", "serial_number": "serial_number", "status": "status", "comment": "comment", "data_logger_ports": "data_logger_ports", "algorithm": "algorithm", "recorded_by": "recorded_by", "recorded_at": "created_at", "updated_by": "updated_by", "updated_at": "updated_at", "installation_date": "installation_date", "calibration_date": "calibration_date", "replacement_date": "replacement_date", "recommended_calibration_date": "recommended_calibration_date", "recommended_replacement_date": "recommended_replacement_date"},
+            {"station": "station_name", "station_category": "station_category", "instrument": "instrument_name", "parameters": "parameters_taken", "elements": "elements", "model": "model", "manufacturer": "manufacturer", "serial_number": "serial_number", "status": "status", "comment": "comment", "data_logger_ports": "data_logger_ports", "algorithm": "algorithm", "recorded_by": "recorded_by", "recorded_at": "created_at", "updated_by": "updated_by", "updated_at": "updated_at", "installation_date": "installation_date", "calibration_date": "calibration_date", "replacement_date": "replacement_date", "recommended_calibration_date": "recommended_calibration_date", "recommended_replacement_date": "recommended_replacement_date"},
             date_from, date_to, "installation_date",
         )
         statuses = {}
@@ -8248,20 +8418,20 @@ def export_station_instruments(
     district: str | None = None,
 ):
     items = get_station_instruments(station_id, None, 100, search, sort_by, sort_order, date_from, date_to, user, district)
-    csv_headers = station_instrument_csv_headers()
+    csv_headers = station_instrument_csv_headers() + ["Elements"]
     csv_rows = [[item["station_code"], item["instrument_name"], item["model"],
         item["manufacturer"], item["serial_number"], item["installation_date"],
         item["calibration_date"], item["replacement_date"],
         item["recommended_calibration_date"], item["recommended_replacement_date"],
         item["status"], item["comment"], item["data_logger_ports"], item["algorithm"],
-        *[(item["wiring_colors"] + [None] * 10)[index] for index in range(10)]]
+        *[(item["wiring_colors"] + [None] * 10)[index] for index in range(10)], item.get("status_effective_date"), item.get("instrument_registry_number"), item["elements"]]
         for item in items]
     if format == "csv":
         return csv_download("station-instruments.csv", csv_headers, csv_rows)
-    pdf_headers = ["Station", "Instrument", "Model", "Serial", "Installed", "Status",
+    pdf_headers = ["Station", "Instrument", "Elements", "Model", "Serial", "Installed", "Status",
                    "Logger ports", "Algorithm", "Wiring"]
     pdf_rows = [[f'{item["station_code"]} - {item["station_name"]}', item["instrument_name"],
-        item["model"], item["serial_number"], item["installation_date"], item["status"],
+        item["elements"], item["model"], item["serial_number"], item["installation_date"], item["status"],
         item["data_logger_ports"], item["algorithm"],
         "; ".join(f"{number}: {color}" for number, color in enumerate(item["wiring_colors"], 1) if color)]
         for item in items]
@@ -8293,8 +8463,11 @@ async def import_station_instruments(
         cursor = connection.cursor()
         cursor.execute("SELECT station_id, station_code FROM stations")
         stations = {str(code).strip().casefold(): station_id for station_id, code in cursor.fetchall()}
-        cursor.execute("SELECT instrument_id, instrument_name FROM instruments WHERE is_active = 1")
-        instruments = {name.strip().casefold(): instrument_id for instrument_id, name in cursor.fetchall()}
+        cursor.execute("SELECT instrument_id, instrument_name, registry_number FROM instruments WHERE is_active = 1")
+        instruments = {}; registry_map = {}
+        for instrument_id, name, registry in cursor.fetchall():
+            instruments.setdefault(name.strip().casefold(), []).append(instrument_id)
+            registry_map[str(registry)] = instrument_id
         cursor.execute("""SELECT station_id, instrument_id, serial_number, installation_date
             FROM station_instruments""")
         existing = {(station_id, instrument_id, (serial or "").strip().casefold(), str(installed))
@@ -8304,7 +8477,13 @@ async def import_station_instruments(
         seen = set()
         for row_number, row in rows:
             station_id = stations.get(row["station_id"].casefold())
-            instrument_id = instruments.get(row["instrument"].casefold())
+            candidates = instruments.get(row["instrument"].casefold(), [])
+            if row.get("registry_number"):
+                instrument_id = registry_map.get(row["registry_number"])
+            elif len(candidates) > 1:
+                raise HTTPException(status_code=400, detail=f"CSV row {row_number}: use Registry Number to distinguish instruments named {row['instrument']}")
+            else:
+                instrument_id = candidates[0] if candidates else None
             if not station_id or not instrument_id:
                 missing = "Station ID" if not station_id else "Instrument"
                 raise HTTPException(status_code=400, detail=f"CSV row {row_number}: unknown {missing}")
@@ -8314,7 +8493,8 @@ async def import_station_instruments(
                     "model": row.get("model") or None,
                     "manufacturer": row.get("manufacturer") or None,
                     "serial_number": row.get("serial_number") or None,
-                    "installation_date": row.get("installation_date"),
+                    "installation_date": row.get("installation_date") or None,
+                    "status_effective_date": row.get("status_effective_date") or None,
                     "calibration_date": row.get("calibration_date") or None,
                     "replacement_date": row.get("replacement_date") or None,
                     "recommended_calibration_date": row.get("recommended_calibration") or None,
@@ -8462,6 +8642,7 @@ def update_station_instrument(
                 station_instrument_id,
             ),
         )
+        record_instrument_availability(cursor, station_instrument_id, before, item, user)
         record_entity_edit(connection, "station_instruments", station_instrument_id, before,
                            audit_snapshot(connection, "station_instruments", station_instrument_id), user)
         connection.commit()
@@ -9569,7 +9750,7 @@ def workspace_records(entity, user, search=None, status=None, priority=None, fil
                       timing=None, mine=False, date_from=None, date_to=None,
                       sort_by="updated_at", sort_order="desc", category=None):
     table, id_column = AUDITED_RECORDS[entity]
-    columns = (["document_id", "title", "document_date", "description", "original_filename",
+    columns = (["document_id", "title", "category", "document_date", "description", "original_filename",
                 "file_type", "file_size", "version"] if entity == "documents" else
                ["agenda_id", "title", "description", "due_date", "status", "priority", "progress", "tracking_notes"])
     columns += ["created_by_user_id", "created_by_username", "updated_by_username", "created_at", "updated_at"]
@@ -9592,6 +9773,7 @@ def workspace_records(entity, user, search=None, status=None, priority=None, fil
                 add_filter_condition(conditions, params, "category", category)
         else:
             add_filter_condition(conditions, params, "file_type", file_type)
+            add_filter_condition(conditions, params, "category", category)
         query = f"SELECT {', '.join(columns)} FROM {table}"
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
@@ -9633,6 +9815,265 @@ def workspace_records(entity, user, search=None, status=None, priority=None, fil
         connection.close()
 
 
+def performance_records(user, search=None, district=None, station_id=None, station_category=None,
+                        month_from=None, month_to=None, sort_by="report_month", sort_order="desc"):
+    start = month_start(month_from) if month_from else None
+    end = month_start(month_to) if month_to else None
+    if start and end and start > end:
+        raise HTTPException(status_code=422, detail="From month must not be after To month")
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        query = """SELECT p.performance_id, p.station_id, p.report_id, p.report_month, p.score, p.notes,
+            p.original_filename, p.file_size, p.created_by_user_id, p.created_by_username, p.updated_at,
+            s.station_code, s.station_name, s.district, s.station_category
+            FROM station_performance p JOIN stations s ON s.station_id = p.station_id"""
+        conditions, params = [], []
+        if user["department"] in ASSIGNED_STATION_ROLES:
+            conditions.append("p.station_id IN (SELECT station_id FROM user_station_assignments WHERE user_id = %s)")
+            params.append(user["user_id"])
+        for column, value in [("s.district", district), ("p.station_id", station_id), ("s.station_category", station_category)]:
+            add_filter_condition(conditions, params, column, value)
+        if start:
+            conditions.append("p.report_month >= %s"); params.append(start)
+        if end:
+            conditions.append("p.report_month <= %s"); params.append(end)
+        if conditions: query += " WHERE " + " AND ".join(conditions)
+        cursor.execute(query, tuple(params))
+        items = cursor.fetchall()
+        fields = {name: name for name in ["performance_id", "station_code", "station_name", "district", "report_month", "score", "notes", "original_filename", "created_by_username", "updated_at"]}
+        items = filter_sort_collection(items, search, ["station_code", "station_name", "district", "station_category", "notes", "original_filename"], sort_by, sort_order, fields)
+        for item in items:
+            item["score"] = float(item["score"])
+            item["can_edit"] = workspace_owner(user, item)
+        return items, performance_summary(items)
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.get("/station-performance")
+def list_station_performance(page: int | None = Query(default=None, ge=1), page_size: int = Query(default=25, ge=10, le=100),
+    search: str | None = Query(default=None, max_length=200), district: str | None = None,
+    station_id: str | None = None, station_category: str | None = None,
+    month_from: str | None = None, month_to: str | None = None,
+    sort_by: str = "report_month", sort_order: Literal["asc", "desc"] = "desc",
+    user=Depends(require_password_change_complete)):
+    items, summary = performance_records(user, search, district, station_id, station_category, month_from, month_to, sort_by, sort_order)
+    return paginate_collection(items, page, page_size, summary)
+
+
+@app.get("/station-performance/export")
+def export_station_performance(format: Literal["csv", "pdf"], search: str | None = None,
+    district: str | None = None, station_id: str | None = None, station_category: str | None = None,
+    month_from: str | None = None, month_to: str | None = None,
+    sort_by: str = "report_month", sort_order: Literal["asc", "desc"] = "desc",
+    user=Depends(require_password_change_complete)):
+    items, _ = performance_records(user, search, district, station_id, station_category, month_from, month_to, sort_by, sort_order)
+    headers = ["ID", "Station ID", "Station name", "District", "Month", "Score (%)", "Notes", "Report", "Recorded by", "Updated"]
+    columns = ["performance_id", "station_code", "station_name", "district", "report_month", "score", "notes", "original_filename", "created_by_username", "updated_at"]
+    rows = [[item[column] for column in columns] for item in items]
+    if format == "csv": return csv_download("station-performance.csv", headers, rows)
+    return pdf_download("station-performance.pdf", "Station Performance", headers, rows, user["username"])
+
+
+def update_performance_month(item, user):
+    month = month_start(item.report_month)
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        placeholders = ",".join(["%s"] * len(item.performance_ids))
+        cursor.execute(f"SELECT performance_id, station_id, report_month, created_by_user_id FROM station_performance WHERE performance_id IN ({placeholders}) ORDER BY performance_id FOR UPDATE", tuple(item.performance_ids))
+        rows = cursor.fetchall()
+        if len(rows) != len(item.performance_ids):
+            raise HTTPException(status_code=404, detail="One or more selected assessments no longer exist. Nothing was changed.")
+        station_ids = [row["station_id"] for row in rows]
+        for row in rows:
+            ensure_user_can_access_station(cursor, user, row["station_id"])
+            require_workspace_owner(user, row)
+        if len(station_ids) != len(set(station_ids)):
+            raise HTTPException(status_code=409, detail="Select only one assessment per station when moving records to the same month. Nothing was changed.")
+        station_placeholders = ",".join(["%s"] * len(station_ids))
+        cursor.execute(f"SELECT performance_id FROM station_performance WHERE report_month=%s AND station_id IN ({station_placeholders}) AND performance_id NOT IN ({placeholders})", (month, *station_ids, *item.performance_ids))
+        if cursor.fetchall():
+            raise HTTPException(status_code=409, detail="A selected station already has an assessment in the destination month. Nothing was changed.")
+        changed = 0
+        for row in rows:
+            if str(row["report_month"])[:7] == item.report_month:
+                continue
+            before = audit_snapshot(connection, "station_performance", row["performance_id"])
+            cursor.execute("UPDATE station_performance SET report_month=%s, updated_by_username=%s WHERE performance_id=%s", (month, user["username"], row["performance_id"]))
+            record_entity_edit(connection, "station_performance", row["performance_id"], before,
+                audit_snapshot(connection, "station_performance", row["performance_id"]), user)
+            changed += 1
+        connection.commit()
+        return {"updated": changed, "unchanged": len(rows) - changed}
+    except IntegrityError as exc:
+        connection.rollback()
+        raise HTTPException(status_code=409, detail="The destination month has a conflicting assessment. Nothing was changed.") from exc
+    except Exception:
+        connection.rollback(); raise
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.put("/station-performance/bulk-month")
+def bulk_update_performance_month(item: PerformanceBulkMonth, user=Depends(require_password_change_complete)):
+    return update_performance_month(item, user)
+
+
+@app.post("/station-performance/batch", status_code=201)
+async def save_performance_batch(request: Request,
+    entries: str = Query(max_length=10000), report_month: str = Query(max_length=7),
+    filename: str = Query(min_length=1, max_length=255), notes: str = Query(default="", max_length=5000),
+    user=Depends(require_password_change_complete)):
+    try:
+        batch = PerformanceBatch.model_validate_json(entries)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail="Select 1 to 100 different stations and give each a score from 0 to 100") from exc
+    month = month_start(report_month)
+    clean, _group, mime = document_file_details(filename)
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        ids = [item.station_id for item in batch.stations]
+        for station_id in ids:
+            ensure_user_can_access_station(cursor, user, station_id)
+        placeholders = ",".join(["%s"] * len(ids))
+        cursor.execute(f"SELECT station_id FROM stations WHERE station_id IN ({placeholders})", tuple(ids))
+        if {row["station_id"] for row in cursor.fetchall()} != set(ids):
+            raise HTTPException(status_code=404, detail="One or more selected stations no longer exist")
+        cursor.execute(f"SELECT station_id FROM station_performance WHERE report_month=%s AND station_id IN ({placeholders})", (month, *ids))
+        if cursor.fetchall():
+            raise HTTPException(status_code=409, detail="One or more selected stations already have a score for this month. Nothing was saved. Remove those stations or edit their existing records.")
+        data = await read_document_upload(request)
+        cursor.execute("""INSERT INTO station_performance_reports
+            (original_filename, content_type, file_size, file_data) VALUES (%s,%s,%s,%s)""", (clean, mime, len(data), data))
+        report_id = cursor.lastrowid
+        cursor.executemany("""INSERT INTO station_performance
+            (station_id, report_id, report_month, score, notes, original_filename, content_type, file_size, file_data,
+             created_by_user_id, created_by_username, updated_by_username)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            [(entry.station_id, report_id, month, entry.score, notes.strip(), clean, mime, len(data), b"",
+              user["user_id"], user["username"], user["username"]) for entry in batch.stations])
+        connection.commit()
+        return {"saved": len(ids), "message": "Station scores saved with one shared report"}
+    except IntegrityError as exc:
+        connection.rollback()
+        raise HTTPException(status_code=409, detail="A selected station already has an assessment for this month. Nothing was saved.") from exc
+    except Exception:
+        connection.rollback(); raise
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.post("/station-performance", status_code=201)
+@app.put("/station-performance/{performance_id}")
+async def save_station_performance(request: Request, station_id: int, report_month: str,
+    score: float, notes: str = Query(default="", max_length=5000),
+    filename: str | None = Query(default=None, max_length=255), performance_id: int | None = None,
+    user=Depends(require_password_change_complete)):
+    if request.method == "POST" and performance_id is not None:
+        raise HTTPException(status_code=422, detail="Use Edit to update an existing assessment")
+    try:
+        entry = PerformanceInput(station_id=station_id, report_month=month_start(report_month), score=score, notes=notes)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail="Choose a station, valid month, and score from 0 to 100") from exc
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        before = None
+        if performance_id is not None:
+            cursor.execute("SELECT station_id, created_by_user_id FROM station_performance WHERE performance_id = %s FOR UPDATE", (performance_id,))
+            existing = cursor.fetchone()
+            if existing is None: raise HTTPException(status_code=404, detail="Performance record not found")
+            ensure_user_can_access_station(cursor, user, existing["station_id"])
+            require_workspace_owner(user, existing)
+            before = audit_snapshot(connection, "station_performance", performance_id)
+        ensure_user_can_access_station(cursor, user, entry.station_id)
+        cursor.execute("SELECT station_id FROM stations WHERE station_id = %s", (entry.station_id,))
+        if cursor.fetchone() is None: raise HTTPException(status_code=404, detail="Station not found")
+        file_values = None
+        if filename:
+            clean, _group, mime = document_file_details(filename)
+            data = await read_document_upload(request)
+            file_values = (clean, mime, len(data), data)
+        elif performance_id is None:
+            raise HTTPException(status_code=422, detail="Upload the monthly performance report")
+        values = (entry.station_id, entry.report_month, entry.score, entry.notes.strip())
+        if performance_id is None:
+            cursor.execute("""INSERT INTO station_performance (station_id, report_month, score, notes,
+                original_filename, content_type, file_size, file_data, created_by_user_id, created_by_username, updated_by_username)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (*values, *file_values, user["user_id"], user["username"], user["username"]))
+            performance_id = cursor.lastrowid
+        else:
+            file_sql = ", report_id=NULL, original_filename=%s, content_type=%s, file_size=%s, file_data=%s" if file_values else ""
+            cursor.execute("UPDATE station_performance SET station_id=%s, report_month=%s, score=%s, notes=%s, updated_by_username=%s" + file_sql + " WHERE performance_id=%s",
+                (*values, user["username"], *(file_values or ()), performance_id))
+            record_entity_edit(connection, "station_performance", performance_id, before, audit_snapshot(connection, "station_performance", performance_id), user)
+        connection.commit()
+        return {"performance_id": performance_id, "message": "Station performance saved"}
+    except IntegrityError as exc:
+        connection.rollback()
+        raise HTTPException(status_code=409, detail="A score already exists for this station and month. Edit the existing record.") from exc
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.get("/station-performance/{performance_id}/report")
+def download_performance_report(performance_id: int, user=Depends(require_password_change_complete)):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT station_id FROM station_performance WHERE performance_id=%s", (performance_id,))
+        item = cursor.fetchone()
+        if item is None: raise HTTPException(status_code=404, detail="Performance record not found")
+        ensure_user_can_access_station(cursor, user, item["station_id"])
+        cursor.execute("""SELECT p.original_filename, p.content_type,
+            CASE WHEN p.report_id IS NULL THEN p.file_data ELSE r.file_data END AS file_data
+            FROM station_performance p LEFT JOIN station_performance_reports r ON r.report_id=p.report_id
+            WHERE p.performance_id=%s""", (performance_id,))
+        item = cursor.fetchone()
+        return Response(content=item["file_data"], media_type=item["content_type"], headers={
+            "Content-Disposition": "attachment; filename*=UTF-8''" + quote(item["original_filename"], safe=""), "X-Content-Type-Options": "nosniff"})
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.delete("/station-performance/{performance_id}", status_code=204)
+def delete_station_performance(performance_id: int, user=Depends(require_password_change_complete)):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT station_id, created_by_user_id FROM station_performance WHERE performance_id=%s FOR UPDATE", (performance_id,))
+        item = cursor.fetchone()
+        if item is None: raise HTTPException(status_code=404, detail="Performance record not found")
+        ensure_user_can_access_station(cursor, user, item["station_id"])
+        require_workspace_owner(user, item)
+        archive_deleted_item(connection, "station_performance", performance_id, user)
+        cursor.execute("DELETE FROM station_performance WHERE performance_id=%s", (performance_id,))
+        connection.commit()
+    except Exception:
+        connection.rollback(); raise
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
 @app.get("/documents")
 @app.get("/agenda")
 @app.get("/ideas")
@@ -9665,8 +10106,8 @@ def export_workspace_entries(request: Request, format: Literal["csv", "pdf"],
     items, _summary = workspace_records(entity, user, search, status, priority, file_type,
         timing, mine, date_from, date_to, sort_by, sort_order, category=category)
     if entity == "documents":
-        headers = ["ID", "Title", "Date", "Description", "File", "Type", "Size (bytes)", "Version", "Created by", "Updated"]
-        columns = ["document_id", "title", "document_date", "description", "original_filename",
+        headers = ["ID", "Title", "Document category", "Date", "Description", "File", "Type", "Size (bytes)", "Version", "Created by", "Updated"]
+        columns = ["document_id", "title", "category", "document_date", "description", "original_filename",
                    "file_type", "file_size", "version", "created_by_username", "updated_at"]
     elif entity == "ideas":
         headers = ["ID", "Title", "Idea category", "Description", "Idea date", "Status", "Priority", "Expected benefit", "Next steps", "Created by", "Updated"]
@@ -9695,6 +10136,11 @@ async def save_workspace_document(request, metadata, filename, user, document_id
                 raise HTTPException(status_code=404, detail="Document not found")
             require_workspace_owner(user, existing)
             before = audit_snapshot(connection, "documents", document_id)
+        cursor.execute("SELECT name FROM document_categories WHERE name = %s", (metadata.category,))
+        category = cursor.fetchone()
+        if category is None:
+            raise HTTPException(status_code=422, detail="Choose a defined document category. Admin can add categories in the Document categories panel.")
+        metadata.category = category["name"]
         file_values = None
         if filename:
             clean, file_type, content_type = document_file_details(filename)
@@ -9702,17 +10148,17 @@ async def save_workspace_document(request, metadata, filename, user, document_id
             file_values = (clean, file_type, content_type, len(content), content)
         elif document_id is None:
             raise HTTPException(status_code=400, detail="Choose a document file")
-        values = (metadata.title, metadata.document_date, metadata.description.strip())
+        values = (metadata.title, metadata.category, metadata.document_date, metadata.description.strip())
         if document_id is None:
-            cursor.execute("""INSERT INTO shared_documents (title, document_date, description,
+            cursor.execute("""INSERT INTO shared_documents (title, category, document_date, description,
                 original_filename, file_type, content_type, file_size, file_data,
                 created_by_user_id, created_by_username, updated_by_username)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (*values, *file_values, user["user_id"], user["username"], user["username"]))
             document_id = cursor.lastrowid
         else:
             file_sql = ", original_filename = %s, file_type = %s, content_type = %s, file_size = %s, file_data = %s, version = version + 1" if file_values else ""
-            cursor.execute("UPDATE shared_documents SET title = %s, document_date = %s, description = %s, updated_by_username = %s" +
+            cursor.execute("UPDATE shared_documents SET title = %s, category = %s, document_date = %s, description = %s, updated_by_username = %s" +
                 file_sql + " WHERE document_id = %s",
                 (*values, user["username"], *(file_values or ()), document_id))
             record_entity_edit(connection, "documents", document_id, before,
@@ -9732,11 +10178,12 @@ async def upload_shared_document(request: Request,
     title: str = Query(min_length=1, max_length=200), document_date: date = Query(),
     filename: str = Query(min_length=1, max_length=255),
     description: str = Query(default="", max_length=5000),
+    category: str = Query(default="General", min_length=1, max_length=100),
     user=Depends(require_password_change_complete)):
     try:
-        metadata = DocumentMetadata(title=title, document_date=document_date, description=description)
+        metadata = DocumentMetadata(title=title, category=category, document_date=document_date, description=description)
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail="Enter a valid document title and date") from exc
+        raise HTTPException(status_code=422, detail="Enter a valid document title, category and date") from exc
     return await save_workspace_document(request, metadata, filename, user)
 
 
@@ -9745,11 +10192,12 @@ async def edit_shared_document(document_id: int, request: Request,
     title: str = Query(min_length=1, max_length=200), document_date: date = Query(),
     description: str = Query(default="", max_length=5000),
     filename: str | None = Query(default=None, max_length=255),
+    category: str = Query(default="General", min_length=1, max_length=100),
     user=Depends(require_password_change_complete)):
     try:
-        metadata = DocumentMetadata(title=title, document_date=document_date, description=description)
+        metadata = DocumentMetadata(title=title, category=category, document_date=document_date, description=description)
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail="Enter a valid document title and date") from exc
+        raise HTTPException(status_code=422, detail="Enter a valid document title, category and date") from exc
     return await save_workspace_document(request, metadata, filename, user, document_id)
 
 
@@ -9766,6 +10214,39 @@ def download_shared_document(document_id: int, user=Depends(require_password_cha
         return Response(content=item["file_data"], media_type=item["content_type"], headers={
             "Content-Disposition": "attachment; filename*=UTF-8''" + quote(item["original_filename"], safe=""),
             "X-Content-Type-Options": "nosniff"})
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.get("/documents/categories")
+def get_document_categories(user=Depends(require_password_change_complete)):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT name FROM document_categories ORDER BY name")
+        return [item["name"] for item in cursor.fetchall()]
+    finally:
+        if "cursor" in locals(): cursor.close()
+        connection.close()
+
+
+@app.post("/documents/categories", status_code=201)
+def add_document_category(item: DocumentCategoryInput, user=Depends(require_it)):
+    connection = get_connection()
+    try:
+        ensure_application_tables(connection)
+        cursor = connection.cursor()
+        cursor.execute("INSERT INTO document_categories (name) VALUES (%s)", (item.name,))
+        connection.commit()
+        return {"name": item.name, "message": "Document category added"}
+    except IntegrityError as exc:
+        connection.rollback()
+        raise HTTPException(status_code=409, detail="This document category already exists") from exc
+    except Exception:
+        connection.rollback()
+        raise
     finally:
         if "cursor" in locals(): cursor.close()
         connection.close()
@@ -9876,6 +10357,10 @@ def create_agenda_item(item: AgendaItem, user=Depends(require_password_change_co
 @app.put("/agenda/{agenda_id}")
 def edit_agenda_item(agenda_id: int, item: AgendaItem, user=Depends(require_password_change_complete)):
     return save_agenda_item(item, user, agenda_id)
+
+
+from .data_upload_api import install_upload_routes
+install_upload_routes(app)
 
 
 @app.delete("/documents/{record_id}", status_code=204)

@@ -6,6 +6,7 @@ const instrumentCollection = createCollectionState("instrument_name", "asc");
 function resetInstrumentForm() {
     document.getElementById("instrumentForm").reset();
     document.getElementById("instrumentEditId").value = "";
+    document.getElementById("instrumentRegistry").readOnly = false;
     document.getElementById("isActive").checked = true;
     document.getElementById("instrumentSubmit").textContent = "Add instrument";
     document.getElementById("cancelInstrumentEdit").hidden = true;
@@ -23,8 +24,11 @@ function editInstrument(instrumentId) {
     const instrument = instrumentRecords.find((item) => item.instrument_id === instrumentId);
     if (!instrument) return;
     document.getElementById("instrumentEditId").value = instrument.instrument_id;
+    document.getElementById("instrumentRegistry").value = instrument.registry_number || "";
+    document.getElementById("instrumentRegistry").readOnly = instrument.registry_number != null;
     document.getElementById("instrumentName").value = instrument.instrument_name;
     document.getElementById("parametersTaken").value = instrument.parameters_taken || "";
+    document.getElementById("instrumentElements").value = (instrument.element_ids || []).join("|");
     document.getElementById("category").value = instrument.category || "";
     const categories = new Set(instrument.station_categories || []);
     document.querySelectorAll('input[name="stationCategories"]').forEach((checkbox) => {
@@ -71,7 +75,7 @@ function appendInstrumentActions(row, instrument) {
 
 async function loadInstruments() {
     const table = document.getElementById("instrumentTable");
-    const columnCount = isITUser() ? 9 : 8;
+    const columnCount = isITUser() ? 10 : 9;
     showTableMessage(table, columnCount, "Loading instruments...");
     try {
         const response = await apiFetch(`/instruments?${collectionParameters(instrumentCollection)}`);
@@ -79,6 +83,9 @@ async function loadInstruments() {
             throw new Error(await getErrorMessage(response, "Unable to load instruments"));
         }
         const result = await response.json();
+        if (result.items.some(instrument => !Object.hasOwn(instrument, "registry_number"))) {
+            throw new Error("The backend is outdated. Restart the backend and refresh with Ctrl+F5 to load Registry Numbers.");
+        }
         instrumentRecords = result.items;
         renderPagination(
             "instrumentPagination",
@@ -93,7 +100,7 @@ async function loadInstruments() {
         }
         instrumentRecords.forEach((instrument) => {
             const row = document.createElement("tr");
-            appendCell(row, instrument.instrument_id);
+            appendCell(row, instrument.registry_number ?? "Not assigned");
             appendCell(row, instrument.instrument_name);
             appendCell(row, instrument.parameters_taken || "Not specified");
             appendCell(row, instrument.category || "Not categorized");
@@ -101,6 +108,7 @@ async function loadInstruments() {
                 row,
                 instrument.station_categories?.join(", ") || "Not assigned"
             );
+            appendCell(row, (instrument.element_ids || []).join(" | ") || "-");
             appendCell(row, instrument.description || "");
             const statusCell = appendCell(row, "");
             const status = document.createElement("span");
@@ -120,8 +128,8 @@ async function loadInstruments() {
 
 function downloadInstrumentTemplate() {
     const csv = [
-        "instrument_name,parameters_it_takes,category,station_categories,description",
-        `Temperature Sensor,"Air temperature",Temperature,"${availableStationCategories.slice(0, 2).join("|")}","Measures air temperature"`
+        "Registry Number,Instrument,Parameters,Category,Station categories,Elements,Description,Status",
+        `100,Temperature Sensor,"Air temperature",Sensing,"${availableStationCategories.slice(0, 2).join("|")}",101,"Measures air temperature",Active`
     ].join("\r\n");
     const url = URL.createObjectURL(new Blob([csv], {type: "text/csv;charset=utf-8"}));
     const link = document.createElement("a");
@@ -154,14 +162,16 @@ async function uploadInstruments() {
             throw new Error(await getErrorMessage(preview, "Unable to validate instruments"));
         }
         const counts = await preview.json();
+        if (!counts.registry_supported) throw new Error("The backend is outdated. Restart it before importing registry-based instruments.");
+        const warnings = counts.category_warnings || [];
         if (counts.existing && !confirm(
-            `${counts.existing} instrument(s) already exist and will be updated; ${counts.new} new instrument(s) will be added. Continue?`
+            `${counts.existing} instrument(s) already exist and will be updated; ${counts.new} new instrument(s) will be added.\n${warnings.join("\n")}\nContinue?`
         )) {
             setMessage(message, "Import cancelled. No instruments were changed.");
             return;
         }
         setMessage(message, "Uploading...");
-        const response = await apiFetch("/instruments/import?mode=upsert", {
+        const response = await apiFetch(`/instruments/import?mode=upsert&preserve_existing_assignments=${warnings.length > 0}`, {
             method: "POST",
             requiresEditReason: counts.existing > 0,
             headers: {"Content-Type": "text/csv;charset=utf-8"},
@@ -224,8 +234,10 @@ document.addEventListener("DOMContentLoaded", async () => {
             return;
         }
         const instrument = {
+            registry_number: Number(document.getElementById("instrumentRegistry").value),
             instrument_name: document.getElementById("instrumentName").value.trim(),
             parameters_taken: document.getElementById("parametersTaken").value.trim(),
+            element_ids: document.getElementById("instrumentElements").value.split(/[|,;\s]+/).filter(Boolean),
             category: document.getElementById("category").value.trim(),
             station_categories: stationCategories,
             description: document.getElementById("description").value.trim() || null,
@@ -233,7 +245,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         };
         try {
             const response = await apiFetch(
-                editId ? `/instruments/${editId}` : "/instruments",
+                editId ? `/instruments/${editId}?preserve_existing_assignments=true` : "/instruments",
                 {
                     method: editId ? "PUT" : "POST",
                     headers: {"Content-Type": "application/json"},

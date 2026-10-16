@@ -14,6 +14,7 @@ from mysql.connector import IntegrityError
 
 
 DELETED_SPECS = {
+    "station_performance": ("station_performance", "performance_id"),
     "documents": ("shared_documents", "document_id"),
     "agenda": ("agenda_items", "agenda_id"),
     "ideas": ("ideas", "idea_id"),
@@ -73,7 +74,17 @@ def _restore_value(value):
 
 def _read_rows(cursor, table, key, value):
     cursor.execute(f"SELECT * FROM `{table}` WHERE `{key}` = %s", (value,))
-    return cursor.fetchall()
+    rows = cursor.fetchall()
+    if table == "station_performance":
+        for row in rows:
+            if row.get("report_id"):
+                cursor.execute("SELECT file_data FROM station_performance_reports WHERE report_id=%s", (row["report_id"],))
+                report = cursor.fetchone()
+                if report is None:
+                    raise HTTPException(status_code=409, detail="The shared performance report could not be backed up")
+                row["file_data"] = report["file_data"]
+                row["report_id"] = None
+    return rows
 
 
 def _add_rows(blocks, cursor, table, key, value):
@@ -196,9 +207,15 @@ def archive_deleted_item(connection, entity_type, entity_id, user, *, fiscal_sta
                 _add_rows(blocks, cursor, "maintenance_record_instruments", "maintenance_id", entity_id)
             elif entity_type == "instruments":
                 _add_rows(blocks, cursor, "instrument_station_categories", "instrument_id", entity_id)
+                assignments = _add_rows(blocks, cursor, "station_instruments", "instrument_id", entity_id)
+                for assignment in assignments:
+                    _add_rows(blocks, cursor, "station_instrument_availability", "station_instrument_id", assignment["station_instrument_id"])
+            elif entity_type == "station_instruments":
+                _add_rows(blocks, cursor, "station_instrument_availability", "station_instrument_id", entity_id)
             elif entity_type == "users":
                 _add_rows(blocks, cursor, "user_station_assignments", "user_id", entity_id)
             elif entity_type == "stations":
+                _add_rows(blocks, cursor, "station_performance", "station_id", entity_id)
                 _add_rows(blocks, cursor, "user_station_assignments", "station_id", entity_id)
                 _add_rows(blocks, cursor, "station_maintenance_frequencies", "station_id", entity_id)
             elif entity_type in {"maintenance_reports", "pre_maintenance_reports", "station_inspection_reports"}:
@@ -255,7 +272,7 @@ def restore_deleted_item(connection, deleted_item_id, user):
             "instrument_station_categories", "user_station_assignments", "station_maintenance_frequencies",
             "maintenance_report_stations", "pre_maintenance_report_stations",
             "station_inspection_report_stations", "station_inspection_comments", "station_inspection_photos",
-            "monthly_non_reported_station_files",
+            "monthly_non_reported_station_files", "station_instrument_availability",
         }
         for block in blocks:
             table = block["table"]

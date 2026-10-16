@@ -3,3 +3,5 @@ uvicorn[standard]
 mysql-connector-python
 python-dotenv
 reportlab
+openpyxl
+python-docx

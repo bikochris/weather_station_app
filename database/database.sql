@@ -609,11 +609,13 @@ CREATE TABLE IF NOT EXISTS user_station_assignments (
 
 CREATE TABLE IF NOT EXISTS instruments (
 
-    instrument_id INT AUTO_INCREMENT PRIMARY KEY,
+    registry_number INT PRIMARY KEY,
+    instrument_id INT AUTO_INCREMENT UNIQUE,
 
-    instrument_name VARCHAR(100) NOT NULL UNIQUE,
+    instrument_name VARCHAR(100) NOT NULL,
 
     parameters_taken VARCHAR(1000) NOT NULL,
+    element_ids JSON NULL,
 
     category VARCHAR(100),
 
@@ -761,7 +763,7 @@ CREATE TABLE IF NOT EXISTS station_instruments (
 
     serial_number VARCHAR(100),
 
-    installation_date DATE NOT NULL,
+    installation_date DATE NULL,
 
     calibration_replacement_date DATE NULL,
 
@@ -819,6 +821,16 @@ CREATE TABLE IF NOT EXISTS station_instruments (
 );
 
 
+CREATE TABLE IF NOT EXISTS station_instrument_availability (
+    station_instrument_id INT NOT NULL,
+    effective_date DATE NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    recorded_by_username VARCHAR(50) NOT NULL,
+    PRIMARY KEY (station_instrument_id, effective_date),
+    FOREIGN KEY (station_instrument_id) REFERENCES station_instruments(station_instrument_id)
+        ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS instrument_alert_deliveries (
     station_instrument_id INT NOT NULL,
     user_id INT NOT NULL,
@@ -847,9 +859,71 @@ CREATE TABLE IF NOT EXISTS ideas (
     INDEX idx_ideas_date_status (idea_date, status)
 );
 
+CREATE TABLE IF NOT EXISTS station_performance_reports (
+    report_id INT AUTO_INCREMENT PRIMARY KEY,
+    original_filename VARCHAR(255) NOT NULL,
+    content_type VARCHAR(100) NOT NULL,
+    file_size INT NOT NULL,
+    file_data LONGBLOB NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS station_performance (
+    performance_id INT AUTO_INCREMENT PRIMARY KEY,
+    station_id INT NOT NULL,
+    report_id INT NULL,
+    report_month DATE NOT NULL,
+    score DECIMAL(5,2) NOT NULL,
+    notes TEXT NULL,
+    original_filename VARCHAR(255) NOT NULL,
+    content_type VARCHAR(100) NOT NULL,
+    file_size INT NOT NULL,
+    file_data LONGBLOB NOT NULL,
+    created_by_user_id INT NULL,
+    created_by_username VARCHAR(50) NOT NULL,
+    updated_by_username VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_performance_station_month (station_id, report_month),
+    CONSTRAINT fk_performance_shared_report FOREIGN KEY (report_id) REFERENCES station_performance_reports(report_id),
+    FOREIGN KEY (station_id) REFERENCES stations(station_id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS data_upload_config (
+        config_id INT PRIMARY KEY, version INT NOT NULL, configuration JSON NOT NULL,
+        updated_by_username VARCHAR(50) NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP);
+
+CREATE TABLE IF NOT EXISTS data_upload_runs (
+        run_id INT AUTO_INCREMENT PRIMARY KEY, filename VARCHAR(255) NOT NULL,
+        source_data LONGBLOB NOT NULL, config_version INT NOT NULL, config_snapshot JSON NOT NULL,
+        result_data LONGTEXT NOT NULL, pdf_data LONGBLOB NOT NULL,
+        created_by_user_id INT NULL, created_by_username VARCHAR(50) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+
+CREATE TABLE IF NOT EXISTS data_upload_results (
+        result_id INT AUTO_INCREMENT PRIMARY KEY, run_id INT NOT NULL, station_id INT NOT NULL,
+        station_code VARCHAR(50) NOT NULL, station_name VARCHAR(200) NOT NULL, district VARCHAR(100) NULL,
+        report_month DATE NOT NULL, daily_expected INT NOT NULL, daily_available INT NOT NULL,
+        daily_missing INT NOT NULL, hourly_expected INT NOT NULL, hourly_available INT NOT NULL,
+        hourly_missing INT NOT NULL, daily_percent DECIMAL(6,2) NOT NULL,
+        hourly_percent DECIMAL(6,2) NOT NULL, overall_percent DECIMAL(6,2) NOT NULL,
+        UNIQUE KEY uq_upload_result (run_id, station_id, report_month),
+        FOREIGN KEY (run_id) REFERENCES data_upload_runs(run_id),
+        FOREIGN KEY (station_id) REFERENCES stations(station_id),
+        INDEX idx_upload_latest (station_id, report_month, run_id));
+
+CREATE TABLE IF NOT EXISTS document_categories (
+    category_id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+INSERT IGNORE INTO document_categories (name) VALUES ('General');
+
 CREATE TABLE IF NOT EXISTS shared_documents (
         document_id INT AUTO_INCREMENT PRIMARY KEY,
         title VARCHAR(200) NOT NULL,
+        category VARCHAR(100) NOT NULL DEFAULT 'General',
         document_date DATE NOT NULL,
         description TEXT NULL,
         original_filename VARCHAR(255) NOT NULL,

@@ -49,9 +49,9 @@ async function run() {
             assert.match(await page.locator(".leaflet-popup-content").innerText(), /Test <station>/);
             assert.equal(await page.locator(".leaflet-popup-content station").count(), 0, "Popup must escape record content");
             assert.match(await page.locator(".location-map-count").innerText(), /1 mapped/);
-            const markerIcon = await page.locator(".location-marker-symbol img").getAttribute("src");
-            assert.match(markerIcon, kind === "sites" ? /map-pinned/ : /radio-tower/);
-            assert.equal(await page.locator(".location-marker-symbol").evaluate(element => element.getBoundingClientRect().width), 44);
+            assert.equal(await page.locator(".location-map-marker img").count(), 0, "Map markers must be compact dots");
+            assert.equal(await page.locator(".location-marker-dot").evaluate(element => element.getBoundingClientRect().width), 16);
+            assert.ok(await page.locator(".location-results-map img").count(), "Map button icons must remain");
             await page.keyboard.press("Escape");
             assert.equal(await page.locator(".location-map-dialog").isVisible(), false);
             await page.locator(".location-results-map").click();

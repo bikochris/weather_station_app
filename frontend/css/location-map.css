@@ -20,11 +20,9 @@
 .location-map-legend i { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; }
 .location-map-legend img { width: 19px; height: 19px; filter: brightness(0) invert(1); }
 .location-map-marker { background: none; border: 0; }
-.location-marker-symbol { display: flex; align-items: center; justify-content: center; position: relative; width: 44px; height: 44px; box-sizing: border-box; border: 3px solid #fff; border-radius: 8px; background: var(--marker-color); box-shadow: 0 2px 8px #122b3f66; }
-.location-marker-symbol::after { content: ""; position: absolute; bottom: -10px; left: 12px; width: 14px; height: 14px; background: var(--marker-color); border-right: 3px solid #fff; border-bottom: 3px solid #fff; transform: rotate(45deg); box-sizing: border-box; }
-.location-marker-symbol img { position: relative; z-index: 1; width: 26px; height: 26px; filter: brightness(0) invert(1); }
-.location-map-marker:hover .location-marker-symbol,
-.location-map-marker:focus-visible .location-marker-symbol { outline: 3px solid #f0bd36; outline-offset: 2px; }
+.location-marker-dot { display: block; width: 16px; height: 16px; box-sizing: border-box; border: 2px solid #fff; border-radius: 50%; background: var(--marker-color); box-shadow: 0 1px 4px #122b3f66; }
+.location-map-marker:hover .location-marker-dot,
+.location-map-marker:focus-visible .location-marker-dot { outline: 2px solid #f0bd36; outline-offset: 2px; }
 .location-map-dialog .leaflet-tooltip { font-size: 13px; font-weight: 600; color: #163d2e; padding: 8px 12px; }
 .location-map-dialog .leaflet-popup-content { line-height: 1.6; max-height: 220px; overflow: auto; overflow-wrap: anywhere; }
 @media (max-width: 600px) { .location-map-dialog { padding: 12px; } .location-map-heading h2 { font-size: 18px; } }

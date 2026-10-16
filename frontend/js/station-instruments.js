@@ -155,7 +155,7 @@ function populateStationCategoryInstruments(selectedInstrumentId = "") {
     instrumentSelect.replaceChildren(new Option(placeholder, ""));
     compatible.forEach((instrument) => {
         instrumentSelect.appendChild(new Option(
-            instrument.instrument_name,
+            `${instrument.registry_number == null ? "" : `[${instrument.registry_number}] `}${instrument.instrument_name}`,
             instrument.instrument_id
         ));
     });
@@ -194,6 +194,7 @@ function editStationInstrument(recordId) {
     document.getElementById("recommendedCalibrationDate").value = record.recommended_calibration_date || "";
     document.getElementById("recommendedReplacementDate").value = record.recommended_replacement_date || "";
     document.getElementById("stationInstrumentStatus").value = record.status;
+    document.getElementById("statusEffectiveDate").value = "";
     document.getElementById("stationInstrumentComment").value = record.comment || "";
     document.getElementById("dataLoggerPorts").value = record.data_logger_ports || "";
     document.getElementById("stationInstrumentAlgorithm").value = record.algorithm || "";
@@ -246,7 +247,7 @@ async function loadStationInstruments() {
     const table = document.getElementById("stationInstrumentTable");
     const stationId = document.getElementById("stationFilter").value;
     const canManage = isITUser() || isMaintenanceUser();
-    const columnCount = canManage ? 22 : 21;
+    const columnCount = canManage ? 23 : 22;
     const parameters = collectionParameters(stationInstrumentCollection, {
         station_id: stationId,
         district: document.getElementById("districtFilter").value,
@@ -281,8 +282,9 @@ async function loadStationInstruments() {
             const row = document.createElement("tr");
             appendCell(row, `${record.station_code} - ${record.station_name}`);
             appendCell(row, record.station_category || "Not classified");
-            appendCell(row, record.instrument_name);
+            appendCell(row, `${record.instrument_registry_number == null ? "" : `[${record.instrument_registry_number}] `}${record.instrument_name}`);
             appendCell(row, record.parameters_taken || "-");
+            appendCell(row, (record.element_ids || []).join(" | ") || "Not mapped");
             appendCell(row, record.model || "-");
             appendCell(row, record.manufacturer || "-");
             appendCell(row, record.serial_number || "-");
@@ -320,6 +322,26 @@ document.addEventListener("DOMContentLoaded", async () => {
     initializeShell();
     if (!await requireSession()) return;
     const canManage = isITUser() || isMaintenanceUser();
+    document.getElementById("categoryDefaultsPanel").hidden = !isITUser();
+    document.getElementById("assignCategoryDefaults").addEventListener("click", async (event) => {
+        if (!confirm("Assign missing active instruments to all matching station categories as Operational? Installation dates will remain blank. Existing assignments will not be changed.")) return;
+        const button = event.currentTarget;
+        button.disabled = true;
+        const output = document.getElementById("categoryDefaultsMessage");
+        try {
+            const response = await apiFetch("/station-instruments/category-defaults", {
+                method: "POST", requiresEditReason: true
+            });
+            if (!response.ok) throw new Error(await getErrorMessage(response, "Unable to assign instruments"));
+            const result = await response.json();
+            setMessage(output, `${result.added} assignments added. ${result.message}`, "success");
+            await loadStationInstruments();
+        } catch (error) {
+            setMessage(output, error.message, "error");
+        } finally {
+            button.disabled = false;
+        }
+    });
     document.getElementById("stationInstrumentEditor").hidden = !canManage;
     document.getElementById("stationInstrumentImport").hidden = !canManage;
     document.getElementById("stationInstrumentActionsHeading").hidden = !canManage;
@@ -352,7 +374,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                             document.getElementById("manufacturer").value.trim() || null,
                         serial_number:
                             document.getElementById("serialNumber").value.trim() || null,
-                        installation_date: document.getElementById("installationDate").value,
+                        installation_date: document.getElementById("installationDate").value || null,
                         calibration_date:
                             document.getElementById("calibrationDate").value || null,
                         replacement_date:
@@ -362,6 +384,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                         recommended_replacement_date:
                             document.getElementById("recommendedReplacementDate").value || null,
                         status: document.getElementById("stationInstrumentStatus").value,
+                        status_effective_date: document.getElementById("statusEffectiveDate").value || null,
                         comment:
                             document.getElementById("stationInstrumentComment").value.trim() || null,
                         data_logger_ports: selectedInstrumentIsSensing()

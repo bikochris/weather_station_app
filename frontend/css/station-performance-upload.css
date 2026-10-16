@@ -1,0 +1,32 @@
+.upload-performance-page .dashboard-content > * { min-width: 0; }
+.upload-performance-page .upload-chart-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-top: 24px; }
+.upload-performance-page .upload-chart-heading .field { width: 220px; max-width: 100%; }
+.upload-performance-page .upload-parameter { border: 0; border-bottom: 1px solid #d4dfe2; padding: 16px 0; margin: 0 0 16px; min-width: 0; }
+.upload-performance-page .upload-parameter legend { font-weight: 600; overflow-wrap: anywhere; }
+.upload-performance-page .upload-editor-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.upload-performance-page .upload-editor-grid .field { min-width: 0; }
+.upload-performance-page .upload-editor-grid input:not([type=checkbox]), .upload-performance-page .upload-editor-grid select { width: 100%; min-width: 0; }
+.upload-performance-page .upload-hours { grid-column: 1 / -1; min-width: 0; border-top: 1px solid #e2e8ea; padding: 8px 0; }
+.upload-performance-page .upload-hours summary { cursor: pointer; font-size: 14px; }
+.upload-performance-page .upload-hour-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px; padding: 12px 0; }
+.upload-performance-page .upload-hour-grid label { display: flex; align-items: center; gap: 4px; font-size: 13px; }
+.upload-performance-page .upload-hour-grid input { margin: 0; }
+.upload-performance-page .upload-notices { padding-left: 20px; overflow-wrap: anywhere; }
+.upload-performance-page .upload-report-actions { display: flex; flex-wrap: wrap; gap: 6px; min-width: 180px; }
+.upload-performance-page .upload-report-actions button { padding: 5px 8px; font-size: 12px; }
+.upload-performance-page #configDraft { color: #6c5420; }
+.upload-performance-page #reloadConfig { margin-bottom: 16px; }
+.upload-performance-page .upload-override { border-top: 1px solid #d4dfe2; padding: 12px 0; }
+.upload-performance-page h3 { margin-top: 22px; }
+.upload-performance-page .message, .upload-performance-page td { overflow-wrap: anywhere; }
+.upload-performance-page .horizontal-bar-fill { background: #168175; }
+.upload-performance-page #uploadPeriodChart .horizontal-bar-fill { background: #346b9c; }
+@media (max-width: 760px) {
+    .upload-performance-page .user-menu { max-width: calc(100% - 32px); flex-wrap: wrap; gap: 8px; }
+    .upload-performance-page .user-menu > span { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+    .upload-performance-page .upload-editor-grid { grid-template-columns: minmax(0, 1fr); }
+    .upload-performance-page .upload-hour-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .upload-performance-page .upload-chart-heading { align-items: stretch; flex-direction: column; }
+}
+.upload-time-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.upload-time-row input { width: 140px; max-width: 100%; }

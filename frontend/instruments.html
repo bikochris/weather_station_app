@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Instruments | Station Operations</title>
-    <link rel="stylesheet" href="css/app.css?v=20261012largetiles">
+    <link rel="stylesheet" href="css/app.css?v=20261014dataupload">
 </head>
 <body>
     <header class="app-header">
@@ -47,6 +47,10 @@
             <form id="instrumentForm" class="form-grid">
                 <input type="hidden" id="instrumentEditId">
                 <div class="field">
+                    <label for="instrumentRegistry">Registry Number</label>
+                    <input id="instrumentRegistry" type="number" min="1" max="2147483647" required>
+                </div>
+                <div class="field">
                     <label for="instrumentName">Instrument name</label>
                     <input type="text" id="instrumentName" maxlength="100" required>
                 </div>
@@ -62,13 +66,17 @@
                 </fieldset>
 
                 <div class="field span-2">
-                    <label for="parametersTaken">Parameters it takes</label>
-                    <input type="text" id="parametersTaken" maxlength="1000" placeholder="Air temperature, relative humidity..." required>
+                    <label for="parametersTaken">Parameter names (| separated, same order as element IDs)</label>
+                    <input type="text" id="parametersTaken" maxlength="1000" placeholder="Dry temperature|Wet temperature|Dew point|Relative humidity" required>
                 </div>
 
                 <div class="field span-2">
                     <label for="description">Description</label>
                     <textarea id="description" maxlength="1000"></textarea>
+                </div>
+                <div class="field span-2">
+                    <label for="instrumentElements">Element IDs</label>
+                    <input id="instrumentElements" type="text" maxlength="6000" placeholder="101|102|103|105">
                 </div>
 
                 <label class="checkbox-row span-2" for="isActive">
@@ -135,11 +143,12 @@
                 <table class="instrument-table" data-server-sorted="true">
                     <thead>
                         <tr>
-                            <th data-sort="instrument_id">ID</th>
+                            <th data-sort="registry_number">Registry Number</th>
                             <th data-sort="instrument_name">Instrument</th>
                             <th data-sort="parameters_taken">Parameters it takes</th>
                             <th data-sort="category">Category</th>
                             <th data-sort="station_categories">Station categories</th>
+                            <th data-sort="elements">Elements</th>
                             <th data-sort="description">Description</th>
                             <th data-sort="status">Status</th>
                             <th data-sort="recorded_by">Recorded by</th>
@@ -154,7 +163,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20261012largetiles"></script>
-    <script src="js/instruments.js?v=20261012panels"></script>
+    <script src="js/api.js?v=20261014dataupload"></script>
+    <script src="js/instruments.js?v=20261015registry"></script>
 </body>
 </html>

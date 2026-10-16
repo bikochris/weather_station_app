@@ -111,19 +111,15 @@ const locationMap = (() => {
             const statuses = record.stations?.map(station => station.status) || [record.status];
             const status = ["Suspended", "Under maintenance", "Operational", "Closed"].find(value => statuses.includes(value));
             const markerContent = document.createElement("span");
-            markerContent.className = "location-marker-symbol";
+            markerContent.className = "location-marker-dot";
             markerContent.style.setProperty("--marker-color", colors[status] || "#087f5b");
-            const symbol = document.createElement("img");
-            symbol.src = record.stations ? "assets/icons/map-pinned.svg" : "assets/icons/radio-tower.svg";
-            symbol.alt = "";
-            markerContent.append(symbol);
             const markerLabel = `${record.site_name || record.station_name || "Location"} - ${status || "Status unknown"}`;
             const tooltip = document.createElement("span");
             tooltip.textContent = markerLabel;
             L.marker(coordinates(record), {
                 title: markerLabel, alt: markerLabel, riseOnHover: true,
                 icon: L.divIcon({className: "location-map-marker leaflet-interactive", html: markerContent,
-                    iconSize: [44, 52], iconAnchor: [22, 52], popupAnchor: [0, -48], tooltipAnchor: [22, -28]})
+                    iconSize: [16, 16], iconAnchor: [8, 8], popupAnchor: [0, -8], tooltipAnchor: [8, 0]})
             }).bindPopup(popup(record)).bindTooltip(tooltip).addTo(layer);
         }
         if (!dialog.open) dialog.showModal();

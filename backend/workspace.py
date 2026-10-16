@@ -10,6 +10,11 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 WORKSPACE_SCHEMA = (
+    """CREATE TABLE IF NOT EXISTS document_categories (
+        category_id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL UNIQUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""",
     """CREATE TABLE IF NOT EXISTS ideas (
         idea_id INT AUTO_INCREMENT PRIMARY KEY,
         category VARCHAR(100) NOT NULL DEFAULT 'General',
@@ -31,6 +36,7 @@ WORKSPACE_SCHEMA = (
     """CREATE TABLE IF NOT EXISTS shared_documents (
         document_id INT AUTO_INCREMENT PRIMARY KEY,
         title VARCHAR(200) NOT NULL,
+        category VARCHAR(100) NOT NULL DEFAULT 'General',
         document_date DATE NOT NULL,
         description TEXT NULL,
         original_filename VARCHAR(255) NOT NULL,
@@ -80,14 +86,33 @@ MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
 
 class DocumentMetadata(BaseModel):
     title: str = Field(min_length=1, max_length=200)
+    category: str = Field(default="General", min_length=1, max_length=100)
     document_date: date
     description: str = Field(default="", max_length=5000)
+
+    @field_validator("category")
+    @classmethod
+    def clean_category(cls, value):
+        if not value.strip() or "|" in value:
+            raise ValueError("Enter a category without the | character")
+        return value.strip()
 
     @field_validator("title")
     @classmethod
     def clean_title(cls, value):
         if not value.strip():
             raise ValueError("Enter a title")
+        return value.strip()
+
+
+class DocumentCategoryInput(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value):
+        if not value.strip() or "|" in value:
+            raise ValueError("Enter a category without the | character")
         return value.strip()
 
 

@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS operation_activity (
 
 # Only operational tables are tracked; credentials and file contents are never logged.
 RESOURCES = {
+    "station_performance": ("performance_id", "Station performance", "station_performance", "station-performance.html"),
     "shared_documents": ("document_id", "Document", "documents", "documents.html"),
     "agenda_items": ("agenda_id", "Agenda item", "agenda", "agenda.html"),
     "ideas": ("idea_id", "Idea", "ideas", "ideas.html"),

@@ -3,14 +3,52 @@ from datetime import date
 from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
+from mysql.connector import IntegrityError
 from pydantic import ValidationError
 
-from backend.main import audit_snapshot, save_agenda_item, save_idea, save_workspace_document, workspace_records
-from backend.workspace import (AgendaItem, DocumentMetadata, IdeaItem, agenda_timing, document_file_details,
+from backend.main import app, require_password_change_complete, add_document_category, audit_snapshot, save_agenda_item, save_idea, save_workspace_document, workspace_records
+from backend.workspace import (AgendaItem, DocumentMetadata, DocumentCategoryInput, IdeaItem, agenda_timing, document_file_details,
                                read_document_upload, require_workspace_owner)
 
 
 class WorkspaceValidationTests(unittest.TestCase):
+    def test_document_category_validation(self):
+        self.assertEqual(DocumentMetadata(title="File", document_date="2026-10-13").category, "General")
+        self.assertEqual(DocumentMetadata(title="File", document_date="2026-10-13", category="  Policy  ").category, "Policy")
+        for category in [" ", "Policy|Reports", "x" * 101]:
+            with self.assertRaises(ValidationError):
+                DocumentMetadata(title="File", document_date="2026-10-13", category=category)
+            with self.assertRaises(ValidationError):
+                DocumentCategoryInput(name=category)
+
+    @patch("backend.main.ensure_application_tables")
+    @patch("backend.main.get_connection")
+    def test_document_category_defined_without_upload(self, connect, _ensure):
+        result = add_document_category(DocumentCategoryInput(name="  Policies  "), {"user_id": 1})
+        self.assertEqual(result["name"], "Policies")
+        self.assertEqual(connect.return_value.cursor.return_value.execute.call_args.args[1], ("Policies",))
+        connect.return_value.commit.assert_called_once()
+
+    @patch("backend.main.get_connection")
+    def test_document_category_admin_only(self, connect):
+        app.dependency_overrides[require_password_change_complete] = lambda: {"user_id": 7, "department": "Observation Officer"}
+        try:
+            response = TestClient(app).post("/documents/categories", json={"name": "Policies"})
+            self.assertEqual(response.status_code, 403)
+            connect.assert_not_called()
+        finally:
+            app.dependency_overrides.pop(require_password_change_complete, None)
+
+    @patch("backend.main.ensure_application_tables")
+    @patch("backend.main.get_connection")
+    def test_document_category_duplicate(self, connect, _ensure):
+        connect.return_value.cursor.return_value.execute.side_effect = IntegrityError("Duplicate")
+        with self.assertRaises(HTTPException) as error:
+            add_document_category(DocumentCategoryInput(name="General"), {"user_id": 1})
+        self.assertEqual(error.exception.status_code, 409)
+        connect.return_value.rollback.assert_called_once()
+
     def test_idea_validation(self):
         idea = IdeaItem(title="  Improve stations  ", idea_date="2026-10-12")
         self.assertEqual(idea.title, "Improve stations")
@@ -114,15 +152,53 @@ class WorkspaceValidationTests(unittest.TestCase):
         cursor = connect.return_value.cursor.return_value
         cursor.fetchall.return_value = []
         items, summary = workspace_records("documents", {"user_id": 7, "department": "Admin"},
-                                           file_type="PDF|Image", mine=True)
+                                           file_type="PDF|Image", mine=True, category="Policy|Reports")
         query, params = cursor.execute.call_args.args
         self.assertNotIn("file_data", query)
         self.assertIn("file_type IN (%s, %s)", query)
-        self.assertEqual(params, (7, "PDF", "Image"))
+        self.assertIn("category IN (%s, %s)", query)
+        self.assertEqual(params, (7, "PDF", "Image", "Policy", "Reports"))
         self.assertEqual((items, summary["total"]), ([], 0))
 
 
 class WorkspaceUploadTests(unittest.IsolatedAsyncioTestCase):
+    async def test_document_category_saved_and_audited(self):
+        with patch("backend.main.get_connection") as connect, patch("backend.main.ensure_application_tables"), \
+                patch("backend.main.audit_snapshot", side_effect=[{"category": "General"}, {"category": "Policy"}]), \
+                patch("backend.main.record_entity_edit") as audit:
+            cursor = connect.return_value.cursor.return_value
+            cursor.fetchone.side_effect = [{"created_by_user_id": 7}, {"name": "Policy"}]
+            await save_workspace_document(self.request([]),
+                DocumentMetadata(title="File", document_date="2026-10-13", category="Policy"), None,
+                {"user_id": 7, "department": "Admin", "username": "tester"}, 1)
+            query, values = cursor.execute.call_args.args
+            self.assertIn("category = %s", query)
+            self.assertEqual(values[1], "Policy")
+            self.assertEqual(audit.call_args.args[3:5], ({"category": "General"}, {"category": "Policy"}))
+            connect.return_value.commit.assert_called_once()
+
+    async def test_new_document_category_insert(self):
+        with patch("backend.main.get_connection") as connect, patch("backend.main.ensure_application_tables"):
+            cursor = connect.return_value.cursor.return_value
+            cursor.fetchone.return_value = {"name": "Reports"}
+            await save_workspace_document(self.request([b"file"]),
+                DocumentMetadata(title="File", document_date="2026-10-13", category="Reports"), "file.txt",
+                {"user_id": 7, "department": "Admin", "username": "tester"})
+            query, values = cursor.execute.call_args.args
+            self.assertIn("(title, category, document_date", query)
+            self.assertEqual(values[1], "Reports")
+            self.assertEqual(query.count("%s"), len(values))
+
+    async def test_undefined_document_category_rejected(self):
+        with patch("backend.main.get_connection") as connect, patch("backend.main.ensure_application_tables"):
+            connect.return_value.cursor.return_value.fetchone.return_value = None
+            with self.assertRaises(HTTPException) as error:
+                await save_workspace_document(self.request([b"file"]),
+                    DocumentMetadata(title="File", document_date="2026-10-13", category="Unknown"), "file.txt",
+                    {"user_id": 7, "department": "Admin", "username": "tester"})
+            self.assertEqual(error.exception.status_code, 422)
+            connect.return_value.commit.assert_not_called()
+
     def request(self, chunks):
         async def stream():
             for chunk in chunks:

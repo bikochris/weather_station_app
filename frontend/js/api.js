@@ -228,6 +228,8 @@ async function requireSession() {
         pages?.add("documents.html");
         pages?.add("agenda.html");
         pages?.add("ideas.html");
+        pages?.add("station-performance.html");
+        pages?.add("station-performance-upload.html");
     });
     const currentPage = window.location.pathname.split("/").pop() || "index.html";
     if (ADMIN_ONLY_PAGES.has(currentPage) && !isITUser()) {
@@ -345,10 +347,11 @@ function initializeCollapsibleFields() {
         "instruments.html": "package-search", "station-instruments.html": "package-search",
         "instrument-status-summary.html": "gauge", "suspected-data.html": "shield-check",
         "data-counts.html": "chart-no-axes-combined", "data-requests.html": "inbox",
-        "reporting-status.html": "chart-no-axes-combined", "search.html": "search"
+        "reporting-status.html": "chart-no-axes-combined", "station-performance.html": "gauge", "station-performance-upload.html": "gauge", "search.html": "search"
     };
     const selector = "form, .filter-bar, .table-tools, .table-toolbar, .import-tools, .deleted-filter-grid, .section-heading > .field, .section-heading > .action-group:has(input)";
     function sectionDescription(label, target) {
+        if (pageName === "documents.html" && /categor/i.test(label)) return "Document classifications for the shared library.";
         if (/frequency|schedule|configuration|categor/i.test(label)) return "Maintenance schedules, categories, and operational settings.";
         if (/report|upload|document/i.test(label)) return "Reports, supporting files, and their associated station records.";
         if (/history|review/i.test(label)) return "Recorded activities, previous changes, and team decisions.";
@@ -369,6 +372,7 @@ function initializeCollapsibleFields() {
             "station-visitors.html": "Visit dates, institutions, missions, and visitor numbers.",
             "station-volunteers.html": "Station volunteers, contact details, and payment accounts.",
             "data-counts.html": "Monthly data records grouped by station category.",
+            "station-performance.html": "Monthly station scores and supporting assessment reports.",
             "data-requests.html": "Data requests, requester categories, and fiscal-period totals."
         };
         return descriptions[pageName] || "Registered records, their current details, and recent updates.";
@@ -443,6 +447,92 @@ function initializeCollapsibleFields() {
 
 document.addEventListener("DOMContentLoaded", initializeCollapsibleFields);
 
+function initializeFileDropZones() {
+    function enhance(input) {
+        if (input.closest(".file-drop-zone")) return;
+        const zone = document.createElement("div");
+        zone.className = "file-drop-zone";
+        zone.hidden = input.hidden;
+        const heading = document.createElement("div");
+        heading.className = "file-drop-heading";
+        const icon = document.createElement("img");
+        icon.src = "assets/icons/inbox.svg";
+        icon.alt = "";
+        const title = document.createElement("span");
+        title.textContent = input.multiple ? "Drop files here" : "Drop a file here";
+        heading.append(icon, title);
+        const status = document.createElement("p");
+        status.className = "file-drop-status";
+        status.setAttribute("role", "status");
+        input.before(zone);
+        zone.append(heading, input, status);
+        const update = () => {
+            status.textContent = [...input.files].map(file => file.name).join(", ");
+            zone.classList.toggle("has-file", input.files.length > 0);
+            zone.classList.remove("file-drop-error");
+        };
+        input.addEventListener("change", update);
+        input.form?.addEventListener("reset", () => setTimeout(update, 0));
+        let depth = 0;
+        const enabled = () => !input.matches(":disabled") && input.checkVisibility();
+        zone.addEventListener("dragenter", event => {
+            if (!enabled() || !event.dataTransfer?.types.includes("Files")) return;
+            event.preventDefault();
+            depth++;
+            zone.classList.add("drag-over");
+        });
+        zone.addEventListener("dragover", event => {
+            if (!enabled()) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "copy";
+        });
+        zone.addEventListener("dragleave", () => {
+            depth = Math.max(0, depth - 1);
+            if (!depth) zone.classList.remove("drag-over");
+        });
+        zone.addEventListener("drop", event => {
+            event.preventDefault();
+            depth = 0;
+            zone.classList.remove("drag-over");
+            if (!enabled()) return;
+            const files = [...(event.dataTransfer?.files || [])];
+            if (!files.length) return;
+            const accept = input.accept.split(",").map(value => value.trim().toLowerCase()).filter(Boolean);
+            const allowed = file => !accept.length || accept.some(type =>
+                type.startsWith(".") ? file.name.toLowerCase().endsWith(type) :
+                    type.endsWith("/*") ? file.type.toLowerCase().startsWith(type.slice(0, -1)) : file.type.toLowerCase() === type);
+            const error = !input.multiple && files.length > 1 ? "Choose one file for this upload." :
+                files.some(file => !allowed(file)) ? `Allowed file types: ${input.accept}` : "";
+            if (error) {
+                status.textContent = error;
+                zone.classList.add("file-drop-error");
+                return;
+            }
+            const transfer = new DataTransfer();
+            files.forEach(file => transfer.items.add(file));
+            input.files = transfer.files;
+            input.dispatchEvent(new Event("input", {bubbles: true}));
+            input.dispatchEvent(new Event("change", {bubbles: true}));
+        });
+        new MutationObserver(() => { zone.hidden = input.hidden; })
+            .observe(input, {attributes: true, attributeFilter: ["hidden"]});
+        update();
+    }
+    function scan(root) {
+        if (root.matches?.('input[type="file"]')) enhance(root);
+        root.querySelectorAll?.('input[type="file"]').forEach(enhance);
+    }
+    scan(document);
+    new MutationObserver(records => records.forEach(record => record.addedNodes.forEach(node => {
+        if (node.nodeType === 1) scan(node);
+    }))).observe(document.body, {childList: true, subtree: true});
+    for (const type of ["dragover", "drop"]) document.addEventListener(type, event => {
+        if (event.dataTransfer?.types.includes("Files")) event.preventDefault();
+    });
+}
+
+document.addEventListener("DOMContentLoaded", initializeFileDropZones);
+
 
 function initializeShell() {
     const navigation = document.querySelector(".app-header nav");
@@ -485,6 +575,8 @@ function initializeShell() {
         if (anchor) {
             const pages = [
                 ["data-counts.html", "Data counts"],
+                ["station-performance.html", "Station performance"],
+                ["station-performance-upload.html", "Performance by data upload"],
                 ["instrument-status-summary.html", "Instrument summary"],
                 ["maintenance-summary.html", "Maintenance summary"],
                 ["station-visitors.html", "Station visitors"],
@@ -543,6 +635,8 @@ const PAGE_HELP = {
     "station-volunteers.html": ["Volunteers at stations", "Record each volunteer's station, identity and contact details, and account information. Filter, sort, or export the register; expand a row to review edits."],
     "reporting-status.html": ["Reporting", "Record the number of stations that reported for a month and optionally attach the non-reported list. Expected stations include Operational, Under maintenance, and Suspended. Review the monthly trend and open a row to see its edit history; the side panel shows current database counts."],
     "data-requests.html": ["Requests", "Record requests served by category for each month. Use the date range to compare monthly, fiscal-quarter, and fiscal-year totals and charts."],
+    "station-performance.html": ["Station performance", "Record a score from 0 to 100 for each station and month, with a supporting report up to 20 MB. One assessment is allowed per station per month. Edit to correct scores or replace reports. Creators and Admin can edit or delete; assigned-station access still applies. Graphs show averages of the matching monthly scores, including fiscal quarters (Q1 July-September through Q4 April-June). Filter by station, district, station category, or month range. Export CSV/PDF, optionally including edit history."],
+    "station-performance-upload.html": ["Station performance by data upload", "Upload CSV, XLSX, or XLSM data with columns station_id, element_id, element_name, date_time, value. Station IDs are station codes, not internal database IDs. Dates use DD/MM/YYYY HH:MM or real Excel dates. Each upload checks full calendar months and generates availability scores, a saved PDF report, Word details, CSV summaries, and zipped daily/hourly exceptions. Numeric zero is valid. Daily availability needs any numeric value that day; hourly checks follow saved schedules, station exclusions, and zero-cloud exemptions. The newest upload supplies each station-month result. Historical reports retain their original rules. Admin can customize station profiles, parameters, schedules, exclusions, and cloud parents; changes require a reason and version check. Uploading does not overwrite manually entered Station Performance scores."],
     "kpi.html": ["Dashboard", "Choose a month to review activity and pending work across users. Refresh to load the latest figures. This page is available to administrators."],
     "search.html": ["Search", "Ask a question about station sites, locations, elevation, suspension, or maintenance. Review the related database records shown with the answer, and use follow-up questions for more detail."],
     "users.html": ["Users", "Administrators can create accounts, assign roles and stations, and manage account status. Search or export the directory, and expand a row to inspect its edit history."],
@@ -660,6 +754,7 @@ function enhanceMultiFilter(select) {
             const checkbox = document.createElement("input");
             checkbox.type = "checkbox";
             checkbox.value = option.value;
+            checkbox.disabled = option.disabled;
             checkbox.setAttribute("aria-label", option.textContent);
             checkbox.checked = selected.has(option.value);
             checkbox.onchange = () => {
@@ -763,7 +858,7 @@ function notificationTarget(notification) {
         pre_maintenance_report: "pre-maintenance-reports.html", station_visitors: "station-visitors.html",
         station_volunteers: "station-volunteers.html", data_counts: "data-counts.html",
         maintenance_summary: "maintenance-summary.html", volunteer_data: "volunteer-data.html",
-        reporting_status: "reporting-status.html", data_requests: "data-requests.html"
+        reporting_status: "reporting-status.html", data_requests: "data-requests.html", station_performance: "station-performance.html"
     };
     if (pages[notification.related_record_type]) return pages[notification.related_record_type];
     if (notification.related_record_type === "suspected_data") {
@@ -1351,15 +1446,18 @@ function historySnapshotValue(entityType, key, value) {
 
 const historyColumnAliases = {
     ideas: {"id": "idea_id", "idea title": "title", "idea category": "category", "created by": "created_by_username", "updated": "updated_at"},
-    documents: {"id": "document_id", "date": "document_date", "file": "original_filename",
+    documents: {"id": "document_id", "document category": "category", "date": "document_date", "file": "original_filename",
         "type": "file_type", "size (bytes)": "file_size", "created by": "created_by_username", "updated": "updated_at"},
     agenda: {"id": "agenda_id", "agenda item": "title", "progress (%)": "progress",
         "created by": "created_by_username", "updated": "updated_at"},
     stations: {"station id": "station_code", "station": "station_name",
         "station status": "status", "registered at": "created_at", "recorded by": "recorded_by_username"},
     instruments: {"instrument": "instrument_name", "parameters it takes": "parameters_taken",
-        "station categories": "station_categories", "status": "is_active", "recorded by": "recorded_by_username"},
+        "registry number": "registry_number",
+        "station categories": "station_categories", "elements": "element_ids", "status": "is_active", "recorded by": "recorded_by_username"},
     station_instruments: {"station": "station_id", "station category": "station_category",
+        "element ids": "element_ids",
+        "status effective date": "status_effective_date",
         "instrument": "instrument_id", "parameters": "parameters_taken", "logger ports": "data_logger_ports",
         "wiring": "wiring_colors", "recorded by": "recorded_by_username", "recorded at": "created_at",
         "updated by": "updated_by_username"},
@@ -1628,7 +1726,7 @@ function attachRecordHistoryRows(tbody, entityType, items, idForItem) {
 
 async function filteredHistoryRecordIds(basePath, entityType, state, extra, matches = () => true) {
     const idField = {
-        documents: "document_id", agenda: "agenda_id", ideas: "idea_id",
+        documents: "document_id", agenda: "agenda_id", ideas: "idea_id", station_performance: "performance_id",
         stations: "station_id", instruments: "instrument_id",
         maintenance: "maintenance_id", station_instruments: "station_instrument_id",
         suspected_data: "suspected_data_id", users: "user_id",

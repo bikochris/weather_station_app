@@ -260,7 +260,7 @@ function renderMaintenanceInstrumentOptions(selectedIds = new Set()) {
         checkbox.addEventListener("change", () => renderMaintenanceInstrumentDetails());
         const details = document.createElement("span");
         const name = document.createElement("strong");
-        name.textContent = instrument.instrument_name;
+        name.textContent = `${instrument.registry_number == null ? "" : `[${instrument.registry_number}] `}${instrument.instrument_name}`;
         const category = document.createElement("small");
         category.textContent = instrument.category || "Uncategorized";
         details.append(name, category);
@@ -300,7 +300,7 @@ function renderMaintenanceInstrumentDetails(initialDetails = null) {
         section.className = "maintenance-instrument-detail";
         section.dataset.instrumentId = String(instrumentId);
         const title = document.createElement("h4");
-        title.textContent = instrument?.instrument_name || `Instrument ${instrumentId}`;
+        title.textContent = instrument ? `${instrument.registry_number == null ? "" : `[${instrument.registry_number}] `}${instrument.instrument_name}` : `Instrument ${instrumentId}`;
         section.append(title);
         const fields = document.createElement("div");
         fields.className = "maintenance-instrument-fields";

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Home | Station Operations</title>
-    <link rel="stylesheet" href="css/app.css?v=20261012largetiles">
+    <link rel="stylesheet" href="css/app.css?v=20261014dataupload">
 </head>
 <body>
     <header class="app-header">
@@ -127,6 +127,14 @@
                     <img class="route-icon" src="assets/icons/chart-no-axes-combined.svg" alt="">
                     <span class="route-kicker">Observation volume</span><h3>Data counts</h3><p>Record and compare monthly data totals by station category.</p><strong>Open workspace</strong>
                 </a>
+                <a class="operation-route route-reporting" data-tool-page="station-performance.html" href="station-performance.html">
+                    <img class="route-icon" src="assets/icons/gauge.svg" alt="">
+                    <span class="route-kicker">Monthly assessment</span><h3>Station performance</h3><p>Record monthly scores, retain reports, and compare station performance.</p><strong>Open workspace</strong>
+                </a>
+                <a class="operation-route route-reporting" data-tool-page="station-performance-upload.html" href="station-performance-upload.html">
+                    <img class="route-icon" src="assets/icons/gauge.svg" alt="">
+                    <span class="route-kicker">Observation completeness</span><h3>Station performance by data upload</h3><p>Calculate availability from uploaded observations and generate reports.</p><strong>Open workspace</strong>
+                </a>
                 <a class="operation-route route-volunteer" data-tool-page="station-visitors.html" href="station-visitors.html">
                     <img class="route-icon" src="assets/icons/users-round.svg" alt="">
                     <span class="route-kicker">Site activity</span><h3>Station visitors</h3><p>Log monthly visits, missions, visitor categories, and totals.</p><strong>Open workspace</strong>
@@ -176,7 +184,7 @@
     </main>
 
     <script src="js/config.js"></script>
-    <script src="js/api.js?v=20261012largetiles"></script>
+    <script src="js/api.js?v=20261014dataupload"></script>
     <script src="js/home.js?v=20261012panels"></script>
 </body>
 </html>

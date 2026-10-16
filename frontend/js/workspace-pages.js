@@ -31,23 +31,51 @@ function workspaceFilters() {
         values.priority = workspaceField("priorityFilter").value;
         if (!workspaceIdeas) values.timing = workspaceField("timingFilter").value;
     }
-    if (workspaceIdeas) values.category = workspaceField("categoryFilter").value;
+    if (workspaceIdeas || workspaceDocuments) values.category = workspaceField("categoryFilter").value;
     return values;
 }
 
 async function loadIdeaCategories() {
-    if (!workspaceIdeas) return;
-    const categories = await workspaceRequest("/ideas/categories");
+    if (!workspaceIdeas && !workspaceDocuments) return;
+    const categories = await workspaceRequest(`/${workspaceEntity}/categories`);
     const choices = [...new Set(["General", ...categories])];
     const filter = workspaceField("categoryFilter");
     const selection = filter.value;
     filter.replaceChildren(new Option("All categories", ""), ...choices.map(value => new Option(value, value)));
     filter.value = selection;
-    workspaceField("ideaCategories").replaceChildren(...choices.map(value => new Option(value, value)));
+    if (workspaceDocuments) {
+        const entry = workspaceField("entryCategory");
+        const selected = entry.value;
+        entry.replaceChildren(...choices.map(value => new Option(value, value)));
+        entry.value = choices.includes(selected) ? selected : "General";
+        const rows = workspaceField("documentCategoryRows");
+        rows.replaceChildren();
+        choices.forEach(value => appendCell(rows.insertRow(), value));
+    } else workspaceField("ideaCategories").replaceChildren(...choices.map(value => new Option(value, value)));
+}
+
+async function addWorkspaceDocumentCategory(event) {
+    event.preventDefault();
+    const button = workspaceField("addDocumentCategory");
+    const message = workspaceField("documentCategoryMessage");
+    button.disabled = true;
+    try {
+        const name = workspaceField("documentCategoryName").value.trim();
+        await workspaceRequest("/documents/categories", {method: "POST",
+            headers: {"Content-Type": "application/json"}, body: JSON.stringify({name})});
+        await loadIdeaCategories();
+        workspaceField("documentCategoryForm").reset();
+        workspaceField("entryCategory").value = name;
+        setMessage(message, "Document category added.", "success");
+    } catch (error) { setMessage(message, error.message, "error"); }
+    finally { button.disabled = false; }
 }
 
 async function workspaceRequest(path, options) {
     const response = await apiFetch(path, options);
+    if (response.status === 405 && path === "/documents/categories") {
+        throw new Error("The backend is still running an older version without document categories. Restart the app backend, then refresh this page with Ctrl+F5.");
+    }
     if (!response.ok) throw new Error(await getErrorMessage(response, "Unable to complete the request"));
     return response.status === 204 ? null : response.json();
 }
@@ -65,6 +93,7 @@ function resetWorkspaceEditor() {
     }
     workspaceField("cancelEntry").hidden = true;
     if (workspaceDocuments) {
+        workspaceField("entryCategory").value = "General";
         workspaceField("entryFile").required = true;
         workspaceField("fileLabel").textContent = "Document file";
         workspaceField("fileHint").textContent = "PDF, Office files, ZIP and other archives, images, or text. Maximum 20 MB.";
@@ -83,6 +112,7 @@ function editWorkspaceEntry(item) {
     workspaceField("cancelEntry").hidden = false;
     workspaceField("workspaceMessage").textContent = "";
     if (workspaceDocuments) {
+        workspaceField("entryCategory").value = item.category || "General";
         workspaceField("entryFile").required = false;
         workspaceField("fileLabel").textContent = "Replacement file (optional)";
         workspaceField("fileHint").textContent = `Current file: ${item.original_filename}. Maximum 20 MB.`;
@@ -142,7 +172,7 @@ function workspaceActions(row, item) {
 async function loadWorkspaceEntries() {
     const sequence = ++workspaceRequestSequence;
     const body = workspaceField("workspaceRows");
-    const count = workspaceDocuments ? 11 : 12;
+    const count = 12;
     showTableMessage(body, count, "Loading...");
     try {
         const query = buildQuery({page: workspaceState.page, page_size: workspaceState.pageSize,
@@ -169,7 +199,7 @@ async function loadWorkspaceEntries() {
         if (!result.items.length) showTableMessage(body, count, "No entries match these filters.");
         result.items.forEach(item => {
             const row = body.insertRow();
-            const values = workspaceDocuments ? [item.document_id, item.title, item.document_date,
+            const values = workspaceDocuments ? [item.document_id, item.title, item.category || "General", item.document_date,
                 item.description, item.original_filename, item.file_type, item.file_size, item.version,
                 item.created_by_username, item.updated_at] : workspaceIdeas ? [item.idea_id, item.title, item.category,
                 item.description, item.idea_date, item.status, item.priority, item.expected_benefit,
@@ -206,6 +236,7 @@ async function saveWorkspaceEntry(event) {
     const button = workspaceField("saveEntry"); button.disabled = true;
     setMessage(workspaceField("workspaceMessage"), "Saving...");
     try {
+        if (workspaceDocuments) await workspaceRequest("/documents/categories");
         const values = {title: workspaceField("entryTitle").value.trim(),
             description: workspaceField("entryDescription").value.trim()};
         const method = workspaceEditing ? "PUT" : "POST";
@@ -215,6 +246,7 @@ async function saveWorkspaceEntry(event) {
             const file = workspaceField("entryFile").files[0];
             if (file && file.size > 20 * 1024 * 1024) throw new Error("The maximum document size is 20 MB");
             values.document_date = workspaceField("entryDate").value;
+            values.category = workspaceField("entryCategory").value.trim();
             if (file) values.filename = file.name;
             path += `?${new URLSearchParams(values)}`;
             options = {method, headers: {"Content-Type": "application/octet-stream"}, body: file || null};
@@ -236,7 +268,10 @@ async function saveWorkspaceEntry(event) {
         resetWorkspaceEditor();
         setMessage(workspaceField("workspaceMessage"), workspaceDocuments ? "Document saved." : workspaceIdeas ? "Idea saved." : "Agenda item saved.", "success");
         await loadWorkspaceEntries();
-        if (workspaceIdeas) await loadIdeaCategories();
+        if (workspaceIdeas || workspaceDocuments) {
+            try { await loadIdeaCategories(); }
+            catch (error) { setMessage(workspaceField("workspaceMessage"), `Saved successfully. Category suggestions could not refresh: ${error.message}`, "success"); }
+        }
     } catch (error) { setMessage(workspaceField("workspaceMessage"), error.message, "error"); }
     finally { button.disabled = false; }
 }
@@ -246,6 +281,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!await requireSession()) return;
     resetWorkspaceEditor();
     workspaceField("workspaceForm").onsubmit = saveWorkspaceEntry;
+    if (workspaceDocuments) workspaceField("documentCategoryForm").onsubmit = addWorkspaceDocumentCategory;
     workspaceField("cancelEntry").onclick = () => { resetWorkspaceEditor(); workspaceField("workspaceMessage").textContent = ""; };
     const apply = () => { workspaceState.page = 1; loadWorkspaceEntries(); };
     bindCollectionControls({state: workspaceState, reload: loadWorkspaceEntries,
@@ -256,7 +292,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         workspaceField("entrySearch").value = ""; workspaceState.search = "";
         workspaceField("dateFrom").value = ""; workspaceField("dateTo").value = "";
         workspaceField("mineOnly").checked = false;
-        if (workspaceIdeas) workspaceField("categoryFilter").value = "";
+        if (workspaceIdeas || workspaceDocuments) workspaceField("categoryFilter").value = "";
         for (const id of workspaceDocuments ? ["fileTypeFilter"] : workspaceIdeas ? ["statusFilter", "priorityFilter"] : ["statusFilter", "priorityFilter", "timingFilter"]) workspaceField(id).value = "";
         apply();
     };
@@ -274,7 +310,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         };
     }
     await loadWorkspaceEntries();
-    if (workspaceIdeas) {
+    if (workspaceIdeas || workspaceDocuments) {
         try { await loadIdeaCategories(); }
         catch (error) { setMessage(workspaceField("workspaceMessage"), error.message, "error"); }
     }
