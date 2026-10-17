@@ -681,3 +681,116 @@ remain active. Unmapped elements retain configured expectations and are listed
 in report warnings, preventing an incomplete mapping from silently inflating
 performance. New uploaded registered station codes receive a temporary profile
 using default parameter hours; saved station-specific profiles still take precedence.
+
+## Manual/Automatic Comparisons And Rainfall/Wind Monitoring
+
+Two additional authenticated pages use the original files already saved by
+Station Performance by Data Upload. They do not use availability percentages as
+meteorological measurements, and do not alter frozen performance reports.
+
+- `frontend/manual-automatic.html`: co-located manual/automatic comparisons,
+  differences, charts, statistics and matched wind roses without automatic QC.
+- `frontend/rainfall-wind.html`: timestamped nonzero rainfall observations,
+  daily rainfall extremes and wind-speed extremes within a selected range.
+- `frontend/js/observation-analysis.js`: filters, chart rendering and filtered CSV
+  downloads for the two pages.
+- `frontend/css/observation-analysis.css`: responsive analysis layouts.
+- `backend/observation_analysis_api.py`: authenticated options and analysis APIs,
+  registry-based permissions, site pairing and CSV exports.
+- `backend/observation_analysis_store.py`: incremental, disk-backed observation
+  index, original-source loading and time-range validation.
+- `backend/observation_analysis_engine.py`: exact-hour comparisons, daily
+  aggregation, wind direction frequencies and statistics.
+- `tests/test_observation_analysis_*.py`: indexing, calculation and access tests.
+
+Sites follow the existing Sites definition: equal latitude, longitude and
+elevation. Null coordinates do not form a site. Manual categories include
+Rainfall Station, Climatic Station and Principal Station. Automatic categories
+are Automatic Rain Gauge and Automatic Weather station. Both stations must be
+accessible to the signed-in user. No nearest-station pairing is inferred.
+
+Confirmed hourly element mappings (manual : automatic) are 101:1012,
+105:1022, 176:2112, 177:2212, 179:2312 and 180:2412. Minute 00 readings are
+matched exactly; a ten-minute reading later in the hour is not substituted.
+Manual 2 uses maximum automatic 1012, manual 3 uses minimum automatic 1012,
+and manual 5 compares with summed automatic 1107. Meteorological days run from
+08:00 inclusive to the next 08:00 exclusive; the manual date is the starting
+date. Every available numeric reading contributes to daily aggregates, even
+when days have missing ten-minute slots or off-grid readings. Missing readings
+are not zeros; counts remain visible. No value is withheld for incomplete days.
+
+Wind roses compare simultaneous hourly manual direction/speed 112/196 and
+automatic 1042/1092. Directions are degrees, clockwise from north; wind speeds
+must already have matching units. The default calm threshold is 0.5 in those
+units. Wind speed maxima reflect the uploaded element, which may be an average
+speed rather than a gust. Maxima and wind charts also use exact :00 readings.
+No unit conversion, gust inference or automatic numeric-range QC is performed.
+
+Upload another file through the existing upload page to add or correct data.
+The analysis index keeps one numeric value per station/element/minute. A newer
+run replaces an older numeric value at the same key; blank readings do not
+erase older values. Other dates remain available. Original files and historical
+performance reports remain unchanged. The private `analysis-cache.sqlite`
+database under the observation storage directory is derived and rebuildable
+from the original saved sources; it is not a substitute for source backups.
+The first analysis may take longer while existing files are indexed.
+Large CSVs are streamed through disk-backed parsing, not loaded into RAM.
+
+Non-wind observation series share one combined chart; wind remains separate.
+Chart appearance can be switched between line, column, area and scatter without
+reloading observations or changing exported measurements. Only native units
+are used. Vertical axes fit the displayed minimum and maximum; a constant
+series receives a small padding to avoid a zero-height axis. Clicking or using
+Enter/arrow keys on a chart displays source values and timestamps. Series labels
+and visibility controls distinguish stations, parameters and sources. Date-only
+filters include both selected days. Custom minutes and tolerance controls are
+not exposed, and the analysis does not apply automatic QC rejection. Original
+source files are retained; nonnumeric or nonfinite entries cannot be plotted.
+
+### Uploaded QC Status Percentages
+
+Observation uploads may include an optional `qc_status` column. Values are
+case-insensitive `none`, `passed`, or `failed`; blank labels and older files
+without the column use `none`. Unknown labels are rejected with a row number.
+Comma-, semicolon-, and tab-delimited CSVs and Excel files are supported.
+
+QC belongs to the winning numeric reading under the existing duplicate rules.
+A blank duplicate cannot overwrite the value or its QC label. Legacy daily
+counts use the latest timestamp with a numeric value; exact schedules use the
+label at the scheduled minute. Zero remains valid. Failed numeric readings
+remain available; a QC label on a blank value does not make it available.
+Downtime, exemptions, schedules, and uncounted hours retain their existing rules.
+
+Each QC percentage is its credited count divided by available observations.
+None + Failed + Passed equals 100%, before rounding, when observations exist.
+The three categories share one full-width composition bar; Available remains
+available divided by expected and is a separate total, not a fourth segment.
+When no observations are available, QC percentages are undefined and the bar
+is empty, while availability is 0% if expectations exist. Filters and fiscal aggregation sum
+counts and expectations before calculating percentages. CSV, ZIP, PDF, and
+Word reports include QC summaries. Historical results are not rewritten;
+unclassified older results display their available readings as None.
+
+The frontend checks backend QC capability before upload so stale servers cannot
+silently discard the new column. New runs retain QC counts in their immutable
+JSON results, without changing the existing database availability columns.
+
+### Manual VBA Rule Profile
+
+The explicit `apply_vba_manual_rules` operation restores manual counting rules
+without changing instrument element IDs/names or AWS schedules. Daily elements
+are credited once per calendar date when any numeric reading exists. Hourly
+elements use hourly keys; an observation anywhere in the expected hour counts.
+Daylight elements use 06:00-18:00 inclusive; soil elements 176/177/179/180 use
+06:00, 12:00, and 18:00. Other manual hourly elements use 00:00-23:00.
+
+Station exceptions use station codes, never display names. Busogo 40302100
+restricts 102/103/105/166 to 06:00-18:00 and does not count 184. Elements 106/185
+are selected only at Gisenyi 30304100 and Ruhengeri 40303100 in this reset.
+Actual daily exclusions from the VBA are saved as parameter station exclusions
+so catalog eligibility does not override them; hourly IDs in the VBA's daily
+exclusion lists remain annotations, not hourly exclusions. Cloud-parent zero
+exemptions remain intact. Reserved cloud layers stay unscheduled; AWS schedules,
+QC counts and instrument downtime continue to apply. This is an explicit saved
+configuration update, not an automatic startup reset of future Admin edits.
+Older uploads retain their own frozen rules until the source is uploaded again.

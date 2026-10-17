@@ -20,6 +20,21 @@
 .upload-performance-page h3 { margin-top: 22px; }
 .upload-performance-page .message, .upload-performance-page td { overflow-wrap: anywhere; }
 .upload-performance-page .horizontal-bar-fill { background: #168175; }
+.upload-performance-page .upload-qc-bar { min-width: 0; width: 100%; }
+.upload-performance-page td .upload-qc-bar { min-width: 310px; }
+.upload-performance-page .upload-qc-labels { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; font-size: 12px; line-height: 1.5; margin-bottom: 5px; font-variant-numeric: tabular-nums; }
+.upload-performance-page .upload-qc-labels span { white-space: nowrap; }
+.upload-performance-page .upload-qc-track { height: 22px; display: flex; width: 100%; overflow: hidden; background: #eef2f5; border: 1px solid #d4dfe2; }
+.upload-performance-page .upload-qc-segment { display: block; height: 100%; flex: 0 0 auto; }
+.upload-performance-page .qc-none { background: #9ca3af; }
+.upload-performance-page .qc-failed { background: #dc2626; }
+.upload-performance-page .qc-passed { background: #659b38; }
+.upload-performance-page .upload-qc-total { font-size: 12px; color: #314658; line-height: 1.5; background: #fff0ae; padding: 2px 4px; }
+.upload-performance-page .horizontal-bar-row { grid-template-columns: minmax(100px, 190px) minmax(0, 1fr) 90px; align-items: center; }
+@media (max-width: 600px) {
+    .upload-performance-page .horizontal-bar-row { grid-template-columns: minmax(0, 1fr); gap: 6px; padding-bottom: 14px; border-bottom: 1px solid #d4dfe2; }
+    .upload-performance-page .horizontal-bar-row > strong { text-align: left; }
+}
 .upload-performance-page #uploadPeriodChart .horizontal-bar-fill { background: #346b9c; }
 @media (max-width: 760px) {
     .upload-performance-page .user-menu { max-width: calc(100% - 32px); flex-wrap: wrap; gap: 8px; }
@@ -30,3 +45,45 @@
 }
 .upload-time-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
 .upload-time-row input { width: 140px; max-width: 100%; }
+.upload-performance-page .upload-percentage-basis { display: flex; flex-wrap: wrap; gap: 8px 24px; color: #526472; font-size: 12px; margin: 12px 0; }
+.upload-performance-page .horizontal-bar-row.upload-grouped-row { grid-template-columns: minmax(120px, 190px) minmax(0, 1fr); padding: 16px 0; border-bottom: 1px solid #d4dfe2; align-items: start; }
+.upload-performance-page .upload-station-caption { padding-top: 3px; overflow-wrap: anywhere; }
+.upload-performance-page .upload-percentage-bars { min-width: 0; }
+.upload-performance-page .upload-percentage-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) 66px; align-items: center; gap: 8px; min-height: 26px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.upload-performance-page .percentage-grouped .upload-percentage-row[data-status=available],
+.upload-performance-page .percentage-dots .upload-percentage-row[data-status=available] { margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #d4dfe2; }
+.upload-performance-page .upload-percentage-row:focus-visible { outline: 2px solid #168175; outline-offset: 2px; }
+.upload-performance-page .upload-percentage-value { text-align: right; white-space: nowrap; color: #183f51; }
+.upload-performance-page .upload-percentage-track { height: 16px; background: repeating-linear-gradient(to right, transparent 0, transparent calc(25% - 1px), #ced8de calc(25% - 1px), #ced8de 25%), #eef2f5; border-right: 1px solid #ced8de; overflow: hidden; }
+.upload-performance-page .upload-percentage-fill { display: block; height: 100%; }
+.upload-performance-page .qc-available { background: #f2c744; }
+.upload-performance-page .upload-percentage-axis { display: flex; justify-content: space-between; margin: 5px 74px 0 72px; color: #657582; font-size: 10px; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) {
+    .upload-performance-page .horizontal-bar-row.upload-grouped-row { grid-template-columns: minmax(0, 1fr); }
+    .upload-performance-page .upload-station-caption { font-weight: 600; padding: 0 0 6px; }
+}
+.upload-performance-page .percentage-dots .upload-percentage-track { position: relative; }
+.upload-performance-page .percentage-dots .upload-percentage-fill { display: none; }
+.upload-performance-page .percentage-dots .upload-percentage-track::after { content: ""; position: absolute; width: 10px; height: 10px; top: 3px; left: clamp(5px, calc(var(--percentage) * 1%), calc(100% - 5px)); transform: translateX(-50%); border-radius: 50%; background: var(--metric-color); border: 1px solid #54606a; box-sizing: border-box; }
+.upload-performance-page .percentage-dots .percentage-empty .upload-percentage-track::after { display: none; }
+.upload-performance-page :is(.percentage-columns, .percentage-rings, .percentage-heatmap, .percentage-numbers) { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.upload-performance-page :is(.percentage-columns, .percentage-rings, .percentage-heatmap, .percentage-numbers) .upload-percentage-row { grid-template-columns: minmax(0, 1fr); text-align: center; gap: 6px; min-width: 0; }
+.upload-performance-page :is(.percentage-columns, .percentage-rings, .percentage-heatmap, .percentage-numbers) .upload-percentage-value { text-align: center; }
+.upload-performance-page .percentage-columns { position: relative; padding-left: 34px; gap: 8px; }
+.upload-performance-page .percentage-columns .upload-percentage-row { grid-template-rows: 22px 132px 22px; }
+.upload-performance-page .percentage-columns .upload-percentage-name { grid-row: 3; }
+.upload-performance-page .percentage-columns .upload-percentage-value { grid-row: 1; }
+.upload-performance-page .percentage-columns .upload-percentage-track { grid-row: 2; height: 132px; width: 100%; max-width: 48px; margin: auto; display: flex; align-items: end; border: 0; background: repeating-linear-gradient(to top, transparent 0, transparent calc(25% - 1px), #ced8de calc(25% - 1px), #ced8de 25%), #eef2f5; }
+.upload-performance-page .percentage-columns .upload-percentage-fill { width: 100% !important; height: calc(var(--percentage) * 1%); }
+.upload-performance-page .percentage-columns .upload-percentage-axis { position: absolute; left: 0; top: 28px; height: 132px; margin: 0; flex-direction: column-reverse; }
+.upload-performance-page .percentage-rings .upload-percentage-track { position: relative; width: 88px; height: 88px; max-width: 100%; aspect-ratio: 1; border: 0; border-radius: 50%; margin: auto; background: conic-gradient(var(--metric-color) calc(var(--percentage) * 1%), #e4eaed 0); }
+.upload-performance-page .percentage-rings .upload-percentage-track::after { content: ""; position: absolute; inset: 9px; border-radius: 50%; background: #f4f7f8; }
+.upload-performance-page :is(.percentage-rings, .percentage-heatmap, .percentage-numbers) .upload-percentage-fill { display: none; }
+.upload-performance-page :is(.percentage-heatmap, .percentage-numbers) .upload-percentage-track { display: none; }
+.upload-performance-page .percentage-heatmap .upload-percentage-row { padding: 14px 4px; background: color-mix(in srgb, var(--metric-color) calc(10% + var(--percentage) * 0.6%), white); border-bottom: 3px solid var(--metric-color); }
+.upload-performance-page .percentage-numbers .upload-percentage-row { border-top: 3px solid var(--metric-color); padding: 10px 4px; }
+.upload-performance-page :is(.percentage-heatmap, .percentage-numbers) .upload-percentage-value { font-size: 18px; }
+@media (max-width: 600px) {
+    .upload-performance-page :is(.percentage-rings, .percentage-heatmap, .percentage-numbers) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .upload-performance-page .percentage-columns .upload-percentage-row { font-size: 11px; }
+}

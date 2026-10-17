@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta
 from html import escape
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Literal
+from .observation_qc import normalize_qc, csv_delimiter, qc_fields, QC_COLUMNS, STATUSES
 
 UPLOAD_SCHEMA = (
     """CREATE TABLE IF NOT EXISTS data_upload_config (
@@ -78,6 +79,53 @@ def apply_observation_defaults(configuration):
     config["parameters"] = [previous[p["element_id"]] for p in config["parameters"]]
     config["archived_parameter_rules"] = previous
     config["schedule_defaults_version"] = 1
+    return config
+
+
+def apply_vba_manual_rules(configuration, registry):
+    """Explicit reset of manual rules; leave AWS schedules and catalog identity intact."""
+    config = deepcopy(configuration)
+    reference = default_configuration()
+    rules = {rule["element_id"]: rule for rule in reference["parameters"]}
+    profiles = {station["station_code"]: station for station in reference["stations"]}
+    for rule in config["parameters"]:
+        code = rule["element_id"]
+        if code not in rules:
+            continue
+        template = rules[code]
+        rule.update(cadence=template["cadence"], schedule_mode="legacy", hours=list(template["hours"]),
+                    times=[], interval_minutes=60, enabled=True, zero_parent=template["zero_parent"])
+        excluded = set(rule.get("excluded_station_codes", []))
+        if code in {"106", "185"}:
+            excluded.update(set(registry) - set(template["station_codes"]))
+        if code in DAILY:
+            excluded.update(station for station, profile in profiles.items() if code in profile["daily_excluded"])
+        rule["excluded_station_codes"] = sorted(excluded & set(registry))
+    for station in config["stations"]:
+        code = station["station_code"]
+        if code in registry:
+            station["station_name"] = registry[code]["station_name"]
+        if code in profiles:
+            station["daily_excluded"] = list(profiles[code]["daily_excluded"])
+            station.setdefault("hourly_overrides", {}).update(deepcopy(profiles[code]["hourly_overrides"]))
+    config["manual_vba_rules_version"] = 1
+    return config
+
+
+def apply_manual_station_exclusions(configuration, registry):
+    """One-time requested unticks with exact schedules, preserving AWS and reserved elements."""
+    config = apply_vba_manual_rules(configuration, registry)
+    defaults = observation_defaults()
+    for rule in config["parameters"]:
+        code = rule["element_id"]
+        if code not in DAILY and code not in HOURLY:
+            continue
+        rule.update(deepcopy(defaults[code]))
+        excluded = set(rule.get("excluded_station_codes", []))
+        excluded.update(station for station, elements in EXCLUDED.items() if code in elements and station in registry)
+        rule["excluded_station_codes"] = sorted(excluded)
+    config.pop("manual_vba_rules_version", None)
+    config["manual_station_exclusions_version"] = 1
     return config
 
 
@@ -237,6 +285,11 @@ def observation_column_indexes(headers):
         if len(matches) != 1:
             raise ValueError("Expected columns: station_id, element_id, element_name, date_time, value (once each, in any order; extra columns are allowed)")
         columns[name] = matches[0]
+    matches = [index for index, value in enumerate(normalized) if value == "qc_status"]
+    if len(matches) > 1:
+        raise ValueError("qc_status must appear only once")
+    if matches:
+        columns["qc_status"] = matches[0]
     return columns
 
 
@@ -249,7 +302,7 @@ def parse_source(content, filename):
     if extension == "csv":
         try: text = content.decode("utf-8-sig")
         except UnicodeDecodeError as exc: raise ValueError("CSV must use UTF-8 encoding") from exc
-        delimiter = ";" if text.splitlines() and text.splitlines()[0].count(";") > text.splitlines()[0].count(",") else ","
+        delimiter = csv_delimiter(text.splitlines()[0] if text else "")
         rows = iter(csv.reader(io.StringIO(text), delimiter=delimiter))
     elif extension in {"xlsx", "xlsm"}:
         from openpyxl import load_workbook
@@ -264,8 +317,9 @@ def parse_source(content, filename):
     else: raise ValueError("Upload CSV, XLSX, or XLSM; legacy XLS must be saved as XLSX")
     try:
         columns = observation_column_indexes(next(rows, []))
-        last_column = max(columns.values())
+        last_column = max(value for name, value in columns.items() if name != "qc_status")
         obs, minute_obs, daily, periods, codes = {}, {}, set(), set(), set()
+        qc_hourly, qc_minutes, qc_daily, daily_times = {}, {}, {}, {}
         invalid = duplicates = minute_duplicates = valid = 0
         for index, row in enumerate(rows, start=2):
             if not any(value is not None and str(value).strip() for value in row): continue
@@ -278,17 +332,27 @@ def parse_source(content, filename):
             key = (code, element, dt.date(), dt.hour)
             if key in obs: duplicates += 1
             value = present_value(row[columns["value"]])
+            try: status = normalize_qc(row[columns["qc_status"]] if "qc_status" in columns and columns["qc_status"] < len(row) else None)
+            except ValueError as exc: raise ValueError(f"Row {index}: {exc}") from exc
             minute_key = (code, element, dt.date(), dt.hour * 60 + dt.minute)
             if minute_key in minute_obs: minute_duplicates += 1
             if value is not None or minute_key not in minute_obs:
                 minute_obs[minute_key] = value
+                qc_minutes[minute_key] = status
             if value is not None:
                 obs[key] = value
+                qc_hourly[key] = status
                 daily.add((code, element, dt.date()))
+                daily_key = (code, element, dt.date())
+                if dt >= daily_times.get(daily_key, datetime.min):
+                    daily_times[daily_key] = dt
+                    qc_daily[daily_key] = status
             elif key not in obs: obs[key] = None
         if not periods: raise ValueError("No valid dated observations were found")
         if len(periods) > 12: raise ValueError("Upload at most 12 different months at a time")
-        return dict(observations=obs, minute_observations=minute_obs, daily=daily, periods=sorted(periods), station_codes=codes, row_count=valid,
+        return dict(observations=obs, minute_observations=minute_obs, daily=daily,
+            qc_observations=qc_hourly, qc_minute_observations=qc_minutes, qc_daily=qc_daily,
+            periods=sorted(periods), station_codes=codes, row_count=valid,
             invalid_rows=invalid, duplicate_rows=duplicates, minute_duplicate_rows=minute_duplicates)
     except (csv.Error, ParseError, zipfile.BadZipFile, EOFError) as exc:
         raise ValueError("The observation file is malformed or contains an oversized field") from exc
@@ -381,10 +445,14 @@ def analyze_source(parsed, configuration, inventory=None):
             year, month = map(int, period.split("-")); days = calendar.monthrange(year, month)[1]
             counts = dict(daily_expected=0, daily_available=0, hourly_expected=0, hourly_available=0)
             element_counts = {}
-            def credit(param, available=False):
+            element_qc = {}
+            def credit(param, available=False, status="none"):
                 values = element_counts.setdefault(param.element_id, [0, 0])
                 values[0] += 1
                 values[1] += int(available)
+                if available:
+                    qc = element_qc.setdefault(param.element_id, dict.fromkeys(STATUSES, 0))
+                    qc[status] += 1
             daily_params = [p for p in config.parameters if p.enabled and p.schedule_mode != "none" and p.cadence == "daily" and eligible(p, code)
                 and (p.element_id in mapped or p.element_id not in station.daily_excluded)]
             excluded = [params[e].name for e in station.daily_excluded if e not in mapped]
@@ -401,7 +469,9 @@ def analyze_source(parsed, configuration, inventory=None):
                     counts["daily_expected"] += 1
                     available = ((code, param.element_id, current) in daily if param.schedule_mode == "legacy"
                         else minute_obs.get((code, param.element_id, current, scheduled_minutes(param)[0])) is not None)
-                    credit(param, available)
+                    qc_key = (code, param.element_id, current)
+                    status = parsed.get("qc_daily", {}).get(qc_key, "none") if param.schedule_mode == "legacy" else parsed.get("qc_minute_observations", {}).get((*qc_key, scheduled_minutes(param)[0]), "none")
+                    credit(param, available, status)
                     if available: counts["daily_available"] += 1
                     else: missing.append(param.name)
                 if missing or day_excluded: daily_rows.append(dict(station_code=code, station_name=station.station_name, date=current.isoformat(), missing=missing, excluded=day_excluded, entered="; ".join(statuses) or "No", downtime=downtime))
@@ -433,7 +503,8 @@ def analyze_source(parsed, configuration, inventory=None):
                             continue
                         if count:
                             counts["hourly_expected"] += 1
-                            credit(param, value is not None)
+                            statuses_lookup = parsed.get("qc_minute_observations" if exact else "qc_observations", {})
+                            credit(param, value is not None, statuses_lookup.get((code, param.element_id, current, hour), "none"))
                             if value is not None: counts["hourly_available"] += 1
                         if value is None: missing.append(hour)
                     if missing or marked:
@@ -445,14 +516,16 @@ def analyze_source(parsed, configuration, inventory=None):
                 counts[f"{cadence}_percent"] = round(100 * available / expected, 2) if expected else 0
             expected = counts["daily_expected"] + counts["hourly_expected"]
             available = counts["daily_available"] + counts["hourly_available"]
+            qc_counts = {f"qc_{status}": sum(values.get(status, 0) for values in element_qc.values()) for status in STATUSES}
             summaries.append(dict(station_code=code, station_name=station.station_name, report_month=period, **counts,
-                overall_percent=round(100 * available / expected, 2) if expected else None))
+                **qc_fields(expected, available, qc_counts), overall_percent=round(100 * available / expected, 2) if expected else None))
             for element_id, (target, received) in element_counts.items():
                 if configuration.get("catalog_managed") and code not in inventory.get("eligible_stations", {}).get(element_id, []):
                     continue
                 element_rows.append(dict(station_code=code, station_name=station.station_name, report_month=period,
                     element_id=element_id, element_name=params[element_id].name, cadence=params[element_id].cadence, expected=target, available=received,
-                    missing=target-received, score=round(100*received/target, 2) if target else None))
+                    missing=target-received, score=round(100*received/target, 2) if target else None,
+                    **qc_fields(target, received, {f"qc_{status}": element_qc.get(element_id, {}).get(status, 0) for status in STATUSES})))
     unknown = sorted(parsed["station_codes"] - {s.station_code for s in stations})
     warnings = []
     if inventory is not None:
@@ -517,6 +590,19 @@ def downtime_summary(result):
     return rows
 
 
+def qc_report_rows(result):
+    rows = []
+    for item in result["results"]:
+        expected = item["daily_expected"] + item["hourly_expected"]
+        available = item["daily_available"] + item["hourly_available"]
+        fields = qc_fields(expected, available, item)
+        values = [fields[f"qc_{status}_percent"] for status in STATUSES]
+        values.append(round(100 * available / expected, 2) if expected else None)
+        rows.append([item["station_name"], item["report_month"], str(expected),
+                     *[str(value) + "%" if value is not None else "Not assessed" for value in values]])
+    return rows
+
+
 def report_pdf(result):
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
@@ -536,6 +622,15 @@ def report_pdf(result):
     table = LongTable(rows, repeatRows=1, colWidths=[143,61]+[65]*9)
     table.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor("#dcece9")),("GRID",(0,0),(-1,-1),0.3,colors.HexColor("#b8ccca")),("FONTSIZE",(0,0),(-1,-1),8), ("VALIGN",(0,0),(-1,-1),"TOP"), ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white,colors.HexColor("#f4f8f7")])]))
     story.append(table)
+    story.extend([Spacer(1, 16), Paragraph("QC status percentages of available readings", styles["Heading2"]),
+        Paragraph("None, Failed and Passed are percentages of available readings and sum to 100% before rounding. Available is a percentage of expected readings. Failed readings remain available. No QC percentage is defined when no readings are available. Files without QC labels count as None.", styles["Normal"]), Spacer(1, 8)])
+    qc_rows = [["Station", "Month", "Expected", "None %", "Failed %", "Passed %", "Available %"],
+        *[[Paragraph(escape(value), styles["Normal"]) for value in row] for row in qc_report_rows(result)]]
+    qc_table = LongTable(qc_rows, repeatRows=1, colWidths=[180,65,65,100,100,100,100])
+    qc_table.setStyle(TableStyle([("GRID",(0,0),(-1,-1),0.3,colors.grey), ("VALIGN",(0,0),(-1,-1),"TOP"),
+        ("BACKGROUND",(3,0),(3,0),colors.HexColor("#d1d5db")), ("BACKGROUND",(4,0),(4,0),colors.HexColor("#fecaca")),
+        ("BACKGROUND",(5,0),(5,0),colors.HexColor("#d9edc6"))]))
+    story.append(qc_table)
     if result.get("element_results"):
         story.extend([Spacer(1, 16), Paragraph("Scores by element", styles["Heading2"])])
         rows = [["Station", "Month", "Element ID", "Element name", "Expected", "Available", "Missing", "Score %"]]
@@ -559,8 +654,8 @@ def report_pdf(result):
 def report_details_zip(result):
     stream = io.BytesIO()
     with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("station_summary.csv", csv_bytes(result["results"], SUMMARY_COLUMNS))
-        archive.writestr("element_scores.csv", csv_bytes(result.get("element_results", []), ELEMENT_COLUMNS))
+        archive.writestr("station_summary.csv", csv_bytes(result["results"], [*SUMMARY_COLUMNS, *QC_COLUMNS]))
+        archive.writestr("element_scores.csv", csv_bytes(result.get("element_results", []), [*ELEMENT_COLUMNS, *QC_COLUMNS]))
         archive.writestr("daily_missing.csv", csv_bytes(result["daily_details"], ["station_code","station_name","date","missing","excluded","entered"]))
         archive.writestr("hourly_missing.csv", csv_bytes(result["hourly_details"], ["station_code","station_name","element_id","element_name","date","missing_hours","excluded_hours","entered"]))
     return stream.getvalue()
@@ -598,6 +693,13 @@ def report_docx(result):
         values = [item["station_name"], item["report_month"], item["daily_expected"], item["daily_available"], item["hourly_expected"], item["hourly_available"], item["daily_percent"], item["overall_percent"]]
         for cell, value in zip(summary_table.add_row().cells, values): cell.text = str(value) if value is not None else "Not assessed"
     repeat_header(summary_table)
+    document.add_heading("QC status percentages of available readings", level=1)
+    document.add_paragraph("None, Failed and Passed are percentages of available readings and sum to 100% before rounding. Available is a percentage of expected readings. Failed readings remain available. No QC percentage is defined when no readings are available. Files without QC labels count as None.")
+    qc_table = document.add_table(rows=1, cols=7); qc_table.style = "Table Grid"
+    for cell, label in zip(qc_table.rows[0].cells, ["Station", "Month", "Expected", "None %", "Failed %", "Passed %", "Available %"]): cell.text = label
+    for values in qc_report_rows(result):
+        for cell, value in zip(qc_table.add_row().cells, values): cell.text = value
+    repeat_header(qc_table)
     if result.get("element_results"):
         document.add_heading("Scores by element", level=1)
         table = document.add_table(rows=1, cols=len(ELEMENT_COLUMNS)); table.style = "Table Grid"

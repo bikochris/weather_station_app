@@ -12,6 +12,7 @@ from functools import lru_cache
 from uuid import uuid4
 import zipfile
 from xml.etree.ElementTree import ParseError
+from .observation_qc import normalize_qc, csv_delimiter
 
 from fastapi import HTTPException
 from starlette.requests import ClientDisconnect
@@ -73,13 +74,14 @@ class DiskObservations:
         self.connection.execute("PRAGMA cache_size=-65536")
         self.connection.execute("PRAGMA temp_store=FILE")
         self.connection.execute("""CREATE TABLE observations (
-            kind INTEGER, station TEXT, element TEXT, day TEXT, slot INTEGER, value REAL,
+            kind INTEGER, station TEXT, element TEXT, day TEXT, slot INTEGER, value REAL, qc_status TEXT,
             PRIMARY KEY(kind,station,element,day,slot)) WITHOUT ROWID""")
 
     def insert(self, rows):
-        self.connection.executemany("""INSERT INTO observations VALUES (?,?,?,?,?,?)
+        self.connection.executemany("""INSERT INTO observations VALUES (?,?,?,?,?,?,?)
             ON CONFLICT(kind,station,element,day,slot) DO UPDATE
-            SET value=COALESCE(excluded.value,observations.value)""", rows)
+            SET value=COALESCE(excluded.value,observations.value),
+                qc_status=CASE WHEN excluded.value IS NOT NULL THEN excluded.qc_status ELSE observations.qc_status END""", rows)
         self.connection.commit()
 
     @lru_cache(maxsize=32)
@@ -89,8 +91,14 @@ class DiskObservations:
 
     def close(self):
         self.day.cache_clear()
+        self.qc_day.cache_clear()
         self.connection.close()
         self.directory.cleanup()
+
+    @lru_cache(maxsize=32)
+    def qc_day(self, kind, station, element, day):
+        return dict(self.connection.execute("SELECT slot,qc_status FROM observations WHERE kind=? AND station=? AND element=? AND day=? AND value IS NOT NULL ORDER BY slot",
+            (kind, station, element, day)))
 
 
 class ObservationLookup:
@@ -107,6 +115,14 @@ class DailyLookup:
         return any(value is not None for value in self.store.day(0, station, element, day.isoformat()).values())
 
 
+class QCLookup:
+    def __init__(self, store, kind): self.store, self.kind = store, kind
+    def get(self, key, default="none"):
+        station, element, day, *slot = key
+        values = self.store.qc_day(self.kind, station, element, day.isoformat())
+        return values.get(slot[0], default) if slot else next(reversed(values.values()), default)
+
+
 def parse_disk_source(path, filename):
     from .data_upload_engine import parse_datetime, normalized_code, present_value, observation_column_indexes
     store = DiskObservations(path.parent)
@@ -115,7 +131,7 @@ def parse_disk_source(path, filename):
         if path.suffix.lower() == ".csv":
             stream = path.open("r", encoding="utf-8-sig", newline="", buffering=1024 * 1024)
             first = stream.readline(1024 * 1024); stream.seek(0)
-            rows = iter(csv.reader(stream, delimiter=";" if first.count(";") > first.count(",") else ","))
+            rows = iter(csv.reader(stream, delimiter=csv_delimiter(first)))
         else:
             from openpyxl import load_workbook
             with zipfile.ZipFile(path) as archive:
@@ -124,10 +140,10 @@ def parse_disk_source(path, filename):
             workbook = load_workbook(path, read_only=True, data_only=True, keep_links=False)
             rows = iter(workbook.active.iter_rows(values_only=True))
         columns = observation_column_indexes(next(rows, []))
-        last_column = max(columns.values())
+        last_column = max(value for name, value in columns.items() if name != "qc_status")
         periods, stations, elements = set(), set(), set()
         valid = invalid = 0; batch = []
-        for row in rows:
+        for row_number, row in enumerate(rows, start=2):
             if not any(value is not None and str(value).strip() for value in row): continue
             if len(row) <= last_column: invalid += 1; continue
             code, element = normalized_code(row[columns["station_id"]]), normalized_code(row[columns["element_id"]])
@@ -140,8 +156,10 @@ def parse_disk_source(path, filename):
             if len(stations) > 500 or len(elements) > 2000:
                 raise ValueError("Upload at most 500 station codes and 2,000 element codes at a time")
             value = present_value(row[columns["value"]]); day = stamp.date().isoformat(); valid += 1
-            batch.extend([(0, code, element, day, stamp.hour * 60 + stamp.minute, value),
-                          (1, code, element, day, stamp.hour, value)])
+            try: status = normalize_qc(row[columns["qc_status"]] if "qc_status" in columns and columns["qc_status"] < len(row) else None)
+            except ValueError as exc: raise ValueError(f"Row {row_number}: {exc}") from exc
+            batch.extend([(0, code, element, day, stamp.hour * 60 + stamp.minute, value, status),
+                          (1, code, element, day, stamp.hour, value, status)])
             if len(batch) >= 10000:
                 store.insert(batch); batch.clear()
                 if shutil.disk_usage(path.parent).free < 128 * 1024**2:
@@ -150,6 +168,7 @@ def parse_disk_source(path, filename):
         if not periods: raise ValueError("No valid dated observations were found")
         counts = dict(store.connection.execute("SELECT kind,COUNT(*) FROM observations GROUP BY kind"))
         return dict(observations=ObservationLookup(store, 1), minute_observations=ObservationLookup(store, 0),
+            qc_observations=QCLookup(store, 1), qc_minute_observations=QCLookup(store, 0), qc_daily=QCLookup(store, 0),
             daily=DailyLookup(store), periods=sorted(periods), station_codes=stations, element_codes=elements,
             row_count=valid, invalid_rows=invalid, duplicate_rows=valid-counts.get(1, 0),
             minute_duplicate_rows=valid-counts.get(0, 0), close=store.close)

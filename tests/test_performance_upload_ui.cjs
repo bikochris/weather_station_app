@@ -28,7 +28,7 @@ async function run() {
         browser = await chromium.launch({channel: "chrome", headless: true});
         const page = await browser.newPage({viewport: {width: 1440, height: 1000}});
         const errors = [], writes = [], filters = [], downloads = [], downloadQueries = [];
-        let role = "Admin", uploadError = false, conflict = false, uploaded = false, configGets = 0, networkFailure = false;
+        let role = "Admin", uploadError = false, conflict = false, uploaded = false, configGets = 0, networkFailure = false, qcSupported = true, legacyName = false, zeroReadings = false;
         const stations = [{station_id: 1, station_code: "TEST1", station_name: "Central station", district: "North"}, {station_id: 2, station_code: "TEST2", station_name: "Riverside station", district: "South"}];
         let config = {version: 4, catalog_schema_version: 6, parameters: [
             {element_id: "TEMP", name: "Temperature", cadence: "daily", hours: [], enabled: true, station_codes: [], zero_parent: null, schedule_mode: "times", times: ["08:00"]},
@@ -43,7 +43,7 @@ async function run() {
             if (pathname === "/stations") return route.fulfill({json: stations});
             if (pathname === "/performance-upload/filter-options") return route.fulfill({json:{report_filter_schema_version:1,station_categories:["Principal Station","Rainfall Station"],station_statuses:["Operational","Under maintenance","Suspended","Closed"],elements:[{element_id:"TEMP",element_name:"Temperature"},{element_id:"CLOUD",element_name:"Cloud amount"}]}});
             if (pathname === "/performance-upload/config") {
-                if (request.method() === "GET") { configGets++; return route.fulfill({json: config}); }
+                if (request.method() === "GET") { configGets++; return route.fulfill({json: {...config, observation_qc_schema_version: qcSupported ? 1 : undefined}}); }
                 writes.push({body: request.postDataJSON(), reason: decodeURIComponent(request.headers()["x-edit-reason"])});
                 if (conflict) return route.fulfill({status: 409, json: {detail: "Configuration version has changed."}});
                 config = {...request.postDataJSON(), version: config.version + 1}; return route.fulfill({json: config});
@@ -58,7 +58,9 @@ async function run() {
                         summary:{average:empty ? null : 40,stations:empty ? 0 : 1,months:empty ? 0 : 1,records:empty ? 0 : 1}
                     }});
                 }
-                const items = uploaded ? stations.map((s, index) => ({...s, run_id: 7, report_month: index ? "2026-10" : "2026-07", daily_expected: 30, daily_available: index ? 30 : 15, daily_missing: index ? 0 : 15, hourly_expected: 120, hourly_available: index ? 60 : 120, hourly_missing: index ? 60 : 0, daily_percent: index ? 100 : 50, hourly_percent: index ? 50 : 100, overall_percent: index ? 60 : 90, created_at: "2026-10-14T12:00:00"})) : [];
+                const items = uploaded ? stations.map((s, index) => ({...s, run_id: 7, report_month: index ? "2026-10" : "2026-07", daily_expected: 30, daily_available: index ? 30 : 15, daily_missing: index ? 0 : 15, hourly_expected: 120, hourly_available: index ? 60 : 120, hourly_missing: index ? 60 : 0, daily_percent: index ? 100 : 50, hourly_percent: index ? 50 : 100, overall_percent: index ? 60 : 90, qc_none: index ? 15 : 3, qc_failed: index ? 15 : 12, qc_passed: index ? 60 : 120, created_at: "2026-10-14T12:00:00"})) : [];
+                if (zeroReadings && items.length) Object.assign(items[1], {daily_available:0, hourly_available:0, overall_percent:0, qc_none:0, qc_failed:0, qc_passed:0});
+                if (legacyName && items.length) items.push({...items[0], station_name: 'CENTRAL STATION', report_month: '2026-08', qc_none: 135, qc_failed: 0, qc_passed: 0});
                 return route.fulfill({json: {items,
                     element_summary: uploaded ? [{element_id:"TEMP", element_name:"Catalog temperature", expected:100, available:75, missing:25, score:75}] : [],
                     element_items: uploaded ? [{station_name:"Central station",report_month:"2026-07",element_id:"TEMP",element_name:"Catalog temperature",expected:100,available:75,missing:25,score:75}] : [],
@@ -90,13 +92,18 @@ async function run() {
         await reveal("uploadInput");
         let download = page.waitForEvent("download"); await page.click("#csvTemplate");
         const template = await download; assert.equal(template.suggestedFilename(), "observation-template.csv");
-        assert.equal(await fs.readFile(await template.path(), "utf8"), "station_id,element_id,element_name,date_time,value\r\n");
+        assert.equal(await fs.readFile(await template.path(), "utf8"), "station_id,element_id,element_name,date_time,value,qc_status\r\n");
         await page.setInputFiles("#observationFile", {name: "bad.txt", mimeType: "text/plain", buffer: Buffer.from("bad")});
         await page.click("#analyzeFile"); assert.match(await page.locator("#uploadMessage").innerText(), /CSV, XLSX, or XLSM/);
         await page.setInputFiles("#observationFile", {name: "large.csv", mimeType: "text/csv", buffer: Buffer.from("test")});
         await page.evaluate(() => Object.defineProperty(document.getElementById("observationFile").files[0], "size", {value: 2 * 1024 ** 3 + 1}));
         await page.click("#analyzeFile"); assert.match(await page.locator("#uploadMessage").innerText(), /2 GB/);
         const csv = Buffer.from("station_id,element_id,element_name,date_time,value\r\n1,TEMP,Temperature,2026-10-01,20\r\n");
+        qcSupported = false;
+        await page.setInputFiles('#observationFile', {name: 'qc.csv', mimeType: 'text/csv', buffer: csv});
+        await page.click('#analyzeFile'); await page.waitForFunction(() => document.getElementById('uploadMessage').textContent.includes('would ignore QC labels'));
+        assert.equal(writes.length, 0);
+        qcSupported = true;
         networkFailure = true;
         await page.setInputFiles("#observationFile", {name: "interrupted.csv", mimeType: "text/csv", buffer: csv});
         await page.click("#analyzeFile");
@@ -114,9 +121,41 @@ async function run() {
         assert.match(await page.locator("#elementScoreRows").innerText(), /Catalog temperature.*75%/s);
         assert.match(await page.locator("#elementDetailRows").innerText(), /Central station.*Catalog temperature/s);
         assert.equal(await page.locator("#uploadStationChart .horizontal-bar-row").count(), 2);
+        const firstBar = page.locator('#uploadStationChart .horizontal-bar-row').first();
+        assert.equal(await firstBar.locator('.upload-percentage-row').count(), 4);
+        assert.match(await firstBar.innerText(), /Available.*90%.*Passed.*88.89%.*None.*2.22%.*Failed.*8.89%/s);
+        const groupedWidths = await firstBar.locator('.upload-percentage-fill').evaluateAll(segments => segments.map(segment => parseFloat(segment.style.width)));
+        assert.ok(Math.abs(groupedWidths[2] - 2.222222) < 0.001);
+        assert.equal(groupedWidths[0], 90);
+        assert.match(await firstBar.locator('.upload-percentage-row').first().getAttribute('aria-label'), /expected readings/);
+        zeroReadings = true;
+        await reveal('resultFilters');
+        await page.locator('#resultFilters button[type="submit"]').click();
+        const zeroBar = page.locator('#uploadStationChart .horizontal-bar-row').last();
+        await page.waitForFunction(() => document.querySelector('#uploadStationChart .horizontal-bar-row:last-child .upload-percentage-value')?.textContent === '0%');
+        assert.deepEqual(await zeroBar.locator('.upload-percentage-value').allTextContents(), ['0%', '-', '-', '-']);
+        zeroReadings = false;
+        await page.locator('#resultFilters button[type="submit"]').click();
+        await page.waitForFunction(() => document.querySelector('#uploadStationChart .horizontal-bar-row:last-child .upload-percentage-value')?.textContent === '60%');
+        await page.selectOption('#percentageView', 'stacked');
+        assert.match(await firstBar.innerText(), /Available 90%.*Passed 88.89%.*None 2.22%.*Failed 8.89%/s);
+        const widths = await firstBar.locator('.upload-qc-segment').evaluateAll(segments => segments.map(segment => parseFloat(segment.style.width)));
+        assert.ok(Math.abs(widths.reduce((sum, width) => sum + width, 0) - 100) < 0.001);
+        assert.equal(await firstBar.locator('.upload-qc-track').count(), 1);
         await reveal("chartPeriod");
         await page.selectOption("#chartPeriod", "quarter"); assert.match(await page.locator("#uploadPeriodChart").innerText(), /FY 2026\/2027 Q1.*90%.*Q2.*60%/s);
         await page.selectOption("#chartPeriod", "year"); assert.match(await page.locator("#uploadPeriodChart").innerText(), /75%/);
+        assert.match(await page.locator('#uploadPeriodChart').innerText(), /Available 75%.*Passed 80%.*None 8%.*Failed 12%/s);
+        legacyName = true;
+        await page.locator('#resultFilters button[type="submit"]').click();
+        await page.waitForFunction(() => document.querySelectorAll('#uploadResultRows tr').length === 3);
+        assert.equal(await page.locator('#uploadStationChart .horizontal-bar-row').count(), 2);
+        const harmonized = page.locator('#uploadStationChart .horizontal-bar-row').filter({hasText: 'TEST1 - Central station'});
+        assert.match(await harmonized.innerText(), /Available 90%.*Passed 44.44%.*None 51.11%.*Failed 4.44%/s);
+        assert.doesNotMatch(await page.locator('#uploadResultRows').innerText(), /CENTRAL STATION/);
+        legacyName = false;
+        await page.locator('#resultFilters button[type="submit"]').click();
+        await page.waitForFunction(() => document.querySelectorAll('#uploadResultRows tr').length === 2);
         await reveal("uploadRegister");
         await page.locator("#uploadResults th").nth(12).click(); await page.waitForFunction(() => document.querySelector("#uploadResultRows td").textContent === "TEST2");
         await page.locator("#uploadResults th").nth(12).press("Enter"); await page.waitForFunction(() => document.querySelector("#uploadResultRows td").textContent === "TEST1");
@@ -136,7 +175,7 @@ async function run() {
         assert.equal(await page.locator("#uploadAverageLabel").textContent(), "Selected element score");
         assert.match(await page.locator("#uploadStationChart").innerText(), /40%/);
         assert.match(await page.locator("#uploadPeriodChart").innerText(), /40%/);
-        assert.equal(await page.locator("#uploadResultRows tr td").nth(12).innerText(), "40%");
+        assert.match(await page.locator("#uploadResultRows tr td").nth(12).innerText(), /Available 40%/);
         await page.evaluate(() => {
             document.getElementById("uploadFrom").value = "2027-01";
             document.getElementById("uploadTo").value = "2027-01";
@@ -214,6 +253,19 @@ async function run() {
         await page.selectOption("#configStation", "TEST1");
         for (const width of [1440, 768, 390, 320]) {
             await page.setViewportSize({width, height: 1000});
+            for (const view of ['grouped', 'columns', 'dots', 'rings', 'heatmap', 'numbers', 'stacked']) {
+                await page.selectOption('#percentageView', view);
+                const chart = page.locator('#uploadStationChart');
+                if (view !== 'stacked') {
+                    assert.deepEqual(await chart.locator('.horizontal-bar-row').first().locator('.upload-percentage-name').allTextContents(), ['Available', 'Passed', 'None', 'Failed']);
+                    assert.deepEqual(await chart.locator('.horizontal-bar-row').first().locator('.upload-percentage-value').allTextContents(), ['90%', '88.89%', '2.22%', '8.89%']);
+                    assert.equal(await chart.locator('.upload-percentage-row').evaluateAll(rows => rows.some(row => row.scrollWidth > row.clientWidth + 1)), false, `${view} fits at ${width}px`);
+                }
+                if ([1440, 390].includes(width)) await chart.screenshot({path:path.join(os.tmpdir(), `performance-percentages-${view}-${width}.png`), style: '.app-header { visibility: hidden !important; }'});
+            }
+            await page.selectOption('#percentageView', 'grouped');
+            const clipped = await page.locator('.upload-percentage-row').evaluateAll(rows => rows.some(row => row.scrollWidth > row.clientWidth + 1));
+            assert.equal(clipped, false, `Percentage labels fit at ${width}px`);
             await page.screenshot({path: path.join(os.tmpdir(), `performance-upload-${width}.png`), fullPage: true});
             if ([1440, 390].includes(width)) await page.locator("section.data-graphs").screenshot({path: path.join(os.tmpdir(), `performance-upload-charts-${width}.png`)});
             const overflow = await page.evaluate(() => [...document.querySelectorAll("body *")].filter(n => { const r = n.getBoundingClientRect(); return r.width && r.right > innerWidth + 1 && !n.closest(".table-wrap, .multi-filter-menu, nav"); }).map(n => `${n.tagName}.${n.className}#${n.id}: ${Math.round(n.getBoundingClientRect().right)}`).slice(0, 15));

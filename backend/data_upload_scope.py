@@ -1,5 +1,6 @@
 """Registry-based report coverage and consistent result/download filtering."""
 from copy import deepcopy
+from .observation_qc import STATUSES, qc_fields
 
 STATION_STATUSES = ["Operational", "Under maintenance", "Suspended", "Closed"]
 DEFAULT_STATION_STATUSES = STATION_STATUSES[:3]
@@ -36,6 +37,10 @@ def recompute_totals(rows, elements):
         cadence = element.get("cadence", "hourly")
         for source, target in [("expected", "expected"), ("available", "available")]:
             totals[f"{cadence}_{target}"] += element[source]
+        qc = qc_fields(element["expected"], element["available"], element)
+        for status in STATUSES:
+            key = f"qc_{status}"
+            totals[key] = totals.get(key, 0) + qc[key]
     selected = []
     for row in rows:
         totals = groups.get((row["station_code"], row["report_month"]))
@@ -46,6 +51,7 @@ def recompute_totals(rows, elements):
             item[f"{cadence}_missing"] = expected - available
             item[f"{cadence}_percent"] = round(100 * available / expected, 2) if expected else 0
         expected = item["daily_expected"] + item["hourly_expected"]
+        item.update(qc_fields(expected, item["daily_available"] + item["hourly_available"], totals))
         item["overall_percent"] = round(100 * (item["daily_available"] + item["hourly_available"]) / expected, 2) if expected else None
         selected.append(item)
     return selected
@@ -65,11 +71,12 @@ def filter_report(result, registry, *, station_code=None, district=None, station
         period = row.get("report_month", "")
         if month_from and period < month_from: continue
         if month_to and period > month_to: continue
-        rows.append(row)
+        rows.append(dict(row, **qc_fields(row.get("daily_expected", 0) + row.get("hourly_expected", 0), row.get("daily_available", 0) + row.get("hourly_available", 0), row)))
     keys = {(row["station_code"], row.get("report_month")) for row in rows}
     elements = [row for row in result.get("element_results", [])
                 if (row["station_code"], row.get("report_month")) in keys
                 and (not selected_ids or row.get("element_id") in selected_ids)]
+    elements = [dict(row, **qc_fields(row.get("expected", 0), row.get("available", 0), row)) for row in elements]
     if selected_ids:
         rows = recompute_totals(rows, elements)
         keys = {(row["station_code"], row["report_month"]) for row in rows}

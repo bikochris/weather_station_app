@@ -10362,6 +10362,9 @@ def edit_agenda_item(agenda_id: int, item: AgendaItem, user=Depends(require_pass
 from .data_upload_api import install_upload_routes
 install_upload_routes(app)
 
+from .observation_analysis_api import install_analysis_routes
+install_analysis_routes(app)
+
 
 @app.delete("/documents/{record_id}", status_code=204)
 @app.delete("/agenda/{record_id}", status_code=204)

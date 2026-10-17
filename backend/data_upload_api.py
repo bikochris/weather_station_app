@@ -10,6 +10,7 @@ from fastapi.concurrency import run_in_threadpool
 from .instrument_availability import load_inventory, assign_category_defaults, catalog_configuration
 from .data_upload_engine import (UploadConfiguration, parse_source, analyze_source, report_pdf,
     report_docx, report_details_zip, csv_bytes, SUMMARY_COLUMNS, ELEMENT_COLUMNS)
+from .observation_qc import STATUSES, qc_fields, QC_COLUMNS
 from .observation_storage import (MAX_UPLOAD_BYTES, MAX_EXCEL_BYTES, receive_observation_file,
     store_result_details, load_result_details)
 from .data_upload_scope import (STATION_STATUSES, registry_configuration, report_profiles,
@@ -68,6 +69,8 @@ def install_upload_routes(app):
             config = registry_configuration(config, allowed)
             config = catalog_configuration(config, load_inventory(cursor, allowed))
             config["observation_upload_max_bytes"] = MAX_UPLOAD_BYTES
+            config["observation_qc_schema_version"] = 1
+            config["observation_qc_statuses"] = ["none", "passed", "failed"]
             config["observation_excel_max_bytes"] = MAX_EXCEL_BYTES
             return config
         finally:
@@ -104,6 +107,8 @@ def install_upload_routes(app):
             before = json.loads(old["configuration"])
             if "schedule_defaults_version" in before:
                 new["schedule_defaults_version"] = before["schedule_defaults_version"]
+            if "manual_station_exclusions_version" in before:
+                new["manual_station_exclusions_version"] = before["manual_station_exclusions_version"]
             new["reserved_cloud_version"] = 1
             if "downtime_policy_version" in before:
                 new["downtime_policy_version"] = before["downtime_policy_version"]
@@ -157,7 +162,7 @@ def install_upload_routes(app):
             if source_metadata: config["source_file"] = source_metadata
             try: result = analyze_source(parsed, config, inventory=inventory)
             except ValueError as exc: raise HTTPException(status_code=422, detail=str(exc)) from exc
-            result.update(config_version=saved["version"], source_filename=filename)
+            result.update(config_version=saved["version"], source_filename=filename, qc_schema_version=1, qc_percentage_basis="available")
             for row in result["results"]:
                 station = allowed[row["station_code"]]
                 row.update(station_category=station.get("station_category"), station_status=station.get("status", "Operational"), district=station.get("district"))
@@ -236,6 +241,7 @@ def install_upload_routes(app):
             cursor.execute("SELECT r.*,u.created_at FROM data_upload_results r JOIN data_upload_runs u ON u.run_id=r.run_id JOIN stations s ON s.station_id=r.station_id WHERE "+" AND ".join(conditions)+" ORDER BY r.report_month DESC,r.overall_percent DESC,r.station_name", tuple(params))
             items = cursor.fetchall()
             for item in items:
+                item["station_name"] = allowed[item["station_code"]]["station_name"]
                 item["report_month"] = str(item["report_month"])[:7]
                 for key in ["daily_percent","hourly_percent","overall_percent"]: item[key] = float(item[key])
                 if item["daily_expected"] + item["hourly_expected"] == 0: item["overall_percent"] = None
@@ -251,8 +257,15 @@ def install_upload_routes(app):
                 for run in cursor.fetchall():
                     snapshot = json.loads(run["config_snapshot"]) if run.get("config_snapshot") else {}
                     data = report_elements(cursor, run["run_id"], json.loads(run["result_data"]), snapshot)
+                    saved_rows = {(row["station_code"], row["report_month"]): row for row in data.get("results", [])}
+                    for item in items:
+                        if item["run_id"] == run["run_id"]:
+                            item.update(qc_fields(item["daily_expected"] + item["hourly_expected"],
+                                item["daily_available"] + item["hourly_available"], saved_rows.get((item["station_code"], item["report_month"]))))
                     for element in data.get("element_results", []):
                         if (run["run_id"], element["station_code"], element["report_month"]) in selected_keys and (not selected_elements or element["element_id"] in selected_elements):
+                            element = dict(element, station_name=allowed[element["station_code"]]["station_name"])
+                            element.update(qc_fields(element["expected"], element["available"], element))
                             element_items.append(element)
             if selected_elements:
                 items = recompute_totals(items, element_items)
@@ -269,8 +282,15 @@ def install_upload_routes(app):
                 group = groups.setdefault(key, dict(element_id=key[0], element_name=key[1], expected=0, available=0, missing=0))
                 for metric in ["expected", "available", "missing"]:
                     group[metric] += element[metric]
+                for status in STATUSES:
+                    key = f"qc_{status}"
+                    group[key] = group.get(key, 0) + element[key]
             for group in groups.values():
                 group["score"] = round(100*group["available"]/group["expected"], 2) if group["expected"] else None
+                group.update(qc_fields(group["expected"], group["available"], group))
+            expected = sum(item["daily_expected"] + item["hourly_expected"] for item in items)
+            available = sum(item["daily_available"] + item["hourly_available"] for item in items)
+            summary.update(qc_fields(expected, available, {f"qc_{status}": sum(item.get(f"qc_{status}", 0) for item in items) for status in STATUSES}))
             cursor.execute("""SELECT DISTINCT u.run_id,u.filename,u.config_version,u.created_by_username,u.created_at,u.result_data
                 FROM data_upload_runs u JOIN data_upload_results r ON r.run_id=u.run_id
                 WHERE r.station_id IN ("""+",".join(["%s"]*len(ids))+") ORDER BY u.run_id DESC LIMIT 100", tuple(ids))
@@ -314,9 +334,9 @@ def install_upload_routes(app):
             if not selected: raise HTTPException(status_code=404, detail="No report results match the selected filters")
             if restricted: result["warnings"] = ["Report restricted to stations accessible to this account."]
             filtered = any([station_code, district, station_category, station_status, element_id, month_from, month_to])
-            if format == "pdf": content, mime, ext = (report_pdf(result) if restricted or filtered else run["pdf_data"]), "application/pdf", "pdf"
+            if format == "pdf": content, mime, ext = (report_pdf(result) if restricted or filtered or summary.get("qc_percentage_basis") != "available" else run["pdf_data"]), "application/pdf", "pdf"
             elif format == "csv":
-                content = csv_bytes(selected, SUMMARY_COLUMNS) + b"\r\n" + csv_bytes(result["element_results"], ELEMENT_COLUMNS).decode("utf-8-sig").encode("utf-8")
+                content = csv_bytes(selected, [*SUMMARY_COLUMNS, *QC_COLUMNS]) + b"\r\n" + csv_bytes(result["element_results"], [*ELEMENT_COLUMNS, *QC_COLUMNS]).decode("utf-8-sig").encode("utf-8")
                 mime, ext = "text/csv; charset=utf-8", "csv"
             elif format == "details": content, mime, ext = report_details_zip(result), "application/zip", "zip"
             else:

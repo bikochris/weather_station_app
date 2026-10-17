@@ -230,6 +230,8 @@ async function requireSession() {
         pages?.add("ideas.html");
         pages?.add("station-performance.html");
         pages?.add("station-performance-upload.html");
+        pages?.add("manual-automatic.html");
+        pages?.add("rainfall-wind.html");
     });
     const currentPage = window.location.pathname.split("/").pop() || "index.html";
     if (ADMIN_ONLY_PAGES.has(currentPage) && !isITUser()) {
@@ -347,7 +349,7 @@ function initializeCollapsibleFields() {
         "instruments.html": "package-search", "station-instruments.html": "package-search",
         "instrument-status-summary.html": "gauge", "suspected-data.html": "shield-check",
         "data-counts.html": "chart-no-axes-combined", "data-requests.html": "inbox",
-        "reporting-status.html": "chart-no-axes-combined", "station-performance.html": "gauge", "station-performance-upload.html": "gauge", "search.html": "search"
+        "reporting-status.html": "chart-no-axes-combined", "station-performance.html": "gauge", "station-performance-upload.html": "gauge", "manual-automatic.html": "chart-no-axes-combined", "rainfall-wind.html": "gauge", "search.html": "search"
     };
     const selector = "form, .filter-bar, .table-tools, .table-toolbar, .import-tools, .deleted-filter-grid, .section-heading > .field, .section-heading > .action-group:has(input)";
     function sectionDescription(label, target) {
@@ -577,6 +579,8 @@ function initializeShell() {
                 ["data-counts.html", "Data counts"],
                 ["station-performance.html", "Station performance"],
                 ["station-performance-upload.html", "Performance by data upload"],
+                ["manual-automatic.html", "Manual vs Automatic Weather Stations"],
+                ["rainfall-wind.html", "Rainfall Wind Monitoring"],
                 ["instrument-status-summary.html", "Instrument summary"],
                 ["maintenance-summary.html", "Maintenance summary"],
                 ["station-visitors.html", "Station visitors"],
@@ -613,6 +617,8 @@ function initializeShell() {
 
 
 const PAGE_HELP = {
+    "manual-automatic.html": ["Manual vs Automatic Weather Stations", "Compare stations sharing latitude, longitude and elevation. Start and end days are both included. Hourly comparisons match manual and automatic readings at exactly minute 00. Daily temperature extrema and rainfall totals use all available numeric automatic readings from 08:00 to the next 08:00, even when readings are missing. No automatic QC rejection, tolerance classification or normalization is applied; unusual numeric measurements remain visible for review. Reading counts show how much data contributed. Element choices include comparisons with saved observations at both stations in the selected pairs. Wind roses match simultaneous hourly readings and display station names. Charts use the displayed minimum/maximum values. Click a chart or use Enter and arrow keys to inspect values. Choose hourly, daily, weekly or monthly periods and line, column, area or scatter charts. New uploads replace matching numeric station/element/timestamp readings without altering historical performance reports. CSV uses applied filters."],
+    "rainfall-wind.html": ["Rainfall Wind Monitoring", "Review rainfall records and daily totals from all available numeric observations. Daily rainfall uses 08:00 to the next 08:00; manual element 5 is a daily total labelled by the starting day. Missing readings do not suppress available totals. Wind uses exact-hour manual 196 and automatic 1092 readings in their supplied units; these may be averages, not gusts. Both selected days are included. Geographic maps automatically include all stations your account can access for those dates, independently of the table's station filter. A manual station is preferred at a shared site; an automatic station is not substituted when that manual station has no readings. Gray dots mean no reading, not zero. Filled bands are IDW estimates within station coverage, not observed district totals. At least three non-collinear locations with readings are needed for an estimated surface. Station/time heatmaps remain available below each geographic map. Choose hourly, daily, weekly or monthly series and export filtered CSV. Original files and historical performance reports remain unchanged."],
     "ideas.html": ["Ideas", "Record a title, idea date, description, expected benefit, and next steps. Track proposals through review, acceptance, and implementation. Everyone can view and add ideas; only the creator or Admin can edit or delete. Search, combine filters, sort columns, export the register with optional edit history, or expand a row to review changes."],
     "documents.html": ["Documents", "Upload a file with its title, document date, and description. Search and filter the library, download original files, or export the register. You can edit or delete your own uploads; Admin can manage every document. Replacement files increase the document version. Open a row to see its edit history."],
     "agenda.html": ["Agenda", "Record an agenda item, due date, priority, status, progress, and tracking notes. Overdue items are red and items due within seven days are amber. Update your own items as work progresses; Admin can manage every item. Filter, sort, export, or open a row to view the reasons and details of earlier edits."],

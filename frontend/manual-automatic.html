@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manual / Automatic Comparison | Station Operations</title>
+<link rel="stylesheet" href="css/app.css?v=20261016"><link rel="stylesheet" href="css/observation-analysis.css?v=20261016available-data">
+</head>
+<body class="observation-analysis-page" data-analysis="comparison">
+<header class="app-header"><div class="header-inner"><div><p class="eyebrow">Operations</p><h1>Station Operations</h1></div><nav aria-label="Primary navigation"><a href="index.html">Home</a><a href="station-instruments.html">Station instruments</a><a class="active" aria-current="page" href="manual-automatic.html">Manual / automatic</a><a href="rainfall-wind.html">Rainfall / wind</a></nav><div class="user-menu"><span><strong data-user-name></strong><small data-user-department></small></span><button class="header-button" type="button" data-logout>Sign out</button></div></div></header>
+<main class="dashboard-layout"><div class="dashboard-content">
+<section class="data-graphs analysis-overview"><div class="section-heading"><div><p class="eyebrow">Observation analysis</p><h2>Manual / automatic comparison</h2></div><a class="analysis-upload" href="station-performance-upload.html#uploadInput">Upload observations</a></div>
+<details class="page-field-panel" open><summary>Comparison filters</summary>
+<form id="analysisFilters" class="analysis-filter-grid" aria-label="Comparison filters">
+<div class="field"><label for="pairFilter">Station / site pairs</label><select id="pairFilter"><option value="">All pairs</option></select></div>
+<div class="field"><label for="comparisonFilter">Element pairs</label><select id="comparisonFilter"><option value="">All element pairs</option></select></div>
+<div class="field"><label for="analysisStart">Start day</label><input id="analysisStart" type="date"></div>
+<div class="field"><label for="analysisEnd">End day (included)</label><input id="analysisEnd" type="date"></div>
+<div class="field"><label for="analysisPeriod">Chart period</label><select id="analysisPeriod"><option value="hour">Hourly (exact :00 readings)</option><option value="day">Daily</option><option value="week">Weekly</option><option value="month">Monthly</option></select></div>
+<div class="form-actions"><button id="applyAnalysis" type="submit" disabled>Apply</button><button id="resetAnalysis" type="button" class="secondary-button">Reset</button><button id="retryOptions" type="button" class="secondary-button" hidden>Retry options</button></div>
+</form></details>
+<p id="analysisMessage" class="message" role="status" aria-live="polite">Loading observation options...</p><ul id="analysisWarnings" class="analysis-warnings" hidden aria-label="Analysis warnings"></ul>
+<p id="analysisScope" class="analysis-scope">No analysis loaded.</p>
+</section>
+<section class="data-graphs"><div class="section-heading"><h2>Paired observations</h2></div><details class="analysis-chart-panel" open><summary>Observation series</summary><div class="analysis-legend"><span class="legend-manual">Manual</span><span class="legend-automatic">Automatic</span></div><div class="analysis-canvas"><canvas id="comparisonChart" role="img" aria-label="Manual and automatic observations over time"></canvas></div></details></section>
+<section class="data-graphs"><div class="section-heading"><h2>Wind direction</h2></div><details class="analysis-chart-panel" open><summary>Paired wind roses</summary><div class="analysis-rose-grid"><figure><figcaption>Manual</figcaption><div class="analysis-rose"><canvas id="manualRose" role="img" aria-label="Manual wind direction distribution"></canvas></div><p id="manualRoseCaption" class="analysis-scope">No wind direction data.</p></figure><figure><figcaption>Automatic</figcaption><div class="analysis-rose"><canvas id="automaticRose" role="img" aria-label="Automatic wind direction distribution"></canvas></div><p id="automaticRoseCaption" class="analysis-scope">No wind direction data.</p></figure></div></details></section>
+<section><div class="section-heading"><h2>Comparison records</h2><button id="analysisCsv" type="button" class="secondary-button" disabled>Download filtered CSV</button></div><div class="table-wrap"><table id="comparisonTable"><caption>Available manual and automatic measurements</caption><thead><tr><th scope="col">Site</th><th scope="col">Manual station</th><th scope="col">Automatic station</th><th scope="col">Parameter</th><th scope="col">Time</th><th scope="col">Manual</th><th scope="col">Automatic</th><th scope="col">Absolute difference</th></tr></thead><tbody id="comparisonRows"></tbody></table></div></section>
+<section><div class="section-heading"><h2>Observation upload history</h2></div><div class="table-wrap"><table><caption>Available observation source files</caption><thead><tr><th scope="col">Run ID</th><th scope="col">Source file</th><th scope="col">Uploaded</th></tr></thead><tbody id="analysisRunRows"></tbody></table></div></section>
+</div><aside class="dashboard-sidebar"><p class="eyebrow">Applied filters</p><h2>Comparison statistics</h2><div class="metric-grid"><div class="metric-item"><span>Paired</span><strong data-metric="paired">-</strong></div><div class="metric-item"><span>Missing</span><strong data-metric="missing">-</strong></div><div class="metric-item"><span>Regression R&#178;</span><strong data-metric="r_squared">-</strong></div></div></aside></main>
+<script src="js/config.js"></script><script src="js/api.js?v=20261017station-labels"></script><script src="js/observation-analysis.js?v=20261017regression-maps"></script>
+</body></html>

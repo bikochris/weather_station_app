@@ -1,0 +1,94 @@
+.observation-analysis-page .dashboard-content > *,
+.observation-analysis-page .field { min-width: 0; }
+.observation-analysis-page .analysis-overview { border-top: 3px solid #168175; }
+.observation-analysis-page .section-heading { flex-wrap: wrap; gap: 12px; }
+.observation-analysis-page .section-heading h2 { font-size: 20px; overflow-wrap: anywhere; }
+.observation-analysis-page .analysis-filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 16px 0; }
+.observation-analysis-page .analysis-filter-grid .form-actions { grid-column: 1 / -1; flex-wrap: wrap; }
+.observation-analysis-page .analysis-filter-grid input,
+.observation-analysis-page .analysis-filter-grid select { width: 100%; min-width: 0; }
+.observation-analysis-page .analysis-filter-grid .multi-filter { min-width: 0; width: 100%; }
+.observation-analysis-page .analysis-filter-grid .multi-filter summary { overflow-wrap: anywhere; }
+.observation-analysis-page .analysis-filter-grid .multi-filter-menu { max-width: min(400px, 80vw); }
+.observation-analysis-page .analysis-filter-grid .multi-filter-choices label { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: center; justify-content: start; gap: 8px; text-align: left; overflow-wrap: anywhere; }
+.observation-analysis-page .analysis-filter-grid .multi-filter-choices input[type="checkbox"] { width: 16px; height: 16px; min-height: 16px; min-width: 16px; padding: 0; margin: 0; }
+.observation-analysis-page .analysis-scope { color: #526575; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; margin: 12px 0 0; }
+.observation-analysis-page .analysis-warnings { padding: 12px 16px 12px 32px; border-left: 3px solid #a66b09; background: #fff8e8; color: #654600; line-height: 1.6; overflow-wrap: anywhere; }
+.observation-analysis-page .analysis-upload { color: #17667c; font-weight: bold; font-size: 14px; }
+.observation-analysis-page .analysis-chart-panel > summary { cursor: pointer; padding: 12px 0; font-weight: bold; font-size: 14px; }
+.observation-analysis-page .analysis-canvas { width: 100%; height: 300px; position: relative; }
+.observation-analysis-page canvas { display: block; width: 100%; height: 100%; }
+.observation-analysis-page .analysis-canvas canvas { cursor: crosshair; }
+.observation-analysis-page .analysis-point-value { position: absolute; z-index: 2; top: 8px; left: 12px; right: 12px; max-height: 150px; overflow: auto; padding: 12px 36px 12px 12px; border: 1px solid #afc0cd; background: #fff; color: #17212b; font-size: 13px; box-shadow: 0 2px 8px #0002; overflow-wrap: anywhere; }
+.observation-analysis-page .analysis-point-value p { margin: 6px 0 0; }
+.observation-analysis-page .analysis-point-value button { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; padding: 0; background: transparent; color: #17212b; border: 0; }
+.observation-analysis-page .analysis-series-grid,
+.observation-analysis-page .analysis-rose-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.observation-analysis-page figure { margin: 0; min-width: 0; }
+.observation-analysis-page figcaption { font-weight: bold; font-size: 14px; margin: 12px 0; }
+.observation-analysis-page .analysis-rose { width: 100%; max-width: 340px; aspect-ratio: 1; margin: auto; }
+.observation-analysis-page .analysis-series-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 12px 0; }
+.observation-analysis-page .analysis-track-legend { max-height: 180px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 8px 16px; padding: 8px 4px; font-size: 13px; }
+.observation-analysis-page .analysis-track-legend label { display: flex; align-items: baseline; gap: 8px; overflow-wrap: anywhere; min-width: 0; cursor: pointer; }
+.observation-analysis-page .analysis-track-legend input { flex: 0 0 16px; width: 16px; height: 16px; min-height: 16px; padding: 0; margin: 0; }
+.observation-analysis-page .analysis-track-name { min-width: 0; overflow-wrap: anywhere; }
+.observation-analysis-page .analysis-chart-availability { border-left: 3px solid #a66b09; background: #fff8e8; color: #654600; padding: 8px 12px; font-size: 13px; overflow-wrap: anywhere; }
+.observation-analysis-page .analysis-chart-availability p { margin: 4px 0; }
+.observation-analysis-page .analysis-track-swatch { width: 20px; flex: 0 0 20px; border-top: 3px solid; align-self: center; }
+.observation-analysis-page .analysis-grouped-charts figure + figure { border-top: 1px solid #d6e1e6; margin-top: 20px; padding-top: 8px; }
+.observation-analysis-page[data-analysis="comparison"] .analysis-grouped-charts figure { background: #ffffff; border: 1px solid #d9d9d9; padding: 12px; }
+.observation-analysis-page[data-analysis="comparison"] .analysis-grouped-charts figcaption { text-align: center; font-size: 18px; font-weight: 400; color: #595959; line-height: 1.4; overflow-wrap: anywhere; }
+.observation-analysis-page[data-analysis="comparison"] .analysis-track-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 20px; padding: 16px 0 4px; }
+.observation-analysis-page[data-analysis="comparison"] .analysis-track-legend label { max-width: 100%; }
+.observation-analysis-page .analysis-series-controls input,
+.observation-analysis-page .analysis-series-controls select { width: 100%; min-width: 0; }
+.observation-analysis-page .analysis-legend { display: flex; gap: 20px; flex-wrap: wrap; margin: 8px 0; font-size: 13px; }
+.observation-analysis-page .analysis-legend span::before { content: ""; display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 7px; background: #147d70; }
+.observation-analysis-page .analysis-legend .legend-automatic::before { background: #aa4168; }
+.observation-analysis-page .analysis-flag { background: #fff2d9; color: #754b00; }
+.observation-analysis-page .analysis-missing { color: #6b7280; }
+.observation-analysis-page caption { text-align: left; padding: 10px 0; color: #526575; font-size: 13px; }
+.observation-analysis-page td { font-variant-numeric: tabular-nums; }
+.observation-analysis-page .metric-item strong { overflow-wrap: anywhere; }
+.observation-analysis-page .heatmap-controls { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 12px 0; }
+.observation-analysis-page .heatmap-pager { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.observation-analysis-page .heatmap-pager button { width: 32px; height: 32px; min-height: 32px; padding: 0; }
+.observation-analysis-page .heatmap-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin: 12px 0; font-size: 13px; }
+.observation-analysis-page .heatmap-legend > span:first-child { margin-right: 8px; }
+.observation-analysis-page .heatmap-swatch { width: 22px; height: 14px; }
+.observation-analysis-page .heatmap-legend .heatmap-no-data { margin-left: 8px; padding: 3px 8px; }
+.observation-analysis-page .heatmap-scroll { overflow: auto; max-width: 100%; max-height: 650px; }
+.observation-analysis-page .heatmap-table { table-layout: fixed; width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 2px; }
+.observation-analysis-page .heatmap-table th { width: 90px; min-width: 90px; padding: 8px; font-size: 11px; white-space: normal; overflow-wrap: anywhere; text-transform: none; }
+.observation-analysis-page .heatmap-table tr > th:first-child { width: 180px; min-width: 180px; position: sticky; left: 0; z-index: 1; background: #f0f5f7; }
+.observation-analysis-page .heatmap-table td { padding: 0; text-align: center; border: 0; }
+.observation-analysis-page .heatmap-table td button { width: 100%; min-height: 36px; padding: 6px; border: 0; border-radius: 0; font-size: 12px; font-variant-numeric: tabular-nums; box-shadow: none; }
+.observation-analysis-page .heatmap-no-data { background: repeating-linear-gradient(135deg, #e5e7eb, #e5e7eb 3px, #f3f4f6 3px, #f3f4f6 6px); color: #526575; }
+.observation-analysis-page .weather-map-title { font-size: 18px; font-weight: 600; line-height: 1.5; margin: 12px 0; overflow-wrap: anywhere; }
+.observation-analysis-page .weather-map-toolbar { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.observation-analysis-page .weather-map-toolbar label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.observation-analysis-page .weather-map-toolbar select { max-width: 100%; min-height: 36px; }
+.observation-analysis-page .weather-geographic-map { height: 650px; width: 100%; background: #fff; border: 1px solid #b6c4c8; isolation: isolate; }
+.observation-analysis-page .weather-map-legend { display: flex; flex-wrap: wrap; gap: 12px 20px; padding: 12px 0; font-size: 13px; }
+.observation-analysis-page .weather-map-legend span { display: inline-flex; gap: 6px; align-items: center; }
+.observation-analysis-page .weather-map-legend i { width: 24px; height: 16px; border: 1px solid #455044; }
+.observation-analysis-page .weather-map-north { white-space: pre-line; text-align: center; font-size: 24px; line-height: 1.2; padding: 8px; color: #17212b; background: #ffffffd9; }
+.observation-analysis-page .weather-district-label { font-size: 11px; text-align: center; color: #182914; font-weight: 600; text-shadow: 0 0 3px white, 0 0 3px white; white-space: nowrap; }
+.observation-analysis-page .weather-station-marker { background: none; border: 0; }
+.observation-analysis-page .weather-station-dot { display: block; width: 12px; height: 12px; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px #273c34; }
+.observation-analysis-page .weather-geographic-map .leaflet-popup-content { max-width: 240px; overflow-wrap: anywhere; line-height: 1.6; }
+.observation-analysis-page :focus-visible { outline: 2px solid #168175; outline-offset: 3px; }
+@media (max-width: 1000px) {
+    .observation-analysis-page .analysis-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .observation-analysis-page .analysis-series-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+    .observation-analysis-page .weather-geographic-map { height: 470px; }
+    .observation-analysis-page .weather-district-label { display: none; }
+    .observation-analysis-page .analysis-filter-grid,
+    .observation-analysis-page .analysis-series-controls,
+    .observation-analysis-page .analysis-rose-grid { grid-template-columns: minmax(0, 1fr); }
+    .observation-analysis-page .user-menu { flex-wrap: wrap; max-width: 100%; }
+    .observation-analysis-page .user-menu > span { min-width: 0; overflow-wrap: anywhere; }
+    .observation-analysis-page .analysis-canvas { height: 260px; }
+}

@@ -91,7 +91,8 @@
             const cadence = field(grid, "Cadence", node("select")); options(cadence, [["daily", "Daily"], ["hourly", "Hourly"]]); cadence.value = p.cadence;
             cadence.onchange = () => {
                 countingGroup(p, cadence.value);
-                p.schedule_mode = "legacy"; p.times = [];
+                p.schedule_mode = p.cadence === "daily" ? "times" : "interval";
+                p.times = p.cadence === "daily" ? ["08:00"] : [];
                 if (p.cadence === "daily") {
                     p.hours = []; p.zero_parent = null;
                     config.parameters.forEach(other => { if (other.zero_parent === p.element_id) other.zero_parent = null; });
@@ -100,7 +101,7 @@
                 markDirty(); renderParameters(); renderStation();
             };
             const schedule = field(grid, "Observation schedule", node("select"));
-            options(schedule, [["none", "Not scheduled"], ["interval", "Regular interval"], ["times", "Fixed daily times"], ["legacy", "Legacy counting"]]);
+            options(schedule, [["none", "Not scheduled"], ["interval", "Regular interval"], ["times", "Fixed daily times"]]);
             schedule.value = p.schedule_mode || "legacy";
             schedule.onchange = () => {
                 p.schedule_mode = schedule.value;
@@ -145,7 +146,7 @@
             parent.value = p.zero_parent ?? "";
             parent.onchange = () => { p.zero_parent = parent.value || null; markDirty(); };
             }
-            if (!["times", "none"].includes(p.schedule_mode)) hours(grid, "Default hours", p.hours, value => p.hours = value);
+            if (p.schedule_mode === "interval" || p.schedule_mode === "legacy" && p.cadence === "hourly") hours(grid, "Default hours", p.hours, value => p.hours = value);
             const remove = button(grid, "Remove parameter", () => {
                 config.parameters.splice(index, 1);
                 config.parameters.forEach(other => { if (String(other.zero_parent) === String(p.element_id)) other.zero_parent = null; });
@@ -209,29 +210,91 @@
         } catch (error) { setMessage(el("configMessage"), error.message, "error"); }
         finally { loadingConfig = false; el("reloadConfig").disabled = false; }
     }
-    function chart(id, groups, chronological = false) {
+    function qcBar(expected, available, counts, includeTotal = true) {
+        const wrapper = node("div", null, "upload-qc-bar"), labels = node("div", null, "upload-qc-labels"), track = node("div", null, "upload-qc-track");
+        const failed = Number(counts.qc_failed || 0), passed = Number(counts.qc_passed || 0);
+        const none = Number(counts.qc_none ?? Math.max(0, available - failed - passed));
+        if (includeTotal) labels.append(node("strong", `Available ${percent(expected ? available * 100 / expected : null)}`, "upload-qc-total"));
+        for (const [status, value] of [["passed", passed], ["none", none], ["failed", failed]]) {
+            const score = available ? value * 100 / available : null;
+            const label = node("span", `${status[0].toUpperCase() + status.slice(1)} ${percent(score)}`, `qc-label-${status}`);
+            labels.append(label);
+            const segment = node("span", null, `upload-qc-segment qc-${status}`);
+            segment.style.width = `${Math.max(0, Math.min(100, score || 0))}%`;
+            segment.dataset.status = status; segment.dataset.count = String(value);
+            segment.title = `${status}: ${value} / ${available} available (${percent(score)})`;
+            track.append(segment);
+        }
+        track.setAttribute("role", "img"); track.setAttribute("aria-label", `QC shares of available readings: ${labels.textContent}; Available ${available} / ${expected} expected; Missing ${Math.max(0, expected - available)}`);
+        wrapper.append(labels, track); return wrapper;
+    }
+    function chart(id, groups, chronological = false, labels = new Map()) {
         const container = el(id); container.replaceChildren();
         const availability = values => {
             const expected = values.reduce((sum, item) => sum + Number(item.daily_expected) + Number(item.hourly_expected), 0);
             const available = values.reduce((sum, item) => sum + Number(item.daily_available) + Number(item.hourly_available), 0);
             return expected ? available * 100 / expected : 0;
         };
-        [...groups].sort((a, b) => chronological ? a[0].localeCompare(b[0]) : availability(b[1]) - availability(a[1])).forEach(([label, values]) => {
-            const score = availability(values);
-            const row = node("div", null, "horizontal-bar-row"), track = node("div", null, "horizontal-bar-track"), fill = node("div", null, "horizontal-bar-fill");
-            fill.style.width = `${Math.max(0, Math.min(100, score))}%`; track.append(fill); row.append(node("span", label), track, node("strong", percent(score))); container.append(row);
+        [...groups].sort((a, b) => chronological ? a[0].localeCompare(b[0]) : availability(b[1]) - availability(a[1])).forEach(([key, values]) => {
+            const label = labels.get(key) || key;
+            const expected = values.reduce((sum, item) => sum + Number(item.daily_expected) + Number(item.hourly_expected), 0);
+            const available = values.reduce((sum, item) => sum + Number(item.daily_available) + Number(item.hourly_available), 0);
+            const counts = {qc_none: 0, qc_failed: 0, qc_passed: 0};
+            for (const item of values) {
+                counts.qc_failed += Number(item.qc_failed || 0); counts.qc_passed += Number(item.qc_passed || 0);
+                counts.qc_none += Number(item.qc_none ?? (Number(item.daily_available) + Number(item.hourly_available) - Number(item.qc_failed || 0) - Number(item.qc_passed || 0)));
+            }
+            const row = node("div", null, "horizontal-bar-row");
+            const view = el("percentageView").value;
+            if (view !== "stacked") {
+                row.classList.add("upload-grouped-row");
+                const bars = node("div", null, `upload-percentage-bars percentage-${view}`);
+                for (const [status, value, denominator] of [["available", available, expected], ["passed", counts.qc_passed, available], ["none", counts.qc_none, available], ["failed", counts.qc_failed, available]]) {
+                    const percentage = denominator ? 100 * value / denominator : null;
+                    const name = status[0].toUpperCase() + status.slice(1);
+                    const metric = node("div", null, "upload-percentage-row");
+                    metric.dataset.status = status;
+                    metric.style.setProperty("--percentage", String(Math.max(0, Math.min(100, percentage || 0))));
+                    metric.style.setProperty("--metric-color", {available: "#f2c744", passed: "#659b38", none: "#9ca3af", failed: "#dc2626"}[status]);
+                    metric.classList.toggle("percentage-empty", percentage == null);
+                    const caption = node("span", name, "upload-percentage-name");
+                    const track = node("div", null, "upload-percentage-track");
+                    const fill = node("span", null, `upload-percentage-fill qc-${status}`);
+                    fill.style.width = `${Math.max(0, Math.min(100, percentage || 0))}%`;
+                    fill.dataset.status = status;
+                    fill.dataset.count = String(value);
+                    const detail = `${name}: ${percent(percentage)}; ${value.toLocaleString()} / ${denominator.toLocaleString()} ${status === "available" ? "expected" : "available"} readings`;
+                    metric.title = detail; metric.tabIndex = 0;
+                    metric.setAttribute("aria-label", detail);
+                    track.append(fill);
+                    metric.append(caption, track, node("strong", percent(percentage), "upload-percentage-value"));
+                    bars.append(metric);
+                }
+                if (["grouped", "dots", "columns"].includes(view)) {
+                    const axis = node("div", null, "upload-percentage-axis");
+                    for (const tick of [0, 25, 50, 75, 100]) axis.append(node("span", `${tick}%`));
+                    bars.append(axis);
+                }
+                row.append(node("span", label, "upload-station-caption"), bars);
+            } else {
+                row.classList.add("upload-grouped-row");
+                row.append(node("span", label, "upload-station-caption"), qcBar(expected, available, counts));
+            }
+            container.append(row);
         }); if (!container.childElementCount) container.append(node("p", "No scores match this period."));
     }
     function renderCharts() {
-        const stationGroups = new Map(), periodGroups = new Map(), mode = el("chartPeriod").value;
+        const stationGroups = new Map(), stationLabels = new Map(), periodGroups = new Map(), mode = el("chartPeriod").value;
         items.forEach(item => {
             if (item.overall_percent == null || !Number.isFinite(Number(item.overall_percent))) return;
-            const station = `${item.station_code} - ${item.station_name}`;
+            const station = String(item.station_code);
+            const name = stations.find(record => String(record.station_code) === station)?.station_name || item.station_name;
+            stationLabels.set(station, `${station} - ${name}`);
             if (!stationGroups.has(station)) stationGroups.set(station, []); stationGroups.get(station).push(item);
             const [year, month] = item.report_month.split("-").map(Number), fiscal = month >= 7 ? year : year - 1;
             const period = mode === "month" ? item.report_month : `FY ${fiscal}/${fiscal + 1}${mode === "quarter" ? ` Q${Math.floor(((month + 5) % 12) / 3) + 1}` : ""}`;
             if (!periodGroups.has(period)) periodGroups.set(period, []); periodGroups.get(period).push(item);
-        }); chart("uploadStationChart", stationGroups); chart("uploadPeriodChart", periodGroups, true);
+        }); chart("uploadStationChart", stationGroups, false, stationLabels); chart("uploadPeriodChart", periodGroups, true);
     }
     function saveBlob(blob, filename) {
         const url = URL.createObjectURL(blob), link = node("a"); link.href = url; link.download = filename; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -253,23 +316,35 @@
         const scope = names.length ? names.join("; ") : "All elements";
         el("resultScoreScope").textContent = scope;
         el("uploadAverageLabel").textContent = names.length ? "Selected element score" : "Average score";
-        el("uploadOverallHeading").textContent = names.length ? "Selected elements (%)" : "Overall (%)";
+        el("uploadOverallHeading").textContent = names.length ? "Selected elements / QC (%)" : "Available / QC (%)";
         const knownElements = new Set([...el("uploadElementFilter").options].map(option => option.value));
         (data.element_summary || []).forEach(element => {
             if (!knownElements.has(element.element_id)) { el("uploadElementFilter").add(new Option(`${element.element_id} - ${element.element_name}`,element.element_id)); knownElements.add(element.element_id); }
         });
-        items = data.items || []; const summary = data.summary || {};
+        items = (data.items || []).map(item => ({...item,
+            station_name: stations.find(station => String(station.station_code) === String(item.station_code))?.station_name || item.station_name}));
+        const summary = data.summary || {};
         el("uploadAverage").textContent = percent(summary.average); ["Stations", "Months", "Records"].forEach(key => el(`upload${key}`).textContent = summary[key.toLowerCase()] ?? 0);
         const body = el("uploadResultRows"); body.replaceChildren();
         items.forEach(item => {
-            const row = node("tr"); ["station_code", "station_name", "district", "report_month", "daily_expected", "daily_available", "daily_missing", "daily_percent", "hourly_expected", "hourly_available", "hourly_missing", "hourly_percent", "overall_percent", "created_at"].forEach(key => row.append(node("td", key.endsWith("percent") ? percent(item[key]) : item[key] ?? "-"))); body.append(row);
+            const row = node("tr"); ["station_code", "station_name", "district", "report_month", "daily_expected", "daily_available", "daily_missing", "daily_percent", "hourly_expected", "hourly_available", "hourly_missing", "hourly_percent", "overall_percent", "created_at"].forEach(key => {
+                const cell = node("td");
+                if (key === "overall_percent") { cell.dataset.sortValue = String(item[key] ?? "-"); cell.append(qcBar(Number(item.daily_expected) + Number(item.hourly_expected), Number(item.daily_available) + Number(item.hourly_available), item)); }
+                else cell.textContent = key.endsWith("percent") ? percent(item[key]) : item[key] ?? "-";
+                row.append(cell);
+            }); body.append(row);
         });
         if (!items.length) { const row = body.insertRow(), cell = row.insertCell(); cell.colSpan = 14; cell.textContent = names.length ? `No saved results for ${scope} in the selected period.` : "No results match these filters."; }
         [["elementScoreRows", data.element_summary || [], ["element_id", "element_name", "expected", "available", "missing", "score"]],
          ["elementDetailRows", data.element_items || [], ["station_name", "report_month", "element_id", "element_name", "expected", "available", "missing", "score"]]].forEach(([id, entries, keys]) => {
             const target = el(id); target.replaceChildren();
             entries.forEach(entry => {
-                const row = node("tr"); keys.forEach(key => row.append(node("td", key === "score" ? (entry.score == null ? "Not assessed" : percent(entry.score)) : entry[key]))); target.append(row);
+                const row = node("tr"); keys.forEach(key => {
+                    const cell = node("td");
+                    if (key === "score") { cell.dataset.sortValue = String(entry.score ?? "-"); cell.append(qcBar(Number(entry.expected), Number(entry.available), entry)); }
+                    else cell.textContent = entry[key];
+                    row.append(cell);
+                }); target.append(row);
             });
             if (!entries.length) { const cell = target.insertRow().insertCell(); cell.colSpan = keys.length; cell.textContent = "No element scores. Upload data using the instrument catalog configuration."; }
         });
@@ -318,7 +393,8 @@
         });
         el("resetFilters").onclick = () => { ["uploadStationFilter", "uploadDistrictFilter", "uploadCategoryFilter", "uploadStatusFilter", "uploadElementFilter", "uploadFrom", "uploadTo"].forEach(id => el(id).value = ""); loadResults(); };
         el("chartPeriod").onchange = renderCharts;
-        el("csvTemplate").onclick = () => saveBlob(new Blob(["station_id,element_id,element_name,date_time,value\r\n"], {type: "text/csv;charset=utf-8"}), "observation-template.csv");
+        el("percentageView").onchange = renderCharts;
+        el("csvTemplate").onclick = () => saveBlob(new Blob(["station_id,element_id,element_name,date_time,value,qc_status\r\n"], {type: "text/csv;charset=utf-8"}), "observation-template.csv");
         el("observationUpload").onsubmit = async event => {
             event.preventDefault(); if (uploading) return;
             const file = el("observationFile").files[0]; el("uploadWarnings").replaceChildren();
@@ -329,6 +405,7 @@
             try {
                 const backend = await checked(await apiFetch("/performance-upload/config"), "Unable to verify catalog configuration.");
                 const capabilities = await backend.json(); requireCatalogBackend(capabilities);
+                if (capabilities.observation_qc_schema_version !== 1) throw new Error("Restart the backend and refresh with Ctrl+F5 to enable qc_status processing. This older backend would ignore QC labels.");
                 if (csvFile && file.size > 20 * 1024 ** 2 && !(capabilities.observation_upload_max_bytes >= file.size)) throw new Error("Restart the backend and refresh with Ctrl+F5 to enable CSV uploads up to 2 GB.");
                 const response = await checked(await apiFetch(`/performance-upload/analyze?${new URLSearchParams({filename: file.name})}`, {method: "POST", headers: {"Content-Type": "application/octet-stream"}, body: file}), "Unable to process observations. Check dates use DD/MM/YYYY HH:MM or real Excel dates.");
                 const result = await response.json();

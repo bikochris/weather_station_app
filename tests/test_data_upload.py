@@ -297,6 +297,7 @@ class UploadApiTests(unittest.TestCase):
                        element_id="2",element_name="Catalog maximum",expected=50,available=25,missing=25,score=50)
         other = dict(element, station_code="40302100",element_name="SECRET",available=50,missing=0,score=100)
         record = dict(station_id=1,station_code="10101100",report_month="2026-07-01",run_id=7,
+                      station_name="GITEGA",
                       daily_expected=50,daily_available=25,daily_percent=50,hourly_expected=0,hourly_available=0,hourly_percent=0,overall_percent=50)
         cursor.fetchall.side_effect = [
             [{"station_id":1,"station_code":"10101100","station_name":"Gitega","district":"Gasabo"}],
@@ -305,7 +306,51 @@ class UploadApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["element_summary"][0]["score"], 50)
         self.assertEqual(len(response.json()["element_items"]), 1)
+        self.assertEqual(response.json()["items"][0]["station_name"], "Gitega")
+        self.assertEqual(response.json()["element_items"][0]["station_name"], "Gitega")
         self.assertNotIn("SECRET", response.text)
+
+    @patch("backend.main.ensure_application_tables")
+    @patch("backend.main.get_connection")
+    def test_qc_counts_loaded_from_frozen_results_and_filtered_by_element(self, connect, _ensure):
+        cursor = connect.return_value.cursor.return_value
+        record = dict(station_id=1,station_code="10101100",report_month="2026-07-01",run_id=7,
+                      daily_expected=100,daily_available=72,daily_percent=72,hourly_expected=0,hourly_available=0,hourly_percent=0,overall_percent=72)
+        element = dict(station_code="10101100",station_name="Gitega",report_month="2026-07",cadence="daily",
+            element_id="5",element_name="Rainfall",expected=100,available=72,missing=28,score=72,qc_none=2,qc_failed=5,qc_passed=65)
+        saved = dict(record, report_month="2026-07",qc_none=2,qc_failed=5,qc_passed=65)
+        for query in ["", "?element_id=5"]:
+            cursor.fetchall.side_effect = [[dict(station_id=1,station_code="10101100",station_name="Gitega",district="Gasabo")],
+                [dict(record)], [dict(run_id=7,result_data=json.dumps(dict(results=[saved],element_results=[element])))], []]
+            response = self.client.get("/performance-upload/results" + query)
+            self.assertEqual(response.status_code, 200, response.text)
+            data = response.json()
+            for row in [data["items"][0], data["element_summary"][0], data["summary"]]:
+                self.assertEqual(row["qc_failed_percent"], 6.94)
+                self.assertEqual(row["qc_none_percent"], 2.78)
+                self.assertEqual(row["qc_passed_percent"], 90.28)
+            self.assertEqual(data["summary"]["average"], 72)
+
+    @patch("backend.data_upload_api.report_pdf", return_value=b"current PDF")
+    @patch("backend.main.ensure_application_tables")
+    @patch("backend.main.get_connection")
+    def test_cached_pdf_is_regenerated_when_qc_denominator_is_outdated(self, connect, _ensure, render):
+        cursor = connect.return_value.cursor.return_value
+        cursor.fetchall.return_value = [dict(station_id=1,station_code="A",station_name="Alpha",district="North")]
+        record = dict(station_code="A",station_name="Alpha",report_month="2026-07",daily_expected=100,daily_available=20,
+            hourly_expected=0,hourly_available=0,qc_none=2,qc_failed=3,qc_passed=15,qc_failed_percent=3)
+        for basis in ["expected", "available"]:
+            result = dict(results=[record],element_results=[],periods=["2026-07"],warnings=[],qc_percentage_basis=basis)
+            cursor.fetchone.return_value = dict(result_data=json.dumps(result),pdf_data=b"cached PDF")
+            render.reset_mock()
+            response = self.client.get("/performance-upload/runs/1/report?format=pdf")
+            self.assertEqual(response.status_code,200,response.text)
+            if basis == "expected":
+                self.assertEqual(response.content,b"current PDF")
+                self.assertEqual(render.call_args.args[0]["results"][0]["qc_failed_percent"],15)
+            else:
+                render.assert_not_called()
+                self.assertEqual(response.content,b"cached PDF")
 
 
 if __name__ == "__main__": unittest.main()
